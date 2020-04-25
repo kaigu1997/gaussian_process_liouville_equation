@@ -1,0 +1,1649 @@
+ x and y points are:
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+ my_f:  deltasq = 0.1   theta1sq = 2   -log_l = 255850
+ my_f:  deltasq = 0.11   theta1sq = 2   -log_l = 238309
+ my_f:  deltasq = 0.1   theta1sq = 2.01   -log_l = 261609
+ my_f:  deltasq = 0.11   theta1sq = 1.99   -log_l = 232868
+ my_f:  deltasq = 0.115   theta1sq = 1.98   -log_l = 219852
+    1  1.150e-01  1.980e+00 f() = 219852.388 size = 0.011
+ my_f:  deltasq = 0.125   theta1sq = 1.98   -log_l = 206047
+ my_f:  deltasq = 0.1375   theta1sq = 1.97   -log_l = 186384
+    2  1.375e-01  1.970e+00 f() = 186383.691 size = 0.017
+ my_f:  deltasq = 0.1425   theta1sq = 1.95   -log_l = 172102
+ my_f:  deltasq = 0.15875   theta1sq = 1.925   -log_l = 147295
+    3  1.588e-01  1.925e+00 f() = 147294.849 size = 0.030
+ my_f:  deltasq = 0.18125   theta1sq = 1.915   -log_l = 127981
+ my_f:  deltasq = 0.214375   theta1sq = 1.8825   -log_l = 100665
+    4  2.144e-01  1.882e+00 f() = 100665.184 size = 0.048
+ my_f:  deltasq = 0.235625   theta1sq = 1.8375   -log_l = 80788.5
+ my_f:  deltasq = 0.284688   theta1sq = 1.77125   -log_l = 54966.5
+    5  2.847e-01  1.771e+00 f() = 54966.526 size = 0.083
+ my_f:  deltasq = 0.340313   theta1sq = 1.72875   -log_l = 40281.3
+ my_f:  deltasq = 0.431094   theta1sq = 1.63062   -log_l = 22720.4
+    6  4.311e-01  1.631e+00 f() = 22720.381 size = 0.137
+ my_f:  deltasq = 0.501406   theta1sq = 1.51937   -log_l = 12925.3
+ my_f:  deltasq = 0.644922   theta1sq = 1.33781   -log_l = 4838.19
+    7  6.449e-01  1.338e+00 f() = 4838.195 size = 0.233
+ my_f:  deltasq = 0.791328   theta1sq = 1.19719   -log_l = 2145.87
+ my_f:  deltasq = 1.04465   theta1sq = 0.910156   -log_l = 453.839
+    8  1.045e+00  9.102e-01 f() = 453.839 size = 0.390
+ my_f:  deltasq = 1.25848   theta1sq = 0.617344   -log_l = 148.574
+ my_f:  deltasq = 1.67217   theta1sq = 0.110703   -log_l = 125.929
+    9  1.672e+00  1.107e-01 f() = 125.929 size = 0.661
+ my_f:  deltasq = 2.07189   theta1sq = -0.316953   -log_l = 1.44197e+55
+ my_f:  deltasq = 1.00167   theta1sq = 0.924121   -log_l = 502.114
+   10  1.672e+00  1.107e-01 f() = 125.929 size = 0.488
+ my_f:  deltasq = 1.71515   theta1sq = 0.0967383   -log_l = 126.043
+   11  1.672e+00  1.107e-01 f() = 125.929 size = 0.488
+ my_f:  deltasq = 2.34267   theta1sq = -0.702715   -log_l = 5.60087e+23
+ my_f:  deltasq = 1.36915   theta1sq = 0.506938   -log_l = 119.707
+   12  1.369e+00  5.069e-01 f() = 119.707 size = 0.245
+ my_f:  deltasq = 1.32617   theta1sq = 0.520903   -log_l = 124.674
+   13  1.369e+00  5.069e-01 f() = 119.707 size = 0.245
+ my_f:  deltasq = 1.02316   theta1sq = 0.917139   -log_l = 477.215
+ my_f:  deltasq = 1.50992   theta1sq = 0.312312   -log_l = 110.098
+   14  1.510e+00  3.123e-01 f() = 110.098 size = 0.123
+ my_f:  deltasq = 1.5529   theta1sq = 0.298347   -log_l = 108.353
+ my_f:  deltasq = 1.66626   theta1sq = 0.187069   -log_l = 113.457
+   15  1.553e+00  2.983e-01 f() = 108.353 size = 0.123
+ my_f:  deltasq = 1.69366   theta1sq = 0.103721   -log_l = 125.948
+ my_f:  deltasq = 1.45028   theta1sq = 0.406134   -log_l = 110.25
+   16  1.553e+00  2.983e-01 f() = 108.353 size = 0.064
+ my_f:  deltasq = 1.61253   theta1sq = 0.204525   -log_l = 114.45
+ my_f:  deltasq = 1.49084   theta1sq = 0.355732   -log_l = 108.859
+   17  1.553e+00  2.983e-01 f() = 108.353 size = 0.036
+ my_f:  deltasq = 1.53383   theta1sq = 0.341767   -log_l = 106.733
+ my_f:  deltasq = 1.54578   theta1sq = 0.356494   -log_l = 105.288
+   18  1.546e+00  3.565e-01 f() = 105.288 size = 0.039
+ my_f:  deltasq = 1.60784   theta1sq = 0.29911   -log_l = 104.937
+ my_f:  deltasq = 1.66634   theta1sq = 0.270799   -log_l = 103.91
+   19  1.666e+00  2.708e-01 f() = 103.910 size = 0.066
+ my_f:  deltasq = 1.65922   theta1sq = 0.328946   -log_l = 100.07
+ my_f:  deltasq = 1.71238   theta1sq = 0.344246   -log_l = 96.5008
+   20  1.712e+00  3.442e-01 f() =  96.501 size = 0.080
+ my_f:  deltasq = 1.83293   theta1sq = 0.25855   -log_l = 96.4895
+ my_f:  deltasq = 1.97651   theta1sq = 0.209578   -log_l = 94.9517
+   21  1.977e+00  2.096e-01 f() =  94.952 size = 0.147
+ my_f:  deltasq = 2.02255   theta1sq = 0.283024   -log_l = 86.6541
+ my_f:  deltasq = 2.20066   theta1sq = 0.289137   -log_l = 80.174
+   22  2.201e+00  2.891e-01 f() =  80.174 size = 0.207
+ my_f:  deltasq = 2.46479   theta1sq = 0.154469   -log_l = 84.1003
+   23  2.201e+00  2.891e-01 f() =  80.174 size = 0.207
+ my_f:  deltasq = 2.68894   theta1sq = 0.234029   -log_l = 71.2294
+ my_f:  deltasq = 3.04516   theta1sq = 0.246254   -log_l = 63.6568
+   24  3.045e+00  2.463e-01 f() =  63.657 size = 0.357
+ my_f:  deltasq = 2.78103   theta1sq = 0.380922   -log_l = 62.6743
+ my_f:  deltasq = 2.93915   theta1sq = 0.494149   -log_l = 60.2139
+   25  2.939e+00  4.941e-01 f() =  60.214 size = 0.391
+ my_f:  deltasq = 3.78365   theta1sq = 0.451266   -log_l = 48.7744
+ my_f:  deltasq = 4.57514   theta1sq = 0.53233   -log_l = 43.5502
+   26  4.575e+00  5.323e-01 f() =  43.550 size = 0.758
+ my_f:  deltasq = 4.46913   theta1sq = 0.780224   -log_l = 69.6516
+ my_f:  deltasq = 3.40115   theta1sq = 0.379747   -log_l = 53.435
+   27  4.575e+00  5.323e-01 f() =  43.550 size = 0.692
+ my_f:  deltasq = 5.03714   theta1sq = 0.417928   -log_l = 39.8938
+ my_f:  deltasq = 6.08613   theta1sq = 0.379818   -log_l = 35.8428
+   28  6.086e+00  3.798e-01 f() =  35.843 size = 1.101
+ my_f:  deltasq = 7.26012   theta1sq = 0.532401   -log_l = 32.2142
+ my_f:  deltasq = 9.18961   theta1sq = 0.608728   -log_l = 29.7003
+   29  9.190e+00  6.087e-01 f() =  29.700 size = 1.923
+ my_f:  deltasq = 10.7006   theta1sq = 0.456216   -log_l = 26.5305
+ my_f:  deltasq = 13.7633   theta1sq = 0.418159   -log_l = 24.6159
+   30  1.376e+01  4.182e-01 f() =  24.616 size = 3.155
+ my_f:  deltasq = 16.8668   theta1sq = 0.64707   -log_l = 23.6149
+ my_f:  deltasq = 22.2572   theta1sq = 0.780696   -log_l = 24.7563
+   31  1.687e+01  6.471e-01 f() =  23.615 size = 3.155
+ my_f:  deltasq = 21.4405   theta1sq = 0.456501   -log_l = 22.0681
+ my_f:  deltasq = 27.566   theta1sq = 0.380387   -log_l = 22.218
+   32  2.757e+01  3.804e-01 f() =  22.218 size = 5.914
+ my_f:  deltasq = 30.6695   theta1sq = 0.609298   -log_l = 20.6747
+ my_f:  deltasq = 39.1226   theta1sq = 0.704867   -log_l = 20.5902
+   33  3.912e+01  7.049e-01 f() =  20.590 size = 9.089
+ my_f:  deltasq = 49.8217   theta1sq = 0.438184   -log_l = 21.5025
+   34  3.912e+01  7.049e-01 f() =  20.590 size = 9.089
+ my_f:  deltasq = 61.3783   theta1sq = 0.762664   -log_l = 20.467
+ my_f:  deltasq = 78.2844   theta1sq = 0.953802   -log_l = 22.685
+   35  6.138e+01  7.627e-01 f() =  20.467 size = 9.089
+ my_f:  deltasq = 50.6791   theta1sq = 1.02935   -log_l = 28.8247
+ my_f:  deltasq = 50.0361   theta1sq = 0.585975   -log_l = 20.4274
+   36  5.004e+01  5.860e-01 f() =  20.427 size = 9.087
+ my_f:  deltasq = 72.2918   theta1sq = 0.643772   -log_l = 20.5321
+ my_f:  deltasq = 63.9995   theta1sq = 0.659046   -log_l = 20.3524
+   37  6.400e+01  6.590e-01 f() =  20.352 size = 6.060
+ my_f:  deltasq = 52.6573   theta1sq = 0.482357   -log_l = 21.1566
+ my_f:  deltasq = 59.198   theta1sq = 0.692587   -log_l = 20.2726
+   38  5.920e+01  6.926e-01 f() =  20.273 size = 5.793
+ my_f:  deltasq = 73.1615   theta1sq = 0.765658   -log_l = 20.4693
+ my_f:  deltasq = 55.8174   theta1sq = 0.630896   -log_l = 20.3248
+   39  5.920e+01  6.926e-01 f() =  20.273 size = 3.357
+ my_f:  deltasq = 51.016   theta1sq = 0.664437   -log_l = 20.2455
+ my_f:  deltasq = 44.5242   theta1sq = 0.667133   -log_l = 20.2883
+   40  5.102e+01  6.644e-01 f() =  20.246 size = 3.357
+ my_f:  deltasq = 54.3966   theta1sq = 0.726129   -log_l = 20.3464
+ my_f:  deltasq = 55.4622   theta1sq = 0.654704   -log_l = 20.2702
+   41  5.102e+01  6.644e-01 f() =  20.246 size = 3.345
+ my_f:  deltasq = 47.2801   theta1sq = 0.626554   -log_l = 20.2816
+ my_f:  deltasq = 56.2186   theta1sq = 0.676079   -log_l = 20.2568
+   42  5.102e+01  6.644e-01 f() =  20.246 size = 2.295
+ my_f:  deltasq = 51.7723   theta1sq = 0.685812   -log_l = 20.2571
+ my_f:  deltasq = 52.6948   theta1sq = 0.678035   -log_l = 20.2486
+   43  5.102e+01  6.644e-01 f() =  20.246 size = 2.168
+ my_f:  deltasq = 47.4922   theta1sq = 0.666393   -log_l = 20.2575
+ my_f:  deltasq = 54.037   theta1sq = 0.673658   -log_l = 20.2491
+   44  5.102e+01  6.644e-01 f() =  20.246 size = 1.236
+ my_f:  deltasq = 49.6738   theta1sq = 0.668815   -log_l = 20.2484
+   45  5.102e+01  6.644e-01 f() =  20.246 size = 1.236
+ my_f:  deltasq = 47.995   theta1sq = 0.655217   -log_l = 20.2515
+ my_f:  deltasq = 51.5198   theta1sq = 0.672331   -log_l = 20.2465
+   46  5.102e+01  6.644e-01 f() =  20.246 size = 0.779
+ my_f:  deltasq = 52.862   theta1sq = 0.667953   -log_l = 20.2469
+ my_f:  deltasq = 52.065   theta1sq = 0.668168   -log_l = 20.2458
+   47  5.102e+01  6.644e-01 f() =  20.246 size = 0.428
+ my_f:  deltasq = 51.5611   theta1sq = 0.660275   -log_l = 20.2471
+ my_f:  deltasq = 51.5301   theta1sq = 0.669317   -log_l = 20.2457
+   48  5.102e+01  6.644e-01 f() =  20.246 size = 0.428
+ my_f:  deltasq = 50.4812   theta1sq = 0.665585   -log_l = 20.2458
+ my_f:  deltasq = 51.669   theta1sq = 0.667523   -log_l = 20.2455
+   49  5.102e+01  6.644e-01 f() =  20.246 size = 0.281
+ my_f:  deltasq = 51.1548   theta1sq = 0.662643   -log_l = 20.2459
+ my_f:  deltasq = 51.4363   theta1sq = 0.667648   -log_l = 20.2455
+   50  5.144e+01  6.676e-01 f() =  20.245 size = 0.270
+ my_f:  deltasq = 50.7833   theta1sq = 0.664563   -log_l = 20.2456
+ my_f:  deltasq = 51.4476   theta1sq = 0.666783   -log_l = 20.2455
+   51  5.145e+01  6.668e-01 f() =  20.245 size = 0.201
+ my_f:  deltasq = 51.8679   theta1sq = 0.669994   -log_l = 20.2458
+ my_f:  deltasq = 51.229   theta1sq = 0.665826   -log_l = 20.2455
+   52  5.123e+01  6.658e-01 f() =  20.245 size = 0.101
+ my_f:  deltasq = 51.2402   theta1sq = 0.664961   -log_l = 20.2455
+ my_f:  deltasq = 51.3873   theta1sq = 0.666976   -log_l = 20.2455
+   53  5.123e+01  6.658e-01 f() =  20.245 size = 0.092
+ my_f:  deltasq = 51.1687   theta1sq = 0.66602   -log_l = 20.2455
+ my_f:  deltasq = 51.0292   theta1sq = 0.665639   -log_l = 20.2455
+   54  5.117e+01  6.660e-01 f() =  20.245 size = 0.092
+ my_f:  deltasq = 51.0103   theta1sq = 0.66487   -log_l = 20.2455
+ my_f:  deltasq = 51.2931   theta1sq = 0.66645   -log_l = 20.2455
+   55  5.129e+01  6.664e-01 f() =  20.245 size = 0.051
+ my_f:  deltasq = 51.2328   theta1sq = 0.666644   -log_l = 20.2455
+ my_f:  deltasq = 51.2318   theta1sq = 0.666439   -log_l = 20.2455
+   56  5.129e+01  6.664e-01 f() =  20.245 size = 0.051
+ my_f:  deltasq = 51.3562   theta1sq = 0.666869   -log_l = 20.2455
+ my_f:  deltasq = 51.2156   theta1sq = 0.666232   -log_l = 20.2455
+   57  5.129e+01  6.664e-01 f() =  20.245 size = 0.033
+ my_f:  deltasq = 51.2768   theta1sq = 0.666243   -log_l = 20.2455
+   58  5.129e+01  6.664e-01 f() =  20.245 size = 0.033
+ my_f:  deltasq = 51.3543   theta1sq = 0.66646   -log_l = 20.2455
+ my_f:  deltasq = 51.2502   theta1sq = 0.666289   -log_l = 20.2455
+   59  5.125e+01  6.663e-01 f() =  20.245 size = 0.018
+ my_f:  deltasq = 51.2665   theta1sq = 0.666496   -log_l = 20.2455
+ my_f:  deltasq = 51.2742   theta1sq = 0.666306   -log_l = 20.2455
+   60  5.125e+01  6.663e-01 f() =  20.245 size = 0.018
+ my_f:  deltasq = 51.2314   theta1sq = 0.666146   -log_l = 20.2455
+ my_f:  deltasq = 51.2776   theta1sq = 0.666374   -log_l = 20.2455
+   61  5.125e+01  6.663e-01 f() =  20.245 size = 0.012
+ my_f:  deltasq = 51.2537   theta1sq = 0.666357   -log_l = 20.2455
+ my_f:  deltasq = 51.2588   theta1sq = 0.666344   -log_l = 20.2455
+   62  5.126e+01  6.663e-01 f() =  20.245 size = 0.011
+ my_f:  deltasq = 51.2314   theta1sq = 0.66626   -log_l = 20.2455
+ my_f:  deltasq = 51.2661   theta1sq = 0.666345   -log_l = 20.2455
+converged to minimum at
+   63  5.127e+01  6.663e-01 f() =  20.245 size = 0.006
+   Parameters are  deltasq= 51.2661   theta1sq = 0.666345
+  Maximum of acquisition occurs at 1.248  and is 0.147786  err = 1.55208
+  Cholesky:  New adapted 9 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+ my_f:  deltasq = 51.2661   theta1sq = 0.666345   -log_l = 72.9636
+ my_f:  deltasq = 51.2761   theta1sq = 0.666345   -log_l = 72.9532
+ my_f:  deltasq = 51.2661   theta1sq = 0.676345   -log_l = 77.1524
+ my_f:  deltasq = 51.2761   theta1sq = 0.656345   -log_l = 69.052
+ my_f:  deltasq = 51.2811   theta1sq = 0.646345   -log_l = 65.4169
+    1  5.128e+01  6.463e-01 f() =  65.417 size = 0.011
+ my_f:  deltasq = 51.2911   theta1sq = 0.646345   -log_l = 65.4081
+ my_f:  deltasq = 51.3036   theta1sq = 0.636345   -log_l = 62.0229
+    2  5.130e+01  6.363e-01 f() =  62.023 size = 0.017
+ my_f:  deltasq = 51.3086   theta1sq = 0.616345   -log_l = 55.9763
+ my_f:  deltasq = 51.3248   theta1sq = 0.591345   -log_l = 49.5959
+    3  5.132e+01  5.913e-01 f() =  49.596 size = 0.030
+ my_f:  deltasq = 51.3473   theta1sq = 0.581345   -log_l = 47.3644
+ my_f:  deltasq = 51.3805   theta1sq = 0.548845   -log_l = 41.261
+    4  5.138e+01  5.488e-01 f() =  41.261 size = 0.048
+ my_f:  deltasq = 51.4017   theta1sq = 0.503845   -log_l = 35.1741
+ my_f:  deltasq = 51.4508   theta1sq = 0.437595   -log_l = 29.823
+    5  5.145e+01  4.376e-01 f() =  29.823 size = 0.083
+ my_f:  deltasq = 51.5064   theta1sq = 0.395095   -log_l = 27.9664
+ my_f:  deltasq = 51.5972   theta1sq = 0.29697   -log_l = 26.5431
+    6  5.160e+01  2.970e-01 f() =  26.543 size = 0.137
+ my_f:  deltasq = 51.6675   theta1sq = 0.18572   -log_l = 27.6264
+    7  5.160e+01  2.970e-01 f() =  26.543 size = 0.137
+ my_f:  deltasq = 51.8139   theta1sq = 0.0450953   -log_l = 32.0758
+ my_f:  deltasq = 51.5415   theta1sq = 0.33947   -log_l = 26.782
+    8  5.160e+01  2.970e-01 f() =  26.543 size = 0.083
+ my_f:  deltasq = 51.4712   theta1sq = 0.45072   -log_l = 30.6085
+ my_f:  deltasq = 51.6184   theta1sq = 0.25197   -log_l = 26.7344
+    9  5.160e+01  2.970e-01 f() =  26.543 size = 0.048
+ my_f:  deltasq = 51.674   theta1sq = 0.20947   -log_l = 27.2328
+ my_f:  deltasq = 51.5747   theta1sq = 0.30697   -log_l = 26.5581
+   10  5.160e+01  2.970e-01 f() =  26.543 size = 0.030
+ my_f:  deltasq = 51.5534   theta1sq = 0.35197   -log_l = 26.949
+ my_f:  deltasq = 51.6022   theta1sq = 0.27697   -log_l = 26.5797
+   11  5.160e+01  2.970e-01 f() =  26.543 size = 0.017
+ my_f:  deltasq = 51.5697   theta1sq = 0.32697   -log_l = 26.6611
+ my_f:  deltasq = 51.594   theta1sq = 0.28947   -log_l = 26.5471
+   12  5.160e+01  2.970e-01 f() =  26.543 size = 0.012
+ my_f:  deltasq = 51.6165   theta1sq = 0.27947   -log_l = 26.5704
+ my_f:  deltasq = 51.5851   theta1sq = 0.300095   -log_l = 26.5454
+converged to minimum at
+   13  5.160e+01  2.970e-01 f() =  26.543 size = 0.007
+  Maximum of acquisition occurs at -0.664  and is 2.06015  err = 0.2125
+  Cholesky:  New adapted 10 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+ my_f:  deltasq = 51.5972   theta1sq = 0.29697   -log_l = 28.8884
+ my_f:  deltasq = 51.6072   theta1sq = 0.29697   -log_l = 28.8882
+ my_f:  deltasq = 51.5972   theta1sq = 0.30697   -log_l = 28.8554
+ my_f:  deltasq = 51.6072   theta1sq = 0.30697   -log_l = 28.8552
+ my_f:  deltasq = 51.6122   theta1sq = 0.31197   -log_l = 28.8499
+converged to minimum at
+    1  5.161e+01  3.120e-01 f() =  28.850 size = 0.009
+  Maximum of acquisition occurs at -1.792  and is 0.204558  err = 0.130779
+  Cholesky:  New adapted 11 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+ my_f:  deltasq = 51.6122   theta1sq = 0.31197   -log_l = 28.1144
+ my_f:  deltasq = 51.6222   theta1sq = 0.31197   -log_l = 28.1143
+ my_f:  deltasq = 51.6122   theta1sq = 0.32197   -log_l = 28.0733
+ my_f:  deltasq = 51.6222   theta1sq = 0.32197   -log_l = 28.0731
+ my_f:  deltasq = 51.6272   theta1sq = 0.32697   -log_l = 28.0669
+converged to minimum at
+    1  5.163e+01  3.270e-01 f() =  28.067 size = 0.009
+  Maximum of acquisition occurs at 0.984  and is 0.066716  err = 0.128727
+  Cholesky:  New adapted 12 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+ my_f:  deltasq = 51.6272   theta1sq = 0.32697   -log_l = 29.9669
+ my_f:  deltasq = 51.6372   theta1sq = 0.32697   -log_l = 29.9665
+ my_f:  deltasq = 51.6272   theta1sq = 0.33697   -log_l = 30.0423
+ my_f:  deltasq = 51.6372   theta1sq = 0.31697   -log_l = 29.9421
+ my_f:  deltasq = 51.6422   theta1sq = 0.30697   -log_l = 29.9654
+    1  5.164e+01  3.070e-01 f() =  29.965 size = 0.011
+ my_f:  deltasq = 51.6522   theta1sq = 0.30697   -log_l = 29.9651
+ my_f:  deltasq = 51.6647   theta1sq = 0.29697   -log_l = 30.0332
+    2  5.165e+01  3.070e-01 f() =  29.965 size = 0.011
+ my_f:  deltasq = 51.6572   theta1sq = 0.28697   -log_l = 30.1435
+ my_f:  deltasq = 51.6422   theta1sq = 0.31697   -log_l = 29.942
+converged to minimum at
+    3  5.164e+01  3.170e-01 f() =  29.942 size = 0.007
+  Maximum of acquisition occurs at 0.392  and is 0.0103099  err = 0.16633
+  Cholesky:  New adapted 13 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+ my_f:  deltasq = 51.6422   theta1sq = 0.31697   -log_l = 28.0443
+ my_f:  deltasq = 51.6522   theta1sq = 0.31697   -log_l = 28.044
+ my_f:  deltasq = 51.6422   theta1sq = 0.32697   -log_l = 28.1594
+ my_f:  deltasq = 51.6522   theta1sq = 0.30697   -log_l = 28.0531
+ my_f:  deltasq = 51.6497   theta1sq = 0.31197   -log_l = 28.0348
+converged to minimum at
+    1  5.165e+01  3.120e-01 f() =  28.035 size = 0.005
+  Maximum of acquisition occurs at 1.544  and is 0.00316646  err = 0.153676
+  Cholesky:  New adapted 14 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+ my_f:  deltasq = 51.6497   theta1sq = 0.31197   -log_l = 241.335
+ my_f:  deltasq = 51.6597   theta1sq = 0.31197   -log_l = 241.294
+ my_f:  deltasq = 51.6497   theta1sq = 0.32197   -log_l = 303.099
+ my_f:  deltasq = 51.6597   theta1sq = 0.30197   -log_l = 192.465
+ my_f:  deltasq = 51.6647   theta1sq = 0.29197   -log_l = 154.09
+    1  5.166e+01  2.920e-01 f() = 154.090 size = 0.011
+ my_f:  deltasq = 51.6747   theta1sq = 0.29197   -log_l = 154.065
+ my_f:  deltasq = 51.6872   theta1sq = 0.28197   -log_l = 124.121
+    2  5.169e+01  2.820e-01 f() = 124.121 size = 0.017
+ my_f:  deltasq = 51.6922   theta1sq = 0.26197   -log_l = 83.1915
+ my_f:  deltasq = 51.7084   theta1sq = 0.23697   -log_l = 55.5239
+    3  5.171e+01  2.370e-01 f() =  55.524 size = 0.030
+ my_f:  deltasq = 51.7309   theta1sq = 0.22697   -log_l = 49.119
+ my_f:  deltasq = 51.764   theta1sq = 0.19447   -log_l = 38.7988
+    4  5.176e+01  1.945e-01 f() =  38.799 size = 0.048
+ my_f:  deltasq = 51.7853   theta1sq = 0.14947   -log_l = 37.2351
+ my_f:  deltasq = 51.8344   theta1sq = 0.0832203   -log_l = 42.4933
+    5  5.179e+01  1.495e-01 f() =  37.235 size = 0.048
+ my_f:  deltasq = 51.8409   theta1sq = 0.10697   -log_l = 40.1835
+ my_f:  deltasq = 51.8078   theta1sq = 0.13947   -log_l = 37.7242
+    6  5.179e+01  1.495e-01 f() =  37.235 size = 0.030
+ my_f:  deltasq = 51.829   theta1sq = 0.0944703   -log_l = 41.356
+ my_f:  deltasq = 51.7803   theta1sq = 0.16947   -log_l = 36.9371
+    7  5.178e+01  1.695e-01 f() =  36.937 size = 0.017
+ my_f:  deltasq = 51.7578   theta1sq = 0.17947   -log_l = 37.293
+ my_f:  deltasq = 51.7703   theta1sq = 0.16947   -log_l = 36.9372
+    8  5.178e+01  1.695e-01 f() =  36.937 size = 0.011
+ my_f:  deltasq = 51.7653   theta1sq = 0.18947   -log_l = 38.1408
+ my_f:  deltasq = 51.7803   theta1sq = 0.15947   -log_l = 36.9494
+converged to minimum at
+    9  5.178e+01  1.695e-01 f() =  36.937 size = 0.007
+  Maximum of acquisition occurs at -0.888  and is 0.254773  err = 0.0446951
+  Cholesky:  New adapted 15 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+ my_f:  deltasq = 51.7803   theta1sq = 0.16947   -log_l = 36.3311
+ my_f:  deltasq = 51.7903   theta1sq = 0.16947   -log_l = 36.3311
+ my_f:  deltasq = 51.7803   theta1sq = 0.17947   -log_l = 36.5662
+ my_f:  deltasq = 51.7903   theta1sq = 0.15947   -log_l = 36.4933
+ my_f:  deltasq = 51.7878   theta1sq = 0.16447   -log_l = 36.3699
+converged to minimum at
+    1  5.178e+01  1.695e-01 f() =  36.331 size = 0.005
+  Maximum of acquisition occurs at -0.408  and is 0.0345214  err = 0.0384348
+  Cholesky:  New adapted 16 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+ my_f:  deltasq = 51.7803   theta1sq = 0.16947   -log_l = 36.7594
+ my_f:  deltasq = 51.7903   theta1sq = 0.16947   -log_l = 36.7594
+ my_f:  deltasq = 51.7803   theta1sq = 0.17947   -log_l = 36.9421
+ my_f:  deltasq = 51.7903   theta1sq = 0.15947   -log_l = 37.0577
+ my_f:  deltasq = 51.7828   theta1sq = 0.17447   -log_l = 36.7804
+converged to minimum at
+    1  5.178e+01  1.695e-01 f() =  36.759 size = 0.005
+  Maximum of acquisition occurs at 1.904  and is 0.00878182  err = 0.0385191
+  Cholesky:  New adapted 17 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+ my_f:  deltasq = 51.7803   theta1sq = 0.16947   -log_l = 47.9017
+ my_f:  deltasq = 51.7903   theta1sq = 0.16947   -log_l = 47.8992
+ my_f:  deltasq = 51.7803   theta1sq = 0.17947   -log_l = 55.4351
+ my_f:  deltasq = 51.7903   theta1sq = 0.15947   -log_l = 43.5274
+ my_f:  deltasq = 51.7953   theta1sq = 0.14947   -log_l = 41.2464
+    1  5.180e+01  1.495e-01 f() =  41.246 size = 0.011
+ my_f:  deltasq = 51.8053   theta1sq = 0.14947   -log_l = 41.2457
+ my_f:  deltasq = 51.8178   theta1sq = 0.13947   -log_l = 40.3413
+    2  5.182e+01  1.395e-01 f() =  40.341 size = 0.017
+ my_f:  deltasq = 51.8228   theta1sq = 0.11947   -log_l = 40.9287
+    3  5.182e+01  1.395e-01 f() =  40.341 size = 0.017
+ my_f:  deltasq = 51.8453   theta1sq = 0.10947   -log_l = 41.9091
+ my_f:  deltasq = 51.8078   theta1sq = 0.13947   -log_l = 40.3415
+    4  5.182e+01  1.395e-01 f() =  40.341 size = 0.011
+ my_f:  deltasq = 51.8028   theta1sq = 0.15947   -log_l = 43.5257
+ my_f:  deltasq = 51.8178   theta1sq = 0.12947   -log_l = 40.3393
+converged to minimum at
+    5  5.182e+01  1.295e-01 f() =  40.339 size = 0.007
+  Maximum of acquisition occurs at -1.64  and is 0.0497683  err = 0.0187596
+  Cholesky:  New adapted 18 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+ my_f:  deltasq = 51.8178   theta1sq = 0.12947   -log_l = 40.6853
+ my_f:  deltasq = 51.8278   theta1sq = 0.12947   -log_l = 40.6855
+ my_f:  deltasq = 51.8178   theta1sq = 0.13947   -log_l = 40.4731
+ my_f:  deltasq = 51.8078   theta1sq = 0.13947   -log_l = 40.4732
+converged to minimum at
+    1  5.182e+01  1.395e-01 f() =  40.473 size = 0.007
+  Maximum of acquisition occurs at 0.552  and is 0.00698645  err = 0.019081
+  Cholesky:  New adapted 19 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+ my_f:  deltasq = 51.8178   theta1sq = 0.13947   -log_l = 40.5054
+ my_f:  deltasq = 51.8278   theta1sq = 0.13947   -log_l = 40.505
+ my_f:  deltasq = 51.8178   theta1sq = 0.14947   -log_l = 42.9898
+ my_f:  deltasq = 51.8278   theta1sq = 0.12947   -log_l = 39.8815
+ my_f:  deltasq = 51.8328   theta1sq = 0.11947   -log_l = 40.4059
+    1  5.183e+01  1.195e-01 f() =  40.406 size = 0.011
+ my_f:  deltasq = 51.8428   theta1sq = 0.11947   -log_l = 40.4062
+    2  5.183e+01  1.195e-01 f() =  40.406 size = 0.011
+ my_f:  deltasq = 51.8478   theta1sq = 0.0994703   -log_l = 43.31
+ my_f:  deltasq = 51.8328   theta1sq = 0.12947   -log_l = 39.8816
+converged to minimum at
+    3  5.183e+01  1.295e-01 f() =  39.882 size = 0.007
+  Maximum of acquisition occurs at -1.288  and is 0.00348799  err = 0.0209439
+  Cholesky:  New adapted 20 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+ my_f:  deltasq = 51.8328   theta1sq = 0.12947   -log_l = 38.9355
+ my_f:  deltasq = 51.8428   theta1sq = 0.12947   -log_l = 38.9356
+ my_f:  deltasq = 51.8328   theta1sq = 0.13947   -log_l = 39.2808
+ my_f:  deltasq = 51.8428   theta1sq = 0.11947   -log_l = 39.7873
+ my_f:  deltasq = 51.8353   theta1sq = 0.13447   -log_l = 38.9199
+converged to minimum at
+    1  5.184e+01  1.345e-01 f() =  38.920 size = 0.005
+  Maximum of acquisition occurs at 1.392  and is 0.000827585  err = 0.0214873
+  Cholesky:  New adapted 21 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+ my_f:  deltasq = 51.8353   theta1sq = 0.13447   -log_l = 197.397
+ my_f:  deltasq = 51.8453   theta1sq = 0.13447   -log_l = 197.366
+ my_f:  deltasq = 51.8353   theta1sq = 0.14447   -log_l = 384.705
+ my_f:  deltasq = 51.8453   theta1sq = 0.12447   -log_l = 109.266
+ my_f:  deltasq = 51.8503   theta1sq = 0.11447   -log_l = 69.7504
+    1  5.185e+01  1.145e-01 f() =  69.750 size = 0.011
+ my_f:  deltasq = 51.8603   theta1sq = 0.11447   -log_l = 69.7448
+ my_f:  deltasq = 51.8728   theta1sq = 0.10447   -log_l = 53.471
+    2  5.187e+01  1.045e-01 f() =  53.471 size = 0.017
+ my_f:  deltasq = 51.8778   theta1sq = 0.0844703   -log_l = 47.5542
+ my_f:  deltasq = 51.894   theta1sq = 0.0594703   -log_l = 53.5741
+    3  5.188e+01  8.447e-02 f() =  47.554 size = 0.017
+ my_f:  deltasq = 51.9003   theta1sq = 0.0744703   -log_l = 49.2833
+    4  5.188e+01  8.447e-02 f() =  47.554 size = 0.017
+ my_f:  deltasq = 51.9053   theta1sq = 0.0544703   -log_l = 55.2265
+ my_f:  deltasq = 51.8809   theta1sq = 0.0919703   -log_l = 47.6003
+    5  5.188e+01  8.447e-02 f() =  47.554 size = 0.012
+ my_f:  deltasq = 51.8584   theta1sq = 0.10197   -log_l = 51.4074
+ my_f:  deltasq = 51.8898   theta1sq = 0.0813453   -log_l = 47.9339
+converged to minimum at
+    6  5.188e+01  8.447e-02 f() =  47.554 size = 0.007
+  Maximum of acquisition occurs at 0.216  and is 0.0359658  err = 0.00796562
+  Cholesky:  New adapted 22 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+ my_f:  deltasq = 51.8778   theta1sq = 0.0844703   -log_l = 48.4381
+ my_f:  deltasq = 51.8878   theta1sq = 0.0844703   -log_l = 48.4384
+ my_f:  deltasq = 51.8778   theta1sq = 0.0944703   -log_l = 50.1541
+ my_f:  deltasq = 51.8878   theta1sq = 0.0744703   -log_l = 50.1461
+ my_f:  deltasq = 51.8853   theta1sq = 0.0794703   -log_l = 49.0342
+converged to minimum at
+    1  5.188e+01  8.447e-02 f() =  48.438 size = 0.005
+  Maximum of acquisition occurs at -1.928  and is 0.0156418  err = 0.00448974
+  Cholesky:  New adapted 23 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+ my_f:  deltasq = 51.8778   theta1sq = 0.0844703   -log_l = 46.3611
+ my_f:  deltasq = 51.8878   theta1sq = 0.0844703   -log_l = 46.3615
+ my_f:  deltasq = 51.8778   theta1sq = 0.0944703   -log_l = 47.7629
+ my_f:  deltasq = 51.8878   theta1sq = 0.0744703   -log_l = 48.4126
+ my_f:  deltasq = 51.8803   theta1sq = 0.0894703   -log_l = 46.4167
+converged to minimum at
+    1  5.188e+01  8.447e-02 f() =  46.361 size = 0.005
+  Maximum of acquisition occurs at -0.536  and is 0.00901942  err = 0.00446631
+  Cholesky:  New adapted 24 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+ my_f:  deltasq = 51.8778   theta1sq = 0.0844703   -log_l = 46.0093
+ my_f:  deltasq = 51.8878   theta1sq = 0.0844703   -log_l = 46.0098
+ my_f:  deltasq = 51.8778   theta1sq = 0.0944703   -log_l = 47.3489
+ my_f:  deltasq = 51.8878   theta1sq = 0.0744703   -log_l = 48.529
+ my_f:  deltasq = 51.8803   theta1sq = 0.0894703   -log_l = 45.9465
+converged to minimum at
+    1  5.188e+01  8.947e-02 f() =  45.947 size = 0.005
+  Maximum of acquisition occurs at 0.864  and is 0.00128647  err = 0.00415141
+  Cholesky:  New adapted 25 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+ my_f:  deltasq = 51.8803   theta1sq = 0.0894703   -log_l = 56.033
+ my_f:  deltasq = 51.8903   theta1sq = 0.0894703   -log_l = 56.0306
+ my_f:  deltasq = 51.8803   theta1sq = 0.0994703   -log_l = 90.1573
+ my_f:  deltasq = 51.8903   theta1sq = 0.0794703   -log_l = 48.1741
+ my_f:  deltasq = 51.8953   theta1sq = 0.0694703   -log_l = 49.4316
+    1  5.190e+01  6.947e-02 f() =  49.432 size = 0.011
+ my_f:  deltasq = 51.9053   theta1sq = 0.0694703   -log_l = 49.4324
+    2  5.190e+01  6.947e-02 f() =  49.432 size = 0.011
+ my_f:  deltasq = 51.9103   theta1sq = 0.0494703   -log_l = 59.08
+ my_f:  deltasq = 51.8953   theta1sq = 0.0794703   -log_l = 48.1741
+converged to minimum at
+    3  5.190e+01  7.947e-02 f() =  48.174 size = 0.007
+  Maximum of acquisition occurs at -1  and is 0.00092205  err = 0.00596274
+  Cholesky:  New adapted 26 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+ my_f:  deltasq = 51.8953   theta1sq = 0.0794703   -log_l = 46.6128
+ my_f:  deltasq = 51.9053   theta1sq = 0.0794703   -log_l = 46.6129
+ my_f:  deltasq = 51.8953   theta1sq = 0.0894703   -log_l = 54.1945
+ my_f:  deltasq = 51.9053   theta1sq = 0.0694703   -log_l = 48.5179
+ my_f:  deltasq = 51.9028   theta1sq = 0.0744703   -log_l = 46.9315
+converged to minimum at
+    1  5.190e+01  7.947e-02 f() =  46.613 size = 0.005
+  Maximum of acquisition occurs at 1.824  and is 0.000454817  err = 0.00597351
+  Cholesky:  New adapted 27 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+ my_f:  deltasq = 51.8953   theta1sq = 0.0794703   -log_l = 57.4847
+ my_f:  deltasq = 51.9053   theta1sq = 0.0794703   -log_l = 57.482
+ my_f:  deltasq = 51.8953   theta1sq = 0.0894703   -log_l = 104.673
+ my_f:  deltasq = 51.9053   theta1sq = 0.0694703   -log_l = 49.1668
+ my_f:  deltasq = 51.9103   theta1sq = 0.0594703   -log_l = 51.9319
+    1  5.191e+01  5.947e-02 f() =  51.932 size = 0.011
+ my_f:  deltasq = 51.9203   theta1sq = 0.0594703   -log_l = 51.9327
+    2  5.191e+01  5.947e-02 f() =  51.932 size = 0.011
+ my_f:  deltasq = 51.9253   theta1sq = 0.0394703   -log_l = 64.8409
+ my_f:  deltasq = 51.9103   theta1sq = 0.0694703   -log_l = 49.1669
+converged to minimum at
+    3  5.191e+01  6.947e-02 f() =  49.167 size = 0.007
+  Maximum of acquisition occurs at -0.056  and is 0.0020605  err = 0.00338388
+  Cholesky:  New adapted 28 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+ my_f:  deltasq = 51.9103   theta1sq = 0.0694703   -log_l = 48.5491
+ my_f:  deltasq = 51.9203   theta1sq = 0.0694703   -log_l = 48.5493
+ my_f:  deltasq = 51.9103   theta1sq = 0.0794703   -log_l = 59.1463
+ my_f:  deltasq = 51.9203   theta1sq = 0.0594703   -log_l = 51.6405
+ my_f:  deltasq = 51.9178   theta1sq = 0.0644703   -log_l = 49.3101
+converged to minimum at
+    1  5.191e+01  6.947e-02 f() =  48.549 size = 0.005
+  Maximum of acquisition occurs at 1.12  and is 0.000555846  err = 0.00348539
+  Cholesky:  New adapted 29 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+ my_f:  deltasq = 51.9103   theta1sq = 0.0694703   -log_l = 93.9854
+ my_f:  deltasq = 51.9203   theta1sq = 0.0694703   -log_l = 93.9762
+ my_f:  deltasq = 51.9103   theta1sq = 0.0794703   -log_l = 379.273
+ my_f:  deltasq = 51.9203   theta1sq = 0.0594703   -log_l = 55.6358
+ my_f:  deltasq = 51.9253   theta1sq = 0.0494703   -log_l = 57.3691
+    1  5.193e+01  4.947e-02 f() =  57.369 size = 0.011
+ my_f:  deltasq = 51.9353   theta1sq = 0.0494703   -log_l = 57.3702
+    2  5.193e+01  4.947e-02 f() =  57.369 size = 0.011
+ my_f:  deltasq = 51.9403   theta1sq = 0.0294703   -log_l = 74.6448
+ my_f:  deltasq = 51.9353   theta1sq = 0.0394703   -log_l = 65.3989
+converged to minimum at
+    3  5.193e+01  4.947e-02 f() =  57.369 size = 0.007
+  Maximum of acquisition occurs at -0.288  and is 0.00578867  err = 0.00141491
+  Cholesky:  New adapted 30 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+ my_f:  deltasq = 51.9253   theta1sq = 0.0494703   -log_l = 56.7258
+ my_f:  deltasq = 51.9353   theta1sq = 0.0494703   -log_l = 56.7269
+ my_f:  deltasq = 51.9253   theta1sq = 0.0594703   -log_l = 55.1916
+ my_f:  deltasq = 51.9153   theta1sq = 0.0594703   -log_l = 55.192
+converged to minimum at
+    1  5.193e+01  5.947e-02 f() =  55.192 size = 0.007
+  Maximum of acquisition occurs at -1.384  and is 0.000500104  err = 0.00130605
+  Cholesky:  New adapted 31 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+ my_f:  deltasq = 51.9253   theta1sq = 0.0594703   -log_l = 51.4975
+ my_f:  deltasq = 51.9353   theta1sq = 0.0594703   -log_l = 51.4971
+ my_f:  deltasq = 51.9253   theta1sq = 0.0694703   -log_l = 103.44
+ my_f:  deltasq = 51.9353   theta1sq = 0.0494703   -log_l = 53.8955
+ my_f:  deltasq = 51.9328   theta1sq = 0.0544703   -log_l = 50.693
+converged to minimum at
+    1  5.193e+01  5.447e-02 f() =  50.693 size = 0.005
+  Maximum of acquisition occurs at -1.864  and is 0.000270324  err = 0.00129945
+  Cholesky:  New adapted 32 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+ my_f:  deltasq = 51.9328   theta1sq = 0.0544703   -log_l = 48.4328
+ my_f:  deltasq = 51.9428   theta1sq = 0.0544703   -log_l = 48.4337
+ my_f:  deltasq = 51.9328   theta1sq = 0.0644703   -log_l = 60.2298
+ my_f:  deltasq = 51.9428   theta1sq = 0.0444703   -log_l = 57.1468
+ my_f:  deltasq = 51.9403   theta1sq = 0.0494703   -log_l = 52.0235
+converged to minimum at
+    1  5.193e+01  5.447e-02 f() =  48.433 size = 0.005
+  Maximum of acquisition occurs at 1.632  and is 0.000246043  err = 0.00129719
+  Cholesky:  New adapted 33 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+ my_f:  deltasq = 51.9328   theta1sq = 0.0544703   -log_l = 44.7135
+ my_f:  deltasq = 51.9428   theta1sq = 0.0544703   -log_l = 44.7144
+ my_f:  deltasq = 51.9328   theta1sq = 0.0644703   -log_l = 60.9116
+ my_f:  deltasq = 51.9428   theta1sq = 0.0444703   -log_l = 54.0527
+ my_f:  deltasq = 51.9403   theta1sq = 0.0494703   -log_l = 48.5043
+converged to minimum at
+    1  5.193e+01  5.447e-02 f() =  44.714 size = 0.005
+  Maximum of acquisition occurs at -0.776  and is 0.000152054  err = 0.00140238
+  Cholesky:  New adapted 34 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+-0.776 3.22217
+ my_f:  deltasq = 51.9328   theta1sq = 0.0544703   -log_l = 42.3463
+ my_f:  deltasq = 51.9428   theta1sq = 0.0544703   -log_l = 42.3473
+ my_f:  deltasq = 51.9328   theta1sq = 0.0644703   -log_l = 60.3764
+ my_f:  deltasq = 51.9428   theta1sq = 0.0444703   -log_l = 52.8555
+ my_f:  deltasq = 51.9403   theta1sq = 0.0494703   -log_l = 46.6578
+converged to minimum at
+    1  5.193e+01  5.447e-02 f() =  42.346 size = 0.005
+  Maximum of acquisition occurs at 0.472  and is 0.000111739  err = 0.00137414
+  Cholesky:  New adapted 35 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+-0.776 3.22217
+0.472 12.4474
+ my_f:  deltasq = 51.9328   theta1sq = 0.0544703   -log_l = 47.0662
+ my_f:  deltasq = 51.9428   theta1sq = 0.0544703   -log_l = 47.0655
+ my_f:  deltasq = 51.9328   theta1sq = 0.0644703   -log_l = 178.238
+ my_f:  deltasq = 51.9428   theta1sq = 0.0444703   -log_l = 50.2864
+ my_f:  deltasq = 51.9403   theta1sq = 0.0494703   -log_l = 45.2162
+converged to minimum at
+    1  5.194e+01  4.947e-02 f() =  45.216 size = 0.005
+  Maximum of acquisition occurs at 1.968  and is 5.77939e-05  err = 0.00106566
+  Cholesky:  New adapted 36 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+-0.776 3.22217
+0.472 12.4474
+1.968 9.57598
+ my_f:  deltasq = 51.9403   theta1sq = 0.0494703   -log_l = 42.2155
+ my_f:  deltasq = 51.9503   theta1sq = 0.0494703   -log_l = 42.2166
+ my_f:  deltasq = 51.9403   theta1sq = 0.0594703   -log_l = 70.593
+ my_f:  deltasq = 51.9503   theta1sq = 0.0394703   -log_l = 55.4048
+ my_f:  deltasq = 51.9478   theta1sq = 0.0444703   -log_l = 47.7953
+converged to minimum at
+    1  5.194e+01  4.947e-02 f() =  42.215 size = 0.005
+  Maximum of acquisition occurs at -1.568  and is 1.9326e-05  err = 0.00105482
+  Cholesky:  New adapted 37 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+-0.776 3.22217
+0.472 12.4474
+1.968 9.57598
+-1.568 0.599071
+ my_f:  deltasq = 51.9403   theta1sq = 0.0494703   -log_l = 36.8093
+ my_f:  deltasq = 51.9503   theta1sq = 0.0494703   -log_l = 36.8106
+ my_f:  deltasq = 51.9403   theta1sq = 0.0594703   -log_l = 64.6458
+ my_f:  deltasq = 51.9503   theta1sq = 0.0394703   -log_l = 51.3227
+ my_f:  deltasq = 51.9478   theta1sq = 0.0444703   -log_l = 43.0259
+converged to minimum at
+    1  5.194e+01  4.947e-02 f() =  36.809 size = 0.005
+  Maximum of acquisition occurs at 0.792  and is 1.82453e-05  err = 0.00105382
+  Cholesky:  New adapted 38 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+-0.776 3.22217
+0.472 12.4474
+1.968 9.57598
+-1.568 0.599071
+0.792 15.8164
+ my_f:  deltasq = 51.9403   theta1sq = 0.0494703   -log_l = 77.6726
+ my_f:  deltasq = 51.9503   theta1sq = 0.0494703   -log_l = 77.6655
+ my_f:  deltasq = 51.9403   theta1sq = 0.0594703   -log_l = 774.983
+ my_f:  deltasq = 51.9503   theta1sq = 0.0394703   -log_l = 51.1172
+ my_f:  deltasq = 51.9553   theta1sq = 0.0294703   -log_l = 69.3754
+    1  5.196e+01  2.947e-02 f() =  69.375 size = 0.011
+ my_f:  deltasq = 51.9653   theta1sq = 0.0294703   -log_l = 69.377
+    2  5.196e+01  2.947e-02 f() =  69.375 size = 0.011
+ my_f:  deltasq = 51.9703   theta1sq = 0.00947029   -log_l = 114.57
+ my_f:  deltasq = 51.9553   theta1sq = 0.0394703   -log_l = 51.118
+converged to minimum at
+    3  5.196e+01  3.947e-02 f() =  51.118 size = 0.007
+  Maximum of acquisition occurs at 0.288  and is 0.000173658  err = 0.000704899
+  Cholesky:  New adapted 39 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+-0.776 3.22217
+0.472 12.4474
+1.968 9.57598
+-1.568 0.599071
+0.792 15.8164
+0.288 10.6957
+ my_f:  deltasq = 51.9553   theta1sq = 0.0394703   -log_l = 47.9539
+ my_f:  deltasq = 51.9653   theta1sq = 0.0394703   -log_l = 47.9553
+ my_f:  deltasq = 51.9553   theta1sq = 0.0494703   -log_l = 111.658
+ my_f:  deltasq = 51.9653   theta1sq = 0.0294703   -log_l = 66.8609
+ my_f:  deltasq = 51.9628   theta1sq = 0.0344703   -log_l = 56.1822
+converged to minimum at
+    1  5.196e+01  3.947e-02 f() =  47.954 size = 0.005
+  Maximum of acquisition occurs at 1.32  and is 7.06403e-05  err = 0.000631125
+  Cholesky:  New adapted 40 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+-0.776 3.22217
+0.472 12.4474
+1.968 9.57598
+-1.568 0.599071
+0.792 15.8164
+0.288 10.6957
+1.32 16.9531
+ my_f:  deltasq = 51.9553   theta1sq = 0.0394703   -log_l = 52.8555
+ my_f:  deltasq = 51.9653   theta1sq = 0.0394703   -log_l = 52.8554
+ my_f:  deltasq = 51.9553   theta1sq = 0.0494703   -log_l = 269.8
+ my_f:  deltasq = 51.9653   theta1sq = 0.0294703   -log_l = 65.9748
+ my_f:  deltasq = 51.9628   theta1sq = 0.0344703   -log_l = 55.4967
+converged to minimum at
+    1  5.197e+01  3.947e-02 f() =  52.855 size = 0.005
+  Maximum of acquisition occurs at -1.2  and is 4.58542e-05  err = 0.000456965
+  Cholesky:  New adapted 41 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+-0.776 3.22217
+0.472 12.4474
+1.968 9.57598
+-1.568 0.599071
+0.792 15.8164
+0.288 10.6957
+1.32 16.9531
+-1.2 1.50582
+ my_f:  deltasq = 51.9653   theta1sq = 0.0394703   -log_l = 47.8616
+ my_f:  deltasq = 51.9753   theta1sq = 0.0394703   -log_l = 47.8616
+ my_f:  deltasq = 51.9653   theta1sq = 0.0494703   -log_l = 263.224
+ my_f:  deltasq = 51.9753   theta1sq = 0.0294703   -log_l = 62.8469
+ my_f:  deltasq = 51.9728   theta1sq = 0.0344703   -log_l = 51.4189
+converged to minimum at
+    1  5.197e+01  3.947e-02 f() =  47.862 size = 0.005
+  Maximum of acquisition occurs at -0.472  and is 2.0311e-05  err = 0.000456975
+  Cholesky:  New adapted 42 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+-0.776 3.22217
+0.472 12.4474
+1.968 9.57598
+-1.568 0.599071
+0.792 15.8164
+0.288 10.6957
+1.32 16.9531
+-1.2 1.50582
+-0.472 4.89539
+ my_f:  deltasq = 51.9653   theta1sq = 0.0394703   -log_l = 44.3007
+ my_f:  deltasq = 51.9753   theta1sq = 0.0394703   -log_l = 44.3009
+ my_f:  deltasq = 51.9653   theta1sq = 0.0494703   -log_l = 258.484
+ my_f:  deltasq = 51.9753   theta1sq = 0.0294703   -log_l = 61.307
+ my_f:  deltasq = 51.9728   theta1sq = 0.0344703   -log_l = 48.8687
+converged to minimum at
+    1  5.197e+01  3.947e-02 f() =  44.301 size = 0.005
+  Maximum of acquisition occurs at -1.976  and is 1.25534e-05  err = 0.000457088
+  Cholesky:  New adapted 43 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+-0.776 3.22217
+0.472 12.4474
+1.968 9.57598
+-1.568 0.599071
+0.792 15.8164
+0.288 10.6957
+1.32 16.9531
+-1.2 1.50582
+-0.472 4.89539
+-1.976 0.226975
+ my_f:  deltasq = 51.9653   theta1sq = 0.0394703   -log_l = 38.6621
+ my_f:  deltasq = 51.9753   theta1sq = 0.0394703   -log_l = 38.6624
+ my_f:  deltasq = 51.9653   theta1sq = 0.0494703   -log_l = 251.979
+ my_f:  deltasq = 51.9753   theta1sq = 0.0294703   -log_l = 56.8958
+ my_f:  deltasq = 51.9728   theta1sq = 0.0344703   -log_l = 43.8226
+converged to minimum at
+    1  5.197e+01  3.947e-02 f() =  38.662 size = 0.005
+  Maximum of acquisition occurs at 0.008  and is 3.89439e-06  err = 0.000457082
+  Cholesky:  New adapted 44 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+-0.776 3.22217
+0.472 12.4474
+1.968 9.57598
+-1.568 0.599071
+0.792 15.8164
+0.288 10.6957
+1.32 16.9531
+-1.2 1.50582
+-0.472 4.89539
+-1.976 0.226975
+0.008 8.28995
+ my_f:  deltasq = 51.9653   theta1sq = 0.0394703   -log_l = 34.2863
+ my_f:  deltasq = 51.9753   theta1sq = 0.0394703   -log_l = 34.2867
+ my_f:  deltasq = 51.9653   theta1sq = 0.0494703   -log_l = 248.068
+ my_f:  deltasq = 51.9753   theta1sq = 0.0294703   -log_l = 54.7676
+ my_f:  deltasq = 51.9728   theta1sq = 0.0344703   -log_l = 40.5469
+converged to minimum at
+    1  5.197e+01  3.947e-02 f() =  34.286 size = 0.005
+  Maximum of acquisition occurs at 1.056  and is 2.09441e-06  err = 0.000456821
+  Cholesky:  New adapted 45 x points are: 
+-2 0.225823
+2 9.55959
+-1.47385 0.779493
+-0.165399 6.95734
+-1.12416 1.76
+0.715459 14.9733
+1.73877 10.6514
+0.0776655 8.85921
+1.248 18.5437
+-0.664 3.79561
+-1.792 0.312351
+0.984 18.034
+0.392 11.6692
+1.544 12.8866
+-0.888 2.69891
+-0.408 5.29475
+1.904 9.70705
+-1.64 0.485023
+0.552 13.2512
+-1.288 1.23971
+1.392 15.4738
+0.216 10.0471
+-1.928 0.236191
+-0.536 4.51241
+0.864 16.6308
+-1 2.22582
+1.824 10.0552
+-0.056 7.78409
+1.12 19.5949
+-0.288 6.08771
+-1.384 0.984735
+-1.864 0.262815
+1.632 11.7264
+-0.776 3.22217
+0.472 12.4474
+1.968 9.57598
+-1.568 0.599071
+0.792 15.8164
+0.288 10.6957
+1.32 16.9531
+-1.2 1.50582
+-0.472 4.89539
+-1.976 0.226975
+0.008 8.28995
+1.056 18.8968
+ my_f:  deltasq = 51.9653   theta1sq = 0.0394703   -log_l = 1385.12
+ my_f:  deltasq = 51.9753   theta1sq = 0.0394703   -log_l = 1384.91
+ my_f:  deltasq = 51.9653   theta1sq = 0.0494703   -log_l = 8874.54
+ my_f:  deltasq = 51.9753   theta1sq = 0.0294703   -log_l = 66.6593
+ my_f:  deltasq = 51.9803   theta1sq = 0.0194703   -log_l = 85.5095
+    1  5.198e+01  1.947e-02 f() =  85.509 size = 0.011
+ my_f:  deltasq = 51.9903   theta1sq = 0.0194703   -log_l = 85.5114
+    2  5.198e+01  1.947e-02 f() =  85.509 size = 0.011
+ my_f:  deltasq = 51.9953   theta1sq = -0.000529706   -log_l = nan
+ my_f:  deltasq = 51.9803   theta1sq = 0.0294703   -log_l = 66.6589
+converged to minimum at
+    3  5.198e+01  2.947e-02 f() =  66.659 size = 0.007
+  Maximum of acquisition occurs at -0.832  and is 4.47204e-05  err = 0.000191204
+  Converged with num points = 45
