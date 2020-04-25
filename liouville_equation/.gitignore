@@ -1,0 +1,22 @@
+# ELF files
+*.o
+mqcl
+
+# output and input files
+*.txt
+*.png
+*.gif
+*log
+out*
+input
+*result*/
+
+# IDE configuration
+.vs*/
+*.sln
+*.vcxproj*
+
+# Doxygen document
+Doxyfile*
+html/
+latex/
