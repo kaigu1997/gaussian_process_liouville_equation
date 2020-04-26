@@ -1,0 +1,4 @@
+# IDE configuration
+.vs*/
+*.sln
+*.vcxproj*
