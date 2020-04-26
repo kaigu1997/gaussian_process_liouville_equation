@@ -1,0 +1,5 @@
+# Set default behavior to automatically normalize line endings
+* text eol=lf
+
+# pdf files are not plain text and merge as binary files
+*.pdf binary

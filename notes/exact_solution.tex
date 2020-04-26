@@ -1,0 +1,530 @@
+\documentclass[UTF8,12pt]{article}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{ctex}
+\usepackage{geometry}
+\geometry{left=25.4mm, right=25.4mm, top=31.8mm, bottom=31.8mm}
+\usepackage{graphicx}
+\usepackage{mathtools}
+\usepackage{physics}
+
+\allowdisplaybreaks
+
+\begin{document}
+    \title{精确解：薛定谔方程与刘维尔方程}
+    \author{顾锴}
+    \maketitle
+
+    \section{绝热表象展开}
+        在绝热表象下,
+        \begin{equation}
+            \hat{H}=\hat{T}_R+\hat{V}_b(\vb{R})+\hat{T}_r+\hat{V}_s(\vb{r})+\hat{V}_C(\vb{r},\vb{R})=\hat{T}_R+\hat{H}_0(\vb{r};\vb{R})
+        \end{equation}
+        并假设薛定谔方程的解可以写作
+        \begin{equation}
+            \Psi(\vb{r},\vb{R},t)=\sum_i{\psi_i(\vb{r};\vb{R})\chi_i(\vb{R},t)}
+        \end{equation}
+        其中$\psi_i$是由$\hat{H}_0$本征函数构成的完备基.\par
+        定义
+        \begin{equation}
+            \begin{cases}
+                \mel{\psi_i}{\hat{H}_0}{\psi_j}=\int{\dd{\vb{r}}\psi_i^*(\vb{r};\vb{R})\hat{H}_0(\vb{r};\vb{R})\psi_j(\vb{r};\vb{R})}=V_{ij}(\vb{R}) \\
+                \ip{\psi_i}{\psi_j}=\int{\dd{\vb{r}}\psi_i^*(\vb{r};\vb{R})\psi_j(\vb{r};\vb{R})}=S_{ij}(\vb{R}) \\
+                \mel{\psi_i}{\grad_k}{\psi_j}=\int{\dd{\vb{r}}\psi_i^*(\vb{r};\vb{R})\grad_k\psi_j(\vb{r};\vb{R})}=\vb{d}^k_{ij}(\vb{R})
+            \end{cases}
+        \end{equation}\par
+        对于含时薛定谔方程(Time-Dependent Schr\"odinger Equation, TDSE)，我们有
+        \begin{align}
+            &\mathrm{i}\hbar\sum_j{\psi_j(\vb{r};\vb{R})\pdv{\chi_j(\vb{R},t)}{t}}=\hat{T}_R\sum_j{\psi_j(\vb{r};\vb{R})\chi_j(\vb{R},t)}+\hat{H}_0\sum_j{\psi_j(\vb{r};\vb{R})\chi_j(\vb{R},t)} \\
+            \Rightarrow&\mathrm{i}\hbar\sum_j{S_{ij}(\vb{R})\pdv{\chi_j(\vb{R},t)}{t}}=\sum_j{V_{ij}(\vb{R})\chi_j(\vb{R},t)}-\int{\dd{\vb{r}\psi_i^*(\vb{r};\vb{R})}\sum_{j,k}{\frac{\hbar^2\grad_k^2}{2M_k}\psi_j(\vb{r};\vb{R})\chi_j(\vb{R},t)}} \\
+            =&\sum_j{V_{ij}(\vb{R})\chi_j(\vb{R},t)} \nonumber \\
+            &-\sum_k{\frac{\hbar^2}{2M_k}\sum_j{\qty[\mel{\psi_i}{\grad^2_k}{\psi_j}\chi_j(\vb{R},t)+2\mel{\psi_i}{\grad_k}{\psi_j}\grad_k\chi_j(\vb{R},t)+S_{ij}(\vb{R})\grad_k^2\chi_j(\vb{R},t)]}} \\
+            =&\sum_j{\qty(V_{ij}(\vb{R})-\sum_{k,l}\frac{\hbar^2\vb{d}_{il}^k(\vb{R})\vb{d}_{lj}^k(\vb{R})}{2M_k})\chi_j(\vb{R},t)} \nonumber \\
+            &-\sum_{j,k}{\qty[\frac{\hbar^2\vb{d}_{ij}^k}{M_k}\grad_k\chi_j(\vb{R},t)+\frac{\hbar^2S_{ij}(\vb{R})}{2M_k}\grad_k^2\chi_j(\vb{R},t)]}
+        \end{align}\par
+        如果我们假设环境的自由度是一(（即$k$只有一种取值，因此$\vb{R}$是一维的，$M_k$也退化为环境的质量$M_b$)，那么，对于满足重叠矩阵$S_{ij}(R)=\delta_{ij}$是单位矩阵且势能函数$V_{ij}(R)=\varepsilon_i(R)\delta_{ij}$是对角矩阵的绝热表象而言，
+        \begin{align}
+            \mathrm{i}\hbar\pdv{\chi_i(R,t)}{t}=&\varepsilon_i(R)\chi_i(R,t)-\sum_{j,k}{\frac{\hbar^2d_{ik}(R)d_{kj}(R)}{2M_b}\chi_j(R,t)} \nonumber \\
+            &-\sum_j{\frac{\hbar^2d_{ij}(R)}{M_b}\pdv{\chi_j(R,t)}{R}}-\frac{\hbar^2}{2M_b}\pdv[2]{\chi_i(R,t)}{R}
+        \end{align}
+        对于满足重叠矩阵$S_{ij}(R)=\delta_{ij}$也是单位矩阵而非绝热耦合$d_{ij}(R)=0$为零的透热表象而言，
+        \begin{equation}
+            \mathrm{i}\hbar\pdv{\chi_i(R,t)}{t}=\sum_j{V_{ij}(R)\chi_j(R,t)}-\frac{\hbar^2}{2M_b}\pdv[2]{\chi_i(R,t)}{R}
+        \end{equation}
+        而对于仅满足重叠矩阵$S_{ij}(R)=\delta_{ij}$是单位矩阵的力基而言，
+        \begin{align}
+            \mathrm{i}\hbar\pdv{\chi_i(R,t)}{t}=&\sum_j{\qty(V_{ij}(R)-\sum_{k}{\frac{\hbar^2d_{ik}(R)d_{kj}(R)}{2M_b}})\chi_j(R,t)} \nonumber \\
+            &-\sum_j{\frac{\hbar^2d_{ij}(R)}{M_b}\pdv{\chi_j(R,t)}{R}}-\frac{\hbar^2}{2M_b}\pdv[2]{\chi_i(R,t)}{R}
+        \end{align}
+        这里的哈密顿量为
+        \begin{equation}
+            H_{ij}=V_{ij}-\frac{\hbar^2}{2M_b}\qty(\sum_k{d_{ik}d_{kj}}+2d_{ij}\pdv{R}+\delta_{ij}\pdv[2]{R})
+        \end{equation}
+        且对于不同的基，势能$V_{ij}$和非绝热耦合$d_{ij}$的形式也可能不同。\par
+        为了证明哈密顿量的厄密性，我们需要考虑其中对空间的偏导数部分。因为${\chi_i}$是完备基，故而有
+        \begin{equation}
+            \pdv{\chi_j(R,t)}{R}=\sum_k{\ket{\chi_k}\mel{\chi_k}{\pdv{R}}{\chi_j}}=\sum_k{C_{jk}(t)\chi_k(R,t)}
+        \end{equation}
+        其中
+        \begin{align}
+            C_{jk}(t)=&\mel{\chi_k}{\pdv{R}}{\chi_j}=\int{\dd{R}\chi_k^*(R,t)\pdv{R}\chi_j(R,t)} \\
+            =&\eval{\chi_k^*(R,t)\chi_j(R,t)}_{-\infty}^{+\infty}-\int{\dd{R}\pdv{\chi_k^*(R,t)}{R}\chi_j(R,t)} \\
+            =&0-\qty(\int{\dd{R}\chi_j^*(R,t)\pdv{R}\chi_k(R,t)})^*=-C_{kj}^*
+        \end{align}
+        可以看到，$C$是反厄米的。这里我们利用了
+        \begin{equation}
+            \eval{\chi_k^*(R,t)\chi_j(R,t)}_{-\infty}^{+\infty}=0
+        \end{equation}
+        这是因为$\chi_i\in\mathcal{L}^2$是平方可积的。此外我们把非绝热耦合矩阵记为$D$，即$D_{ij}=d_{ij}$。因此，哈密顿量为
+        \begin{align}
+            H=V(R)-\frac{\hbar^2}{2M_b}\qty(D^2(R)+2D(R)C(t)+C(t)^2)
+        \end{align}
+        但是，厄密性要求$[D,C]=0$，而这不是平凡的。只有在透热表象下才能保证这一点。
+
+    \section{离散变量表象：有限差分方法}
+        我们想要计算离散变量表象(Discrete Variable Representation, DVR)下的导数，其中一种方法是有限差分。假设我们知道了格点上的函数值，
+        \begin{equation}
+            f_k=f(x_k)\qc x_k=k\Delta x\qc k\in\mathbb{Z}\qand\abs{k}\leqslant N
+        \end{equation}
+        这里，如果$N$是有限值，那么下述结果就是有限差分，例如$N=1$就给出了求导的三点公式。但如果$N\rightarrow\infty$且引入周期性边界条件我们可以得到与离散傅里叶变换（Discrete Fourier Transformation (DFT)）一样的结果。\par
+        使用拉格朗日插值多项式，
+        \begin{equation}
+            f(x)=\sum_{-N\leqslant k\leqslant N}{f_k\prod_{\substack{-N\leqslant l\leqslant N\\l\neq k}}{\frac{x-x_l}{x_k-x_l}}}
+        \end{equation}
+        原点处的一阶导为
+        \begin{align}
+            f'(0)=&\pdv{x}\ket{0}=\sum_k{\ket{k}\mel{k}{\pdv{x}}{0}}=\sum_k{\mel{k}{\pdv{x}}{0}f_k} \\
+            f'(0)=&\sum_{-N\leqslant k\leqslant N}{f_k\sum_{\substack{-N\leqslant l_1\leqslant N\\l_1\neq k}}{\frac{1}{x_k-x_{l_1}}\prod_{\substack{-N\leqslant l\leqslant N\\l\neq k,l_1}}{\frac{0-x_l}{x_k-x_l}}}} \\
+            =&\frac{f_0}{\Delta x}\sum_{\substack{-N\leqslant l\leqslant N\\l\neq 0}}{\frac{1}{l}}+\sum_{\substack{-N\leqslant k\leqslant N\\k\neq 0}}{\frac{f_k}{\Delta x}\sum_{\substack{-N\leqslant l_1\leqslant N\\l_1\neq k}}{\frac{1}{k-l_1}\prod_{\substack{-N\leqslant l\leqslant N\\l\neq k,l_1}}{\frac{l}{l-k}}}} \\
+            =&\sum_{\substack{-N\leqslant k\leqslant N\\k\neq 0}}{\frac{f_k}{2k\Delta x}\prod_{\substack{-N\leqslant l\leqslant N\\l\neq k,0,-k}}{\frac{l}{l-k}}} \\
+            =&\sum_{\substack{-N\leqslant k\leqslant N\\k\neq 0}}{\frac{f_k}{2k\Delta x}\prod_{\substack{1\leqslant l\leqslant N\\l\neq k}}{\frac{l^2}{l^2-k^2}}} \\
+        \end{align}
+        由于
+        \begin{align}
+            &\prod_{l=1}^{+\infty}{\frac{l^2}{l^2-x^2}}=\frac{\pi x}{\sin(\pi x)} \\
+            \Rightarrow&\prod_{\substack{l=1\\l\neq k}}^{+\infty}{\frac{l^2}{l^2-k^2}}=\lim_{x\rightarrow k}{\frac{k^2-x^2}{k^2}\prod_{l=1}^{+\infty}{\frac{l^2}{l^2-x^2}}} \\
+            =&\lim_{x\rightarrow k}{\frac{\pi x}{\sin(\pi x)}\frac{k^2-x^2}{k^2}}=-2(-1)^k
+        \end{align}
+        我们有
+        \begin{equation}
+            \mel{k}{\pdv{x}}{0}=-\frac{(-1)^k}{k\Delta x}(1-\delta_{k0})\Rightarrow\mel{m}{\pdv{x}}{n}=-\frac{(-1)^{m-n}}{(m-n)\Delta x}(1-\delta_{mn})
+        \end{equation}
+        以及
+        \begin{equation}
+            \eval{\pdv{\chi_i(R,t)}{R}}_{R=R_n,t=t_0}=\sum_{-N\leqslant m\leqslant N}{\chi_i(R_m,t_0)\mel{m}{\pdv{x}}{n}}=-\sum_{\substack{-N\leqslant m\leqslant N\\m\neq n}}{\frac{(-1)^{m-n}}{(m-n)\Delta x}\chi_i(R_m,t_0)}
+        \end{equation}\par
+        原点处的二阶导为
+        \begin{align}
+            f''(0)=&\pdv[2]{x}\ket{0}=\sum_k{\ket{k}\mel{k}{\pdv[2]{x}}{0}}=\sum_k{\mel{k}{\pdv[2]{x}}{0}f_k} \\
+            f''(0)=&\sum_{-N\leqslant k\leqslant N}{f_k\sum_{\substack{-N\leqslant l_1\leqslant N\\l_1\neq k}}{\frac{1}{x_k-x_{l_1}}\sum_{\substack{-N\leqslant l_2\leqslant N\\l_2\neq k,l_1}}{\frac{1}{x_k-x_{l_2}}\prod_{\substack{-N\leqslant l\leqslant N\\l\neq k,l_1,l_2}}{\frac{0-x_l}{x_k-x_l}}}}} \\
+            =&\frac{f_0}{\Delta x^2}\sum_{\substack{-N\leqslant l_1,l_2\leqslant N\\l_1,l_2\neq 0\\l_1\neq l_2}}{\frac{1}{l_1l_2}}+\sum_{\substack{-N\leqslant k\leqslant N\\k\neq0}}{\frac{f_k}{\Delta x^2}\sum_{\substack{-N\leqslant l_1,l_2\leqslant N\\l_1,l_2\neq k\\l_1\neq l_2}}{\frac{1}{(k-l_1)(k-l_2)}\prod_{\substack{-N\leqslant l\leqslant N\\l\neq k,l_1,l_2}}{\frac{l}{l-k}}}} \\
+            =&-\frac{2f_0}{\Delta x^2}\sum_{1\leqslant l\leqslant N}{\frac{1}{l^2}}+\sum_{\substack{-N\leqslant k\leqslant N\\k\neq0}}{\frac{f_k}{\Delta x^2}\sum_{\substack{-N\leqslant l_1\leqslant N\\l_1\neq k,0}}{\frac{2}{k(k-l_1)}\prod_{\substack{-N\leqslant l\leqslant N\\l\neq k,l_1,0}}{\frac{l}{l-k}}}} \\
+            =&-\frac{2f_0}{\Delta x^2}\sum_{1\leqslant l\leqslant N}{\frac{1}{l^2}}-\sum_{\substack{-N\leqslant k\leqslant N\\k\neq0}}{\frac{f_k}{k\Delta x^2}\sum_{\substack{-N\leqslant l_1\leqslant N\\l_1\neq k,0}}{\frac{1}{l_1}\prod_{\substack{-N\leqslant l\leqslant N\\l\neq k,-k,0}}{\frac{l}{l-k}}}} \\
+            =&\sum_{\substack{-N\leqslant k\leqslant N\\k\neq0}}{\frac{f_k}{k^2\Delta x^2}\prod_{\substack{1\leqslant l\leqslant N\\l\neq k}}{\frac{l^2}{l^2-k^2}}}-\frac{2f_0}{\Delta x^2}\sum_{1\leqslant l\leqslant N}{\frac{1}{l^2}}
+        \end{align}
+        因为$\sum\limits_{n=1}^{+\infty}{\frac{1}{n^2}}=\frac{\pi^2}{6}$，
+        \begin{align}
+            &D^2_{0k}=-\frac{1}{\Delta x^2}\qty[\frac{\pi^2}{3}\delta_{k0}+\frac{2(-1)^k}{k^2}(1-\delta_{k0})] \\
+            \Rightarrow&D^2_{mn}=-\frac{1}{\Delta x^2}\qty[\frac{\pi^2}{3}\delta_{mn}+\frac{2(-1)^{m-n}}{(m-n)^2}(1-\delta_{mn})]
+        \end{align}
+        且
+        \begin{align}
+            &\mel{k}{\pdv[2]{x}}{0}=-\frac{1}{\Delta x^2}\qty[\frac{\pi^2}{3}\delta_{k0}+\frac{2(-1)^k}{k^2}(1-\delta_{k0})] \\
+            \Rightarrow&\mel{m}{\pdv[2]{x}}{n}=-\frac{1}{\Delta x^2}\qty[\frac{\pi^2}{3}\delta_{mn}+\frac{2(-1)^{m-n}}{(m-n)^2}(1-\delta_{mn})]
+        \end{align}
+        注意这里$D^2\neq(D^1)^2$。
+
+    \section{离散变量表象：箱中粒子本征函数}
+        在这部分我们希望用一种不同的方式推导出导数的形式。由于体系可以看作是一个有限长范围内的一个粒子，我们可以考虑利用一维势箱的哈密顿量本征函数来作为基组展开。 假设格点为$x_0$到$x_N$，由于边界条件我们有$f_0=f_N=0$，那么我们需要$N-1$个函数，对应$N-1$个自由格点，它们满足
+        \begin{equation}
+            \begin{cases}
+                x_i=x_0+i\Delta x \\
+                \psi_n(x)=\sqrt{\frac{2}{L}}\sin(\frac{n\pi(x-x0)}{L}) \\
+                \psi_n(x_i)=\sqrt{\frac{2}{L}}\sin(\frac{n\pi i}{N})
+            \end{cases}
+        \end{equation}
+        其中$L=x_N-x_0$是势箱的长度，$\Delta x$$\Delta x=L/N$是格点间距。\par
+        对于动能项，我们有
+        \begin{align}
+            T_{ij}=&-\frac{\hbar^2}{2m}\Delta x\sum_{n=1}^{N-1}{\psi_n(x_i)\psi''_n(x_j)} \\
+            =&\frac{\hbar^2}{2m}\frac{2}{N}\frac{\pi^2}{L^2}\sum_{n=1}^{N-1}{n^2\sin(\frac{n\pi i}{N})\sin(\frac{n\pi j}{N})} \\
+            =&\frac{\pi^2\hbar^2}{2NmL^2}\qty[\sum_{n=0}^{N-1}{n^2\cos(\frac{n\pi(i-j)}{N})}-\sum_{n=0}^{N-1}{n^2\cos(\frac{n\pi(i+j)}{N})}] \\
+            =&\frac{\pi^2\hbar^2}{4mL^2}\begin{cases}
+                (2N^2+1)/3-\csc^2\qty(i\pi/N),\qif i=j\\
+                \csc^2\qty((i-j)\pi/2N)-\csc^2\qty((i+j)\pi/2N),\qif i\neq j
+            \end{cases}
+        \end{align}
+        因为有$Nk\pi=(i\pm j)\pi\Rightarrow\sin(Nk\pi)=0,\cos(Nk\pi)=(-1)^{i+j}$，
+        \begin{align}
+            \sum_{n=1}^{N-1}{n^2\cos(nk\pi)}=\frac{(-1)^{i+j}N}{2}\qty(\csc^2\qty(\frac{k\pi}{2})-N)
+        \end{align}
+        现在，如果我们将盒子展开到$\mathbb{R}$，由于$x_i=x_0+i\Delta x$和$x_0\rightarrow-\infty$以及$\Delta x$是有限值，$i+j$是无穷而$i-j$是有限的，所以
+        \begin{equation}
+            T_{ij}=\frac{\hbar^2}{2m\Delta x}\begin{cases}
+                \pi^2/3,\qif i=j \\
+                2/(i-j)^2,\qif i\neq j
+            \end{cases}
+        \end{equation}\par
+        对于动量，类似地，有
+        \begin{align}
+            p_{ij}=&-\mathrm{i}\hbar\Delta x\sum_{n=1}^{N-1}{\psi_n(x_i)\psi'_n(x_j)} \\
+            =&-\mathrm{i}\hbar\frac{2}{N}\frac{\pi}{L}\sum_{n=1}^{N-1}{n\sin(\frac{n\pi i}{N})\cos(\frac{n\pi j}{N})} \\
+            =&\frac{\pi\hbar}{\mathrm{i}NL}\qty[\sum_{n=1}^{N-1}{n\sin(\frac{n\pi(i+j)}{N})}+\sum_{n=1}^{N-1}{n\sin(\frac{n\pi(i-j)}{N})}] \\
+            =&\frac{\mathrm{i}\pi\hbar}{2L}\begin{cases}
+                \cot(i\pi/N),\qif i=j \\
+                \cot((i+j)\pi/2N)+\cot((i-j)\pi/2N),\qif i\neq j
+            \end{cases}
+        \end{align}
+        因为
+        \begin{equation}
+            \sum_{n=1}^{N-1}{n\sin(n\pi k)}=-\frac{(-1)^{i+j}N\cot{k\pi/2}}{2}
+        \end{equation}
+        类似地，将其扩展到$\mathbb{R}$后，$i+j$和$i$变成无穷大,
+        \begin{equation}
+            p_{ij}=\frac{(-1)^{i+j}\mathrm{i}\hbar}{(i-j)\Delta x}
+        \end{equation}\par
+        因此。箱中粒子本征函数的求导结果为
+        \begin{align}
+            &\mel{m}{\pdv{x}}{n}=-\frac{(-1)^{m+n}}{(m-n)\Delta x}(1-\delta_{mn}) \\
+            &\mel{m}{\pdv[2]{x}}{n}=-\frac{1}{\Delta x^2}{\frac{\pi^2}{3}\delta_{mn}+\frac{2(-1)^{m+n}}{(m-n)^2}(1-\delta_{mn})}
+        \end{align}
+        这与无穷阶有限差分是一致的。\par
+        但是上述过程对动量的导数不是严格的。严格推导如下：在DVR下，
+        \begin{equation}
+            \ip{x_i}{\psi_m}=\sqrt{\Delta x}\psi_m(x_i)
+        \end{equation}
+        因此，
+        \begin{align}
+            \ip{x_i}{x_j}=&\sum_{m,n}{\ip{x_i}{\psi_m}\ip{\psi_m}{\psi_n}\ip{\psi_n}{x_j}} \\
+            =&\frac{2}{N}\sum_{m,n}{\sin(\frac{m\pi i}{N})\sin(\frac{n\pi j}{N})\delta_{mn}} \\
+            =&\frac{1}{N}\sum_n{\cos(\frac{n\pi(i-j)}{N})-\cos(\frac{n\pi(i+j)}{N})}=\delta_{ij} \\
+            \mel{x_i}{\hat{T}}{x_j}=&\sum_{m,n}{\ip{x_i}{\psi_m}\mel{\psi_m}{\hat{T}}{\psi_n}\ip{\psi_n}{x_j}} \\
+            =&\frac{2\Delta x}{L}\sum_{m,n}{\sin(\frac{m\pi i}{N})\frac{n^2\pi^2\hbar^2}{2mL^2}\delta_{mn}\sin(\frac{n\pi j}{N})} \\
+            =&\frac{\pi^2\hbar^2}{NmL^2}\sum_n{n^2\sin(\frac{n\pi i}{N})\sin(\frac{n\pi j}{N})} \\
+            =&\frac{\pi^2\hbar^2}{4mL^2}\begin{cases}
+                (2N^2+1)/3-\csc^2\qty(i\pi/N),\qif i=j\\
+                \csc^2\qty((i-j)\pi/2N)-\csc^2\qty((i+j)\pi/2N),\qif i\neq j
+            \end{cases}
+        \end{align}
+        但是，这个推导是有问题的，例如我们无法得到$\mel{x_i}{f(\hat{x})}{x_j}=f(x_i)\delta_{ij}$，比如$f=V$的情况。对于动量（或者说一阶导）也有类似的问题
+        \begin{align}
+            \mel{x_i}{\pdv{x}}{x_j}=&\sum_{m,n}{\ip{x_i}{\psi_m}\mel{\psi_m}{\pdv{x}}{\psi_n}\ip{\psi_n}{x_j}} \\
+            =&\frac{2}{N}\sum_{m,n}{\sin(\frac{m\pi i}{N})\sin(\frac{n\pi j}{N})\frac{4mn(1-(-1)^{m+n})}{L(m^2-n^2)}} \\
+            =&-\frac{4}{NL}\sum_m{m\sin(\frac{m\pi i}{N})\sum_{n\neq m(\mathrm{mod}2)}{\qty(\frac{1}{n+m}+\frac{1}{n-m})\sin(\frac{j\pi n}{N})}}
+        \end{align}
+
+    \section{绝热表象展开的TDSE与DVR的结合}
+        接下来的问题是把TDSE写成DVR矩阵的形式，即
+        \begin{equation}
+            \mathrm{i}\hbar\pdv{\chi}{t}=H\chi
+        \end{equation}
+        或者
+        \begin{equation}
+            \mathrm{i}\hbar\pdv{\chi_{mn}}{t}=\sum_{m',n'}{H_{mn,m'n'}\chi_{m'n'}}
+        \end{equation}
+        其中
+        \begin{align}
+            &\chi=\qty[\chi_0(R_0)\ \chi_0(R_1)\ \cdots\ \chi_0(R_{n})\ \chi_1(R_0)\ \cdots\ \chi_1(R_{N-1})\ \cdots\ \chi_{M-1}(R_{N-1})]^T \\
+            &\chi_{mn}=\chi_m(R_n)=\chi_m(R_0+n\Delta x)
+        \end{align}
+        $N$是格点数，$M$是势能面数。\par
+        由于我们无法确认非透热表象下的哈密顿量是否厄米。我们在这里只构建透热表象哈密顿量，
+        \begin{align}
+            \sum_{m',n'}{H_{mn,m'n'}\chi_{m'n'}}=&\mathrm{i}\hbar\eval{\pdv{\chi_m(R,t)}{t}}_{R=R_n} \\
+            =&\sum_{m'}{V_{mm'}(R_n)\chi_{m'}(R_n)}-\frac{\hbar^2}{2M_b}\eval{\pdv[2]{\chi_{m'}}{R}}_{R=R_n} \\
+            =&\sum_{m'}{V_{mm'n}\chi_{m'n'}\delta_{nn'}}+\frac{\hbar^2\delta_{mm'}}{2M_b\Delta x^2}\sum_{m'n'}{\qty[\frac{\pi^2}{3}\chi_{m'n'}\delta_{nn'}+\frac{2(-1)^{n'-n}}{(n'-n)^2}(1-\delta_{nn'})]}
+        \end{align}
+        因此,
+        \begin{equation}
+            H_{mn,m'n'}=V_{mm'n}\delta_{nn'}+\frac{\pi^2\hbar^2}{6M_b\Delta x^2}\delta_{mm'}\delta_{nn'}+\frac{(-1)^{n'-n}\hbar^2}{M_b(n'-n)^2\Delta x^2}(1-\delta_{nn'})\delta_{mm'}
+        \end{equation}
+        其中三指标的$V$和$d$是指在对应位置上的矩阵元，例如$V_{mkn}=V_{mk}(R_n)$。我们可以看到，如果$V$是厄米的（在没有通过吸收势对对角元引入虚数项的情况下），哈密顿量确实是厄米的。\par
+        对于非透热表象则无需考虑厄密性，哈密顿量可以写作
+        \begin{align}
+            \sum_{m',n'}{H_{mn,m'n'}\chi_{m'n'}}=&\mathrm{i}\hbar\eval{\pdv{\chi_m(R,t)}{t}}_{R=R_n} \\
+            =&\sum_{m'}{V_{mm'}(R_n)\chi_{m'}(R_n)}-\frac{\hbar^2}{2M_b}\sum_{m',k}{d_{mk}(R_n)d_{km'}(R_n)\chi_{m'}(R_n)} \nonumber \\
+            &-\frac{\hbar^2}{M_b}\sum_{m'}{d_{mm'}(R_n)\eval{\pdv{\chi_{m'}}{R}}_{R=R_n}}-\frac{\hbar^2}{2M_b}\eval{\pdv[2]{\chi_{m'}}{R}}_{R=R_n} \\
+            =&\sum_{m'}{\qty(V_{mm'n}-\frac{\hbar^2}{2M_b}\sum_k{d_{mkn}d_{km'n}})\chi_{m'n'}\delta_{nn'}} \nonumber \\
+            &+\frac{\hbar^2}{M_b\Delta x}\sum_{m',n'}{d_{mm'n}\frac{(-1)^{n+n'}}{n'-n}\chi_{m'n'}(1-\delta_{nn'})} \nonumber \\
+            &+\frac{\hbar^2\delta_{mm'}}{2M_b\Delta x^2}\sum_{m'n'}{\qty[\frac{\pi^2}{3}\delta_{nn'}+\frac{2(-1)^{n'-n}}{(n'-n)^2}(1-\delta_{nn'})]\chi_{m'n'}}
+        \end{align}
+        因此
+        \begin{align}
+            H_{mn,m'n'}=&\qty(V_{mm'n}-\frac{\hbar^2}{2M_b}\sum_k{d_{mkn}d_{km'n}})\delta_{nn'}+\frac{(-1)^{n+n'}\hbar^2}{(n'-n)M_b\Delta x}d_{mm'n}(1-\delta_{nn'}) \nonumber \\
+            &+\qty[\frac{\pi^2\hbar^2}{6M_b\Delta x^2}\delta_{nn'}+\frac{(-1)^{n'-n}\hbar^2}{M_b(n'-n)^2\Delta x^2}(1-\delta_{nn'})]\delta_{mm'}
+        \end{align}
+        只有\textbf{没有}吸收势的透热表象哈密顿量是厄米的并且可以对角化来演化动力学，其它情况下则需要RK4或者类似的方法。
+
+    \section{离散傅里叶变换}
+        对于一般的傅里叶变换，我们只在意$f(x)$在$[0,L]$上的行为
+        \begin{align}
+            &f(x)=\sum_k{\gamma_k \exp(\frac{2k\pi\mathrm{i}}{L}x)} \\
+            &\gamma_k=\frac{1}{L}\int_0^L{\dd{x}f(x)\exp(-\frac{2k\pi\mathrm{i}}{L}x)}
+        \end{align}
+        定义$\Delta x=\frac{L}{N}$以及$x_n=n\Delta x$，那么如果我们知道所有的格点上的函数值$f(x_n)=f_n$,
+        \begin{equation}
+            \gamma_k=\frac{\Delta x}{L}\sum_{n=0}^{N-1}{f(x_n)\exp(-\frac{2k\pi\mathrm{i}}{L}x_n)}=\frac{1}{N}\sum_{n=0}^{N-1}{f(x_n)\exp(-\frac{2nk\pi\mathrm{i}}{N})}\qc k=0,1,\dots,N-1
+        \end{equation}
+        如果记$c_k=N\gamma_k$,
+        \begin{equation}
+            c_k=\sum_{n=0}^{N-1}{f(x_n)\exp(-\frac{2nk\pi\mathrm{i}}{N})}\qc f_n=\frac{1}{N}\sum_{k=0}^{N-1}{c_k\exp(\frac{2nk\pi\mathrm{i}}{N})}
+        \end{equation}\par
+        现在，如果区间变为$[a,b]$，并记$x'_n=x_n+a$和$f_n=f(x'_n)$，那么
+        \begin{equation}
+            f(x)=\sum_k{\gamma_k \exp(\frac{2k\pi\mathrm{i}}{L}x)}
+        \end{equation}
+        以及
+        \begin{align}
+            \gamma_k=&\frac{1}{L}\int_a^b{\dd{x}f(x)\exp(-\frac{2k\pi\mathrm{i}}{L}x)} \\
+            =&\frac{1}{L}\int_0^L{\dd{x}f(x+a)\exp(-\frac{2k\pi\mathrm{i}}{L}(x+a))} \\
+            =&\exp(-\frac{2k\pi\mathrm{i}a}{L})\frac{\Delta x}{L}\sum_{n=0}^{N-1}{f(x_n+a)\exp(-\frac{2k\pi\mathrm{i}}{L}x_n)} \\
+            =&\exp(-\frac{2k\pi\mathrm{i}a}{L})\frac{1}{N}\sum_{n=0}^{N-1}{f_n\exp(-\frac{2nk\pi\mathrm{i}}{N})}
+        \end{align}
+        如果
+        \begin{equation}
+            c'_k=N\exp(\frac{2k\pi\mathrm{i}a}{L})\gamma_k=\sum_{n=0}^{N-1}{f_n\exp(-\frac{2nk\pi\mathrm{i}}{N})}
+        \end{equation}
+        那么
+        \begin{equation}
+            f(x)=\frac{1}{N}\sum_{k=0}^{N-1}{c'_k\exp(-\frac{2k\pi\mathrm{i}a}{L}) \exp(\frac{2k\pi\mathrm{i}}{L}x)}=\frac{1}{N}\sum_{k=0}^{N-1}{c'_k\exp(\frac{2k\pi\mathrm{i}}{L}(x-a))}
+        \end{equation}
+        对于格点，我们有
+        \begin{equation}
+            f_n=\frac{1}{N}\sum_{k=0}^{N-1}{\exp(\frac{2k\pi\mathrm{i}}{L}(x_n+a-a))}=\frac{1}{N}\sum_{k=0}^{N-1}{c'_k\exp(\frac{2nk\pi\mathrm{i}}{N})}
+        \end{equation}
+        且对于$r$阶导数，我们需要将$k$从$[0,N-1]$移到$[-N/2, N/2]$，即
+        \begin{align}
+            \dv[2a]{f}{x}=&\frac{1}{N}\sum_{0\leqslant k\leqslant\frac{N}{2}}{c'_k\qty(\frac{2k\pi\mathrm{i}}{L})^{2a}\exp(\frac{2k\pi\mathrm{i}}{L}(x-a))} \nonumber \\
+            &+\frac{1}{N}\sum_{\frac{N}{2}<k\leqslant N}{c'_k\qty(\frac{2(k-N)\pi\mathrm{i}}{L})^{2a}\exp(\frac{2k\pi\mathrm{i}}{L}(x-a))} \\
+            \dv[2a+1]{f}{x}=&\frac{1}{N}\sum_{0\leqslant k<\frac{N}{2}}{c'_k\qty(\frac{2k\pi\mathrm{i}}{L})^{2a+1}\exp(\frac{2k\pi\mathrm{i}}{L}(x-a))} \nonumber \\
+            &+\frac{1}{N}\sum_{\frac{N}{2}<k\leqslant N}{c'_k\qty(\frac{2(k-N)\pi\mathrm{i}}{L})^{2a+1}\exp(\frac{2k\pi\mathrm{i}}{L}(x-a))}
+        \end{align}
+        在格点上则有
+        \begin{align}
+            \eval{\dv[2a]{f}{x}}_{x=x'_n}=&\frac{1}{N}\sum_{0\leqslant k\leqslant\frac{N}{2}}{c'_k\qty(\frac{2k\pi\mathrm{i}}{L})^{2a}\exp(\frac{2nk\pi\mathrm{i}}{N})} \nonumber \\
+            &+\frac{1}{N}\sum_{\frac{N}{2}<k\leqslant N}{c'_k\qty(\frac{2(k-N)\pi\mathrm{i}}{L})^{2a}\exp(\frac{2nk\pi\mathrm{i}}{N})} \\
+            \eval{\dv[2a+1]{f}{x}}_{x=x'_n}=&\frac{1}{N}\sum_{0\leqslant k<\frac{N}{2}}{c'_k\qty(\frac{2k\pi\mathrm{i}}{L})^{2a+1}\exp(\frac{2nk\pi\mathrm{i}}{N})} \nonumber \\
+            &+\frac{1}{N}\sum_{\frac{N}{2}<k\leqslant N}{c'_k\qty(\frac{2(k-N)\pi\mathrm{i}}{L})^{2a+1}\exp(\frac{2nk\pi\mathrm{i}}{N})}
+        \end{align}
+
+    \section{刘维尔方程中的有限差分}
+        混合量子经典刘维尔方程(Mixed Quantum-Classical Liouville Equation, MQCLE)为
+        \begin{align}
+            \pdv{\hat{\rho}_W(R,P,t)}{t}=&-\frac{\mathrm{i}}{\hbar}\comm{\hat{H}_W(R,P)}{\hat{\rho}_W(R,P,t)} \nonumber \\
+            &+\frac{1}{2}\qty(\pb{\hat{H}_W(R,P)}{\hat{\rho}_W(R,P,t)}-\pb{\hat{\rho}_W(R,P,t)}{\hat{H}_W(R,P)})
+        \end{align}
+        其中的对易子可以直接计算，而泊松括号可以用类似上文的方法计算。\par
+        对于一般基$\ket{\alpha(R)}$,
+        \begin{align}
+            &\pdv{\rho_W^{\alpha\beta}(R,P,t)}{t} \nonumber \\
+            =&\mel{\alpha}{-\frac{\mathrm{i}}{\hbar}\comm{\hat{H}_W}{\hat{\rho}_W}+\frac{1}{2}\qty(\pb{\hat{H}_W}{\hat{\rho}_W}-\pb{\hat{\rho}_W}{\hat{H}_W})}{\beta} \\
+            =&\sum_{\gamma}{\qty(-\frac{\mathrm{i}}{\hbar}H_W^{\alpha\gamma}\rho_W^{\gamma\beta}+\frac{\mathrm{i}}{\hbar}\rho_W^{\alpha\gamma}H_W^{\gamma\beta})}-\frac{1}{2}\sum_{\gamma}{\qty(F_W^{\alpha\gamma}\pdv{\rho_W^{\gamma\beta}}{P}+\pdv{\rho_W^{\alpha\gamma}}{P}F_W^{\gamma\beta})} \nonumber \\
+            &+\sum_{\gamma}{\qty(\frac{P}{M}\rho_W^{\alpha\gamma}d_{\gamma\beta}-\frac{P}{M}d_{\alpha\gamma}\rho_W^{\gamma\beta})}-\frac{P}{M}\pdv{\rho_W^{\alpha\beta}}{R} \\
+            =&-\frac{1}{2}\sum_{\gamma}{\qty[F_W^{\alpha\gamma}(R)\pdv{\rho_W^{\gamma\beta}(R,P,t)}{P}+\pdv{\rho_W^{\alpha\gamma}(R,P,t)}{P}F_W^{\gamma\beta}(R)]}-\frac{P}{M}\pdv{\rho_W^{\alpha\beta}(R,P,t)}{R} \nonumber \\
+            &+\sum_{\gamma}{\rho_W^{\alpha\gamma}(R,P,t)\qty[\frac{\mathrm{i}}{\hbar}H_W^{\gamma\beta}(R,P)+\frac{P}{M}d_{\gamma\beta}(R)]} \nonumber \\
+            &-\sum_{\gamma}{\qty[\frac{\mathrm{i}}{\hbar}H_W^{\alpha\gamma}(R,P)+\frac{P}{M}d_{\alpha\gamma}(R)]\rho_W^{\gamma\beta}(R,P,t)}
+        \end{align}
+        其中$\hat{F}_W=-\pdv{\hat{H}_W}{R}$.\par
+        对于哈密顿量$H_W^{\alpha\beta}(R,P)=\varepsilon_\alpha(R,P)\delta_{\alpha\beta}$是对角的绝热表象而言，
+        \begin{align}
+            \pdv{\rho_W^{\alpha\beta}(R,P,t)}{t}=&-\qty( \frac{\mathrm{i}[\varepsilon_\alpha(R,P)-\varepsilon_\beta(R,P)]}{\hbar}+\frac{P}{M}\pdv{R}+\frac{F_W^{\alpha\alpha}(R)+F_W^{\beta\beta}(R)}{2}\pdv{P})\rho_W^{\alpha\beta} \nonumber \\
+            &-\sum_{\gamma}{d_{\alpha\gamma}(R)\qty(\frac{P}{M}+\frac{\varepsilon_\alpha(R,P)-\varepsilon_{\gamma}(R,P)}{2}\pdv{P})\rho_W^{\gamma\beta}(R,P,t)} \nonumber \\
+            &+\sum_{\gamma}{d_{\gamma\beta}(R)\qty(\frac{P}{M}+\frac{\varepsilon_\beta(R,P)-\varepsilon_{\gamma}(R,P)}{2}\pdv{P})\rho_W^{\alpha\gamma}(R,P,t)}
+        \end{align}
+        对于非绝热耦合$d_{\alpha\beta}(R)=0$始终为零的透热表象而言，
+        \begin{align}
+            \pdv{\rho_W^{\alpha\beta}(R,P,t)}{t}=&-\frac{1}{2}\sum_{\gamma}{\qty[F_W^{\alpha\gamma}(R)\pdv{\rho_W^{\gamma\beta}(R,P,t)}{P}+\pdv{\rho_W^{\alpha\gamma}(R,P,t)}{P}F_W^{\gamma\beta}(R)]}-\frac{P}{M}\pdv{\rho_W^{\alpha\beta}(R,P,t)}{R} \nonumber \\
+            &+\frac{\mathrm{i}}{\hbar}\sum_{\gamma}{\qty[\rho_W^{\alpha\gamma}(R,P,t)H_W^{\gamma\beta}(R,P)-H_W^{\alpha\gamma}\rho_W^{\gamma\beta}]}
+        \end{align}
+        对于“力”$F_W^{\alpha\beta}(R)=-\mel{\alpha;R}{\pdv{\hat{H}_W(R,P)}{R}}{\beta;R}=f_\alpha(R)\delta_{\alpha\beta}$是对角的力基而言，
+        \begin{align}
+            \pdv{\rho_W^{\alpha\beta}(R,P,t)}{t}=&-\frac{f_\alpha(R)+f_\beta(R)}{2}\pdv{\rho_W^{\alpha\beta}(R,P,t)}{P}-\frac{P}{M}\pdv{\rho_W^{\alpha\beta}(R,P,t)}{R} \nonumber \\
+            &+\sum_{\gamma}{\rho_W^{\alpha\gamma}(R,P,t)\qty[\frac{\mathrm{i}}{\hbar}H_W^{\gamma\beta}(R,P)+\frac{P}{M}d_{\gamma\beta}(R)]} \nonumber \\
+            &-\sum_{\gamma}{\qty[\frac{\mathrm{i}}{\hbar}H_W^{\alpha\gamma}(R,P)+\frac{P}{M}d_{\alpha\gamma}(R)]\rho_W^{\gamma\beta}(R,P,t)}
+        \end{align}\par
+        为了计算对$R$和对$P$的导数，我们可以利用类似的格点方法。由于我们只需要处理一阶导，拉格朗日插值就足够处理。因此
+        \begin{align}
+            &\eval{\pdv{\rho^{\alpha\beta}_W(R,P,t)}{R}}_{R_i,P_j,t}=-\sum_{k\neq i}{\frac{(-1)^{k-i}}{(k-i)\Delta x}\rho^{\alpha\beta}_W(R_k,P_j,t)} \\
+            &\eval{\pdv{\rho^{\alpha\beta}_W(R,P,t)}{P}}_{R_i,P_j,t}=-\sum_{k\neq i}{\frac{(-1)^{k-j}}{(k-j)\Delta p}\rho^{\alpha\beta}_W(R_i,P_k,t)}
+        \end{align}
+        其中$\Delta x=\frac{x_{\max}-x_{\min}}{N}$, $p\in\left[-\frac{\pi\hbar}{\Delta x},\frac{\pi\hbar}{\Delta x}\right)$，$\Delta p=\frac{\pi\hbar}{N\Delta x}=\frac{\pi\hbar}{x_{\max}-x_{\min}}$。这里的$N$是其中一个方向（$x$ 或者$p$）上的格点数；换句话说，相空间中共有$N^2$个格点。\par
+        基于这些方程，我们可以推导出不同基下的刘维尔超算符的形式，
+        \begin{align}
+            \eval{\pdv{\rho_W^{\alpha\beta}(R,P,t)}{t}}_{R_i,P_j,t}=&-\frac{1}{2}\sum_{\gamma}{F_W^{\alpha\gamma}(R_i)\eval{\pdv{\rho_W^{\gamma\beta}(R,P,t)}{P}}_{R_i,P_j,t}} \nonumber \\
+            &-\frac{1}{2}\sum_{\gamma}{\eval{\pdv{\rho_W^{\alpha\gamma}(R,P,t)}{P}}_{R_i,P_j,t}F_W^{\gamma\beta}(R_i)}-\frac{P_j}{M}\eval{\pdv{\rho_W^{\alpha\beta}(R,P,t)}{R}}_{R_i,P_j,t} \nonumber \\
+            &+\sum_{\gamma}{\rho_W^{\alpha\gamma}(R_i,P_j,t)\qty[\frac{\mathrm{i}}{\hbar}H_W^{\gamma\beta}(R_i,P_j)+\frac{P_j}{M}d_{\gamma\beta}(R_i)]} \nonumber \\
+            &-\sum_{\gamma}{\qty[\frac{\mathrm{i}}{\hbar}H_W^{\alpha\gamma}(R_i,P_j)+\frac{P_j}{M}d_{\alpha\gamma}(R_i)]\rho_W^{\gamma\beta}(R_i,P_j,t)} \\
+            =&\sum_{\alpha', j'\neq j}{\frac{(-1)^{j'-j}}{2(j'-j)\Delta p}F_W^{\alpha\alpha'}(R_i)\rho_W^{\alpha'\beta}(R_i,P_{j'},t)} \nonumber \\
+            &+\sum_{\beta',j'\neq j}{\frac{(-1)^{j'-j}}{2(j'-j)\Delta p}F_W^{\beta'\beta}(R_i)\rho_W^{\alpha\beta'}(R_i,P_{j'},t)} \nonumber \\
+            &+\sum_{i'\neq i}{\frac{(-1)^{i'-i}P_j}{(i'-i)M\Delta x}\rho_W^{\alpha\beta}(R_{i'},P_j,t)} \nonumber \\
+            &+\sum_{\beta'}{\qty[\frac{\mathrm{i}}{\hbar}H_W^{\beta'\beta}(R_i,P_j)+\frac{P_j}{M}d_{\beta'\beta}(R_i)]\rho_W^{\alpha\beta'}(R_i,P_j,t)} \nonumber \\
+            &-\sum_{\alpha'}{\qty[\frac{\mathrm{i}}{\hbar}H_W^{\alpha\alpha'}(R_i,P_j)+\frac{P_j}{M}d_{\alpha\alpha'}(R_i)]\rho_W^{\alpha'\beta}(R_i,P_j,t)} \\
+            =&-\mathrm{i}\sum_{\mathclap{\alpha'\beta'i'j'}}{\hat{\mathcal{L}}_{\alpha\beta ij,\alpha'\beta'i'j'}\rho_W^{\alpha'\beta'}(R_{i'},P_{j'},t)} \\
+            \Rightarrow\hat{\mathcal{L}}_{\alpha\beta ij,\alpha'\beta'i'j'}=&\frac{\mathrm{i}(-1)^{j'-j}}{2(j'-j)\Delta p}[F_W^{\alpha\alpha'}(R_i)\delta_{\beta\beta'}+F_W^{\beta'\beta}(R_i)\delta_{\alpha\alpha'}]\delta_{ii'}(1-\delta_{jj'}) \nonumber \\
+            &+\frac{\mathrm{i}(-1)^{i'-i}P_j}{(i'-i)M\Delta x}\delta_{\alpha\alpha'}\delta_{\beta\beta'}(1-\delta_{ii'})\delta_{jj'} \nonumber \\
+            &+\frac{1}{\hbar}[H_W^{\alpha\alpha'}(R_i,P_j)\delta_{\beta\beta'}-H_W^{\beta'\beta}(R_i,P_j)\delta_{\alpha\alpha'}]\delta_{ii'}\delta_{jj'} \nonumber \\
+            &+\frac{\mathrm{i}P_j}{M}[d_{\beta'\beta}(R_i)\delta_{\alpha\alpha'}-d_{\alpha\alpha'}(R_i)\delta_{\beta\beta'}]\delta_{ii'}\delta_{jj'}
+        \end{align}
+        可以看出，刘维尔超算符在各个基下都是厄米的。\par
+        对于$d_{\alpha\beta}(R)=0$的透热表象，
+        \begin{align}
+            \hat{\mathcal{L}}_{\alpha\beta ij,\alpha'\beta'i'j'}=&\frac{\mathrm{i}(-1)^{j'-j}}{2(j'-j)\Delta p}[F_W^{\alpha\alpha'}(R_i)\delta_{\beta\beta'}+F_W^{\beta'\beta}(R_i)\delta_{\alpha\alpha'}]\delta_{ii'}(1-\delta_{jj'}) \nonumber \\
+            &+\frac{\mathrm{i}(-1)^{i'-i}P_j}{(i'-i)M\Delta x}\delta_{\alpha\alpha'}\delta_{\beta\beta'}(1-\delta_{ii'})\delta_{jj'} \nonumber \\
+            &+\frac{1}{\hbar}[H_W^{\alpha\alpha'}(R_i,P_j)\delta_{\beta\beta'}-H_W^{\beta'\beta}(R_i,P_j)\delta_{\alpha\alpha'}]\delta_{ii'}\delta_{jj'}
+        \end{align}
+        对于$H_W^{\alpha\beta}(R,P)=\varepsilon_\alpha(R,P)\delta_{\alpha\beta}$的绝热表象，
+        \begin{align}
+            \hat{\mathcal{L}}_{\alpha\beta ij,\alpha'\beta'i'j'}=&\frac{\mathrm{i}(-1)^{j'-j}}{2(j'-j)\Delta p}[F_W^{\alpha\alpha'}(R_i)\delta_{\beta\beta'}+F_W^{\beta'\beta}(R_i)\delta_{\alpha\alpha'}]\delta_{ii'}(1-\delta_{jj'}) \nonumber \\
+            &+\frac{\mathrm{i}(-1)^{i'-i}P_j}{(i'-i)M\Delta x}\delta_{\alpha\alpha'}\delta_{\beta\beta'}(1-\delta_{ii'})\delta_{jj'} \nonumber \\
+            &+\frac{\varepsilon_\alpha(R_i,P_j)-\varepsilon_\beta(R_i,P_j)}{\hbar}\delta_{\alpha\alpha'}\delta_{\beta\beta'}\delta_{ii'}\delta_{jj'} \nonumber \\
+            &+\frac{\mathrm{i}P_j}{M}[d_{\beta'\beta}(R_i)\delta_{\alpha\alpha'}-d_{\alpha\alpha'}(R_i)\delta_{\beta\beta'}]\delta_{ii'}\delta_{jj'}
+        \end{align}
+        对于$F_W^{\alpha\beta}(R)=f_\alpha(R)\delta_{\alpha\beta}$的力基，
+        \begin{align}
+            \hat{\mathcal{L}}_{\alpha\beta ij,\alpha'\beta'i'j'}=&\frac{\mathrm{i}(-1)^{j'-j}}{2(j'-j)\Delta p}[f_{\alpha}(R_i)+f_\beta(R_i)]\delta_{\alpha\alpha'}\delta_{\beta\beta'}\delta_{ii'}(1-\delta_{jj'}) \nonumber \\
+            &+\frac{\mathrm{i}(-1)^{i'-i}P_j}{(i'-i)M\Delta x}\delta_{\alpha\alpha'}\delta_{\beta\beta'}(1-\delta_{ii'})\delta_{jj'} \nonumber \\
+            &+\frac{1}{\hbar}[H_W^{\alpha\alpha'}(R_i,P_j)\delta_{\beta\beta'}-H_W^{\beta'\beta}(R_i,P_j)\delta_{\alpha\alpha'}]\delta_{ii'}\delta_{jj'} \nonumber \\
+            &+\frac{\mathrm{i}P_j}{M}[d_{\beta'\beta}(R_i)\delta_{\alpha\alpha'}-d_{\alpha\alpha'}(R_i)\delta_{\beta\beta'}]\delta_{ii'}\delta_{jj'}
+        \end{align}\par
+        如果要进行基变换的话，假定
+        \begin{equation}
+            \hat{\rho}^{\mathrm{adia}}(R,t)=C^\dagger(R)\hat{\rho}^{\mathrm{dia}}(R,t)C(R)
+        \end{equation}
+        在部分维格纳变换下，
+        \begin{equation}
+            \hat{\rho}_W^{\mathrm{adia}}(R,P,t)=C^\dagger(R)\hat{\rho}_W^{\mathrm{dia}}(R,P,t)C(R)
+        \end{equation}
+        即
+        \begin{align}
+            (\hat{\rho}_W^{\mathrm{adia}})_{\alpha\beta}(R_i,P_j,t)=&\sum_{\alpha',\beta'}{C^\dagger_{\alpha\alpha'}(R_i)(\hat{\rho}_W^{\mathrm{dia}})_{\alpha'\beta'}(R_i,P_j,t)C_{\beta'\beta}(R_i)} \\
+            =&\sum_{\mathclap{\alpha',\beta',i',j'}}{C^\dagger_{\alpha\alpha'}(R_i)C_{\beta'\beta}(R_i)\delta_{ii'}\delta_{jj'}(\hat{\rho}_W^{\mathrm{dia}})_{\alpha'\beta'}(R_{i'},P_{j'},t)} \\
+            =&\sum_{\mathclap{\alpha',\beta',i',j'}}{\mathcal{C}_{\alpha\beta ij,\alpha'\beta'i'j'}(\hat{\rho}_W^{\mathrm{dia}})_{\alpha'\beta'}(R_{i'},P_{j'},t)} \\
+            \Rightarrow\hat{\rho}_W^{\mathrm{adia}}=&\mathcal{C}\hat{\rho}_W^{\mathrm{dia}}
+        \end{align}
+        其中
+        \begin{align}
+            \mathcal{C}=&C^\dagger_{\alpha\alpha'}(R_i)C_{\beta'\beta}(R_i)\delta_{ii'}\delta_{jj'} \\
+            =&C_{\alpha'\alpha}^*(R_i)C_{\beta'\beta}(R_i)\delta_{ii'}\delta_{jj'}
+        \end{align}
+        一方面
+        \begin{align}
+            &\hat{\rho}_W^{\mathrm{dia}}=C\hat{\rho}_W^{\mathrm{adia}}C^\dagger \\
+            \Rightarrow&(\hat{\rho}_W^{\mathrm{dia}})_{\alpha\beta}(R_i,P_j,t)=\sum_{\mathclap{\alpha',\beta',i',j'}}{C_{\alpha\alpha'}(R_i)C^\dagger_{\beta'\beta}(R_i)\delta_{ii'}\delta_{jj'}(\hat{\rho}_W^{\mathrm{adia}})_{\alpha'\beta'}(R_{i'},P_{j'},t)} \\
+            \Rightarrow&\hat{\rho}_W^{\mathrm{dia}}=\mathcal{C}'\hat{\rho}_W^{\mathrm{adia}}
+        \end{align}
+        其中密度矩阵的基变换
+        \begin{equation}
+            \mathcal{C}'=C_{\alpha\alpha'}(R_i)C^*_{\beta\beta'}(R_i)\delta_{ii'}\delta_{jj'}=\mathcal{C}^\dagger
+        \end{equation}
+        与矢量的基变换相同。\par
+        然而，用这种方法所构建的刘维尔超算符矩阵太过巨大以至于耗尽了内存，这意味着实际上该方法不可行。因此，我们需要引入特罗特展开。如果我们将其展开为三项，
+        \begin{equation}
+            \hat{\mathcal{L}}=\hat{\mathcal{L}}^Q+\hat{\mathcal{L}}^R+\hat{\mathcal{L}}^P
+        \end{equation}
+        其中
+        \begin{align}
+            &-\mathrm{i}\hat{\mathcal{L}}^Q\hat{\rho}_W=-\frac{\mathrm{i}}{\hbar}\comm{\hat{H}_W-\frac{\mathrm{i}\hbar P}{M}D}{\hat{\rho_W}} \\
+            &-\mathrm{i}\hat{\mathcal{L}}^R\hat{\rho}_W=-\frac{P}{M}\pdv{\hat{\rho}_W}{R} \\
+            &-\mathrm{i}\hat{\mathcal{L}}^P\hat{\rho}_W=-\frac{1}{2}\qty(\hat{F}_W\pdv{\hat{\rho}_W}{P}+\pdv{\hat{\rho}_W}{P}\hat{F}_W)
+        \end{align}
+        那么传播子可以写成
+        \begin{equation}
+            \exp(-\mathrm{i}\hat{\mathcal{L}}t)=\lim_{t\rightarrow 0}\exp(-\frac{\mathrm{i}\hat{\mathcal{L}}^Qt}{2})\exp(-\frac{\mathrm{i}\hat{\mathcal{L}}^Rt}{2})\exp(-\mathrm{i}\hat{\mathcal{L}}^Pt)\exp(-\frac{\mathrm{i}\hat{\mathcal{L}}^Rt}{2})\exp(-\frac{\mathrm{i}\hat{\mathcal{L}}^Qt}{2})
+        \end{equation}
+        其中
+        \begin{itemize}
+            \item 对于量子刘维尔$\hat{\mathcal{L}}^Q$，它可以在每个格点上单独进行。由于动能项在部分维格纳变换后成为常数不影响对易子的结果，我们记
+            \begin{equation}
+                \hat{V}'(R_i,P_j)=\hat{V}_W(R_i)-\frac{\mathrm{i}\hbar P_j}{M}D(R_i)
+            \end{equation}
+            其中$D$是非绝热耦合矩阵，故而
+            \begin{equation}
+                \exp(-\mathrm{i}\hat{\mathcal{L}}^Qt)\hat{\rho}_W(R_i,P_j)=\exp(-\frac{\mathrm{i}\hat{V}'(R_i,P_j)t}{\hbar})\hat{\rho}_W(R_i,P_j)\exp(\frac{\mathrm{i}\hat{V}'(R_i,P_j)t}{\hbar})
+            \end{equation}
+            \item 对于经典位置刘维尔$\hat{\mathcal{L}}^R$，它可以在密度矩阵中一个矩阵元的所有相同动量的格点上演化，即分解为密度矩阵的不同矩阵元（相对于势能面而言）和不同的动量。由于，
+            \begin{equation}
+                \eval{\pdv{\rho^{\alpha\beta}_W(R,P_j)}{R}}_{R=R_i}=-\sum_{k\neq i}{\frac{(-1)^{k-i}}{(k-i)\Delta x}\rho^{\alpha\beta}_W(R_k,P_j)}=D_R\rho_W^{\alpha\beta}(\cdot,P_j)
+            \end{equation}
+            其中
+            \begin{equation}
+                (D_R)_{ik}=\begin{cases}
+                    0,\qif i=k\\
+                    -\frac{(-1)^{k-i}}{(k-i)\Delta x},\qif i\neq k
+                \end{cases}
+            \end{equation}
+            是不依赖相空间坐标的反厄米矩阵，那么
+            \begin{equation}
+                \exp(-\mathrm{i}\hat{\mathcal{L}}^Rt)\rho_W^{\alpha\beta}(\cdot,P_j)=\exp(-\frac{P_jD_Rt}{M})\rho_W^{\alpha\beta}(\cdot,P_j)=\exp(-\mathrm{i}\frac{-\mathrm{i}P_jD_R}{M}t)\rho_W^{\alpha\beta}(\cdot,P_j)
+            \end{equation}
+            \item 对于经典动量刘维尔，类似地，
+            \begin{equation}
+                \eval{\pdv{\rho^{\alpha\beta}_W(R_i,P)}{P}}_{P=P_j}=-\sum_{k\neq i}{\frac{(-1)^{k-j}}{(k-j)\Delta p}\rho^{\alpha\beta}_W(R_i,P_k)}=D_P\rho_W^{\alpha\beta}(R_i,\cdot)
+            \end{equation}
+            其中
+            \begin{equation}
+                (D_P)_{jk}=\begin{cases}
+                    0,\qif j=k\\
+                    -\frac{(-1)^{k-j}}{(k-j)\Delta p},\qif j\neq k
+                \end{cases}
+            \end{equation}
+            也是不依赖相空间坐标的反厄米矩阵。值得注意的是，除非是在力算符（或者力矩阵$\hat{F}_W$）对角的表象中，否则这个传播子的形式相对前两者而言更加复杂。对于一般的情况，
+            \begin{align}
+                -\mathrm{i}\hat{\mathcal{L}}^P\hat{\rho}_W(R_i,P_j)=&-\frac{1}{2}\qty[\sum_{\alpha'}{F_W^{\alpha\alpha'}(R_i)\pdv{\rho_W^{\alpha'\beta}(R_i,P_j)}{P}}+\sum_{\beta'}{\pdv{\rho_W^{\alpha\beta'}(R_i,P_j)}{P}F_W^{\beta'\beta}(R_i)}] \\
+                =&\frac{1}{2}\left[\sum_{\alpha',j'\neq j}{F_W^{\alpha\alpha'}(R_i)\frac{(-1)^{j'-j}}{(j'-j)\Delta p}\rho_W^{\alpha'\beta}(R_i,P_{j'})}\right. \nonumber \\
+                &\left.+\sum_{\beta',j'\neq j}{\frac{(-1)^{j'-j}}{(j'-j)\Delta p}\rho_W^{\alpha\beta'}(R_i,P_{j'})F_W^{\beta'\beta}(R_i)}\right] \\
+                =&\sum_{\alpha',\beta',j'}{\frac{(-1)^{j'-j}(1-\delta_{jj'})}{2(j'-j)\Delta p}(F_W^{\alpha\alpha'}(R_i)\delta_{\beta\beta'}+F_W^{\beta'\beta}(R_i)\delta_{\alpha\alpha'})\rho_W^{\alpha'\beta'}(R_i,P_{j'})}
+            \end{align}
+            这可以导出一个六指标的刘维尔。这个超算符是厄米的，但是仍然过于复杂以至于在实际运算中可能耗尽内存。但是在力基下，传播子变为
+            \begin{align}
+                \exp(-\mathrm{i}\hat{\mathcal{L}}^Pt)\rho_W^{\alpha\beta}(R_i,\cdot)=&\exp(-\frac{[F^d_{\alpha\alpha}(R_i)+F^d_{\beta\beta}(R_i)]D_Pt}{2})\rho_W^{\alpha\beta}(R_i,\cdot) \\
+                =&\exp(-\mathrm{i}\frac{-\mathrm{i}[F^d_{\alpha\alpha}(R_i)+F^d_{\beta\beta}(R_i)]D_P}{2}t)\rho_W^{\alpha\beta}(R_i,\cdot)
+            \end{align}
+            故而演化可以在力基下的密度矩阵某一矩阵元的某一相同位置的所有不同动量格点上进行。
+        \end{itemize}
+
+    \section{周期性边界条件下的导数}
+        如果边界条件是周期性的，并且我们假定格点区域关于原点对称，即$x_i=i\Delta x\qc i=0,\pm 1,\dots,\pm N$，那么
+        \begin{equation}
+            f(x)=\frac{1}{2N+1}\sum_{k=-N}^N{c'_k}\exp(\frac{2k\pi\mathrm{i}}{L}(x+N\Delta x))
+        \end{equation}
+        其中
+        \begin{equation}
+            c'_k=\sum_{n=-N}^N{f_n\exp(-\frac{2nk\pi\mathrm{i}}{2N+1})}
+        \end{equation}
+        这与上文离散傅里叶变换(Discrete Fourier Transformation, DFT)的结果是类似的，此外有$L=2N\Delta x$。\par
+        那么对于一阶导，有
+        \begin{align}
+            \eval{\dv{f}{x}}_{x=x_m}=&\frac{1}{2N+1}\sum_{k=-N}^N{c'_k\qty(\frac{2k\pi\mathrm{i}}{L})\exp(\frac{2mk\pi\mathrm{i}}{2N+1})} \\
+            =&\frac{2\pi\mathrm{i}}{(2N+1)L}\sum_{k=-N}^N{\qty[\sum_{n=-N}^N{f_n\exp(-\frac{2nk\pi\mathrm{i}}{2N+1})}]k\exp(\frac{2mk\pi\mathrm{i}}{2N+1})} \\
+            =&\frac{2\pi\mathrm{i}}{(2N+1)L}\sum_{n=-N}^N{f_n\qty[\sum_{k=-N}^N{\exp(-\frac{2nk\pi\mathrm{i}}{2N+1})k\exp(\frac{2mk\pi\mathrm{i}}{2N+1})}]} \\
+            =&\frac{2\pi\mathrm{i}}{(2N+1)L}\sum_{n=-N}^N{f_n\qty[\sum_{k=-N}^N{k\exp(\frac{2(m-n)k\pi\mathrm{i}}{2N+1})}]}
+        \end{align}
+        对于内层的求和，令
+        \begin{equation}
+            a=\frac{2(m-n)\pi\mathrm{i}}{2N+1}
+        \end{equation}
+        所以$\exp[(2N+1)a]=1$，则
+        \begin{align}
+            \sum_{k=-N}^N{k\exp(\frac{2(m-n)k\pi\mathrm{i}}{2N+1})}=&\sum_{k=-N}^N{k\exp(ak)} \\
+            =&\pdv{a} \qty[\sum_{k=-N}^N{\exp(ak)}] \\
+            =&\pdv{a} \qty[\frac{\mathrm{e}^{a(N+1)}-\mathrm{e}^{-aN}}{\mathrm{e}^{a}-1}] \\
+            =&\frac{[(N+1)\mathrm{e}^{a(N+1)}+N\mathrm{e}^{-aN}](\mathrm{e}^{a}-1)-(\mathrm{e}^{a(N+1)}-\mathrm{e}^{-aN})\mathrm{e}^{a}}{(\mathrm{e}^{a}-1)^2} \\
+            =&\frac{(2N+1)\mathrm{e}^{-aN}}{\mathrm{e}^{a}-1}
+        \end{align}
+        因此，
+        \begin{align}
+            \eval{\dv{f}{x}}_{x=x_m}=&\frac{2\pi\mathrm{i}}{(2N+1)L}\sum_{n=-N}^N{f_n\frac{(2N+1)\mathrm{e}^{-aN}}{\mathrm{e}^{a}-1}} \\
+            =&\frac{\pi}{L}\sum_{n=-N}^N{f_n\frac{\exp[-\frac{2(m-n)\pi\mathrm{i}}{2N+1}\qty(N+\frac{1}{2})]}{\frac{1}{2\mathrm{i}}\qty[\exp(\frac{(m-n)\pi\mathrm{i}}{2N+1})-\exp(-\frac{(m-n)\pi\mathrm{i}}{2N+1})]}} \\
+            =&\sum_{n=-N}^N{f_n\frac{(-1)^{m-n}\pi}{L\sin(\frac{(m-n)\pi}{2N+1})}} \\
+            =&\sum_{n=-N}^N{D_{mn}f_n}
+        \end{align}
+        故而周期性边界条件下的一阶导矩阵元为
+        \begin{equation}
+            D_{ij}=\begin{cases}
+                0,\qif i=j \\
+                \frac{(-1)^{i-j}\pi}{L\sin(\frac{(i-j)\pi}{2N+1})},\qotherwise
+            \end{cases}
+        \end{equation}
+        可以看出，这个矩阵是反厄米的。二阶及更高阶导数的推导也是类似的。
+\end{document}
