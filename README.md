@@ -9,7 +9,7 @@ We includes
 
 Those in ***boldslash style*** are works that have not yet finished.
 ## Things to Be Done
-- altogether gitignore, gitattributes, makefile
+- altogether makefile
 - combined exact solutions (SE and MQCLE) into one subfolder, with common interface
 - test code and main program, commented in Doxygen style
 ## Reference

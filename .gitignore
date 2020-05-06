@@ -1,4 +1,30 @@
+# ELF files
+*.o
+mqcl
+dvr
+
+# output and input files
+*.txt
+*.png
+*.gif
+*log
+out*
+*put
+*result*/
+
 # IDE configuration
 .vs*/
 *.sln
 *.vcxproj*
+
+# Doxygen document
+Doxyfile*
+html/
+latex/
+
+# latex intermediate
+*.aux
+*.fdb_latexmk
+*.fls
+*.log
+*.synctex.gz

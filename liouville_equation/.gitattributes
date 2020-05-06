@@ -1,9 +1,0 @@
-# general case
-* text=auto eol=lf
-
-# binary files
-*.o binary
-mqcl binary
-*.jpg binary
-*.png binary
-*.gif binary
