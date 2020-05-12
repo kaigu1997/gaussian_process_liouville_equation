@@ -24,7 +24,11 @@ latex/
 
 # latex intermediate
 *.aux
+*.bbl
+*.blg
 *.fdb_latexmk
 *.fls
 *.log
+*.out
+*.synctex(busy)
 *.synctex.gz

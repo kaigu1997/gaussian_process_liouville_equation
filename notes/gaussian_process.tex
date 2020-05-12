@@ -5,6 +5,7 @@
 \usepackage{booktabs}
 \usepackage{ctex}
 \usepackage{enumitem}
+\usepackage[colorlinks=true, unicode=true, linkcolor=red, citecolor=red, filecolor=red, urlcolor=red]{hyperref}
 \usepackage{geometry}
 \geometry{left=25.4mm, right=25.4mm, top=31.8mm, bottom=31.8mm}
 \usepackage{graphicx}
@@ -486,7 +487,7 @@
                 以及边缘似然
                 \begin{align}
                     &p(\vb{y}|X,\vb*{\theta})\sim\mathcal{N}(0,K_y)\\
-                    \Rightarrow&\log{p(\vb{y}|X,\vb*{\theta})}=-\frac{1}{2}\vb{y}^\top K_y^{-1}\vb{y}-\frac{1}{2}\log{\abs{K(X,X)}+\sigma_n^2I}-\frac{n}{2}\log{2\pi}
+                    \Rightarrow&\log{p(\vb{y}|X,\vb*{\theta})}=-\frac{1}{2}\vb{y}^\top K_y^{-1}\vb{y}-\frac{1}{2}\log{\abs{K_y}}-\frac{n}{2}\log{2\pi}
                 \end{align}
                 其中$K_y=K(X,X)+\sigma_n^2I$，取决于输入数据是否有噪声。这里的边缘似然是针对潜函数的边缘。如果从函数空间的角度，“边缘”和超参数的“超”都显得无法理解。上式中的三项，第一项是数据拟合，第二项是复杂度惩罚，第三项是归一化系数。随着长度尺度的增长，模型适应性降低导致数据拟合项单调递减而负的复杂度惩罚项单调递增，二者合力导致边缘分布的最大值在$1$附近，超过后模型适应性降低而使得边缘似然迅速递减，不足时则由于可以容纳数据但在数据点之外的地方误差线则会迅速增长而导致边缘似然函数的缓慢递减。此外，随着训练集的增长，特征长度尺度也会越来越明显，即边缘似然在特征长度尺度位置有一个显著的峰值。\par
                 为了求得使边缘似然最大的超参数，需要对其求偏导，
