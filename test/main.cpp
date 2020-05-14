@@ -9,14 +9,16 @@
 #include <string>
 
 #include <algorithm>
-#include <execution>
+#include <numeric>
 #include <set>
 #include <utility>
 #include <vector>
 
 #include <cmath>
 #include <mkl.h>
-#define EIGEN_USE_MKL_ALL
+#ifndef EIGEN_USE_MKL_ALL
+	#define EIGEN_USE_MKL_ALL
+#endif
 #include <Eigen/Eigen>
 #include <gsl/gsl_multimin.h>
 
@@ -39,7 +41,7 @@ VectorXd read_coord(const string& filename)
 		v.push_back(tmp);
 	}
 	VectorXd coord(v.size());
-	copy(execution::par_unseq, v.cbegin(), v.cend(), coord.data());
+	copy(v.cbegin(), v.cend(), coord.data());
 	return coord;
 }
 
@@ -118,6 +120,7 @@ pair<double, double> standard_deviation(const MatrixXd& data, const VectorXd& x,
 /// @return the accumulated square error on each grids
 double error(const MatrixXd& data, const VectorXd& x, const VectorXd& p)
 {
+	cout << "Begin initialization..." << endl;
 	static const int MaxIter = 1000;
 	const int nx = x.size(), np = p.size();
 	// choose the points
@@ -145,25 +148,24 @@ double error(const MatrixXd& data, const VectorXd& x, const VectorXd& p)
 			}
 		}
 	}
-
 	// initialize multidimensional minimizer, the order is: length_x^2, length_p^2, sigma_f^2, sigma_n^2
-	gsl_multimin_fdfminimizer* minimizer = gsl_multimin_fdfminimizer_alloc(gsl_multimin_fdfminimizer_conjugate_fr, 4);
 	gsl_multimin_function_fdf error_function;
 	error_function.n = 4;
 	error_function.f = log_marginal_likelihood;
 	error_function.df = derivatives;
 	error_function.fdf = my_fdf;
 	error_function.params = reinterpret_cast<void*>(&training);
+	// initial characteristic length-scale is set to be the variance
 	gsl_vector* hyperparameter = gsl_vector_alloc(4);
 	const pair<double, double> charateristic_length_scale = standard_deviation(data, x, p);
-
-	// initial characteristic length-scale is set to be the variance
 	gsl_vector_set(hyperparameter, 0, charateristic_length_scale.first);
 	gsl_vector_set(hyperparameter, 1, charateristic_length_scale.second);
 	gsl_vector_set(hyperparameter, 2, 1);
 	gsl_vector_set(hyperparameter, 3, 0);
+	gsl_multimin_fdfminimizer* minimizer = gsl_multimin_fdfminimizer_alloc(gsl_multimin_fdfminimizer_conjugate_fr, 4);
 	gsl_multimin_fdfminimizer_set(minimizer, &error_function, hyperparameter, 0.01, 0.1);
 
+	cout << "Finish initialization. Begin iteration..." << endl;
 	int status = GSL_CONTINUE;
 	// do the optimization
 	for (int i = 0; i < MaxIter && status == GSL_CONTINUE; i++)
@@ -181,6 +183,7 @@ double error(const MatrixXd& data, const VectorXd& x, const VectorXd& p)
 		}
 	}
 
+	cout << "Finish iteration. Begin prediction..." << endl;
 	// free the memory and generate the distribution
 	gsl_multimin_fdfminimizer_free(minimizer);
 	const double length_x2 = gsl_vector_get(hyperparameter, 0);
@@ -224,6 +227,7 @@ double error(const MatrixXd& data, const VectorXd& x, const VectorXd& p)
 			}
 		}
 	}
+	return err_sum;
 }
 
 int main()
@@ -241,7 +245,12 @@ int main()
 	// then read the rho00 and rho11
 	const pair<MatrixXd, MatrixXd> rho = read_rho("phase.txt", ti, nx, np);
 
-	cout << error(rho.first, x, p) << ' ' << error(rho.second, x, p) << '\n';
+	cout << "Ground state:" << endl;
+	const double e1 = error(rho.first, x, p);
+	cout << "Squared Error = " << e1 << endl;
+	cout << "Excited state:" << endl;
+	const double e2 = error(rho.second, x, p);
+	cout << "Squared Error = " << ' ' << e2 << endl;
 
 	return 0;
 }

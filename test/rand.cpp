@@ -15,6 +15,8 @@
 using namespace std;
 using namespace Eigen;
 
+static mt19937_64 generator(chrono::system_clock::now().time_since_epoch().count()); ///< random number generator, 64 bits Mersenne twister engine
+
 /// using the uniform int distribution in standard library
 /// to generate a random number in range [0, total_time_ticks-1]
 int choose_time(const int total_time_ticks)
@@ -38,7 +40,7 @@ set<pair<int, int>> choose_point(const MatrixXd& data, const VectorXd& x, const 
 		{
 			for (int k = 0; k < np; k++)
 			{
-				acc_weight -= data[j * np + k];
+				acc_weight -= data(j, k);
 				if (acc_weight < 0)
 				{
 					auto iter = chosen_point.insert(make_pair(j, k));
@@ -50,7 +52,7 @@ set<pair<int, int>> choose_point(const MatrixXd& data, const VectorXd& x, const 
 				}
 			}
 		}
-	next:
+	next:;
 	}
 	return chosen_point;
 }

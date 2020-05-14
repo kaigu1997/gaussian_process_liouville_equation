@@ -2,6 +2,7 @@
 *.o
 mqcl
 dvr
+gp_test
 
 # output and input files
 *.txt

@@ -6,7 +6,9 @@
 #define GPR_H
 
 #include <mkl.h>
-#define EIGEN_USE_MKL_ALL
+#ifndef EIGEN_USE_MKL_ALL
+	#define EIGEN_USE_MKL_ALL
+#endif
 #include <Eigen/Eigen>
 #include <gsl/gsl_vector.h>
 

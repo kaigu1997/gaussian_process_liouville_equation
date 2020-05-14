@@ -23,7 +23,7 @@ MatrixXd rbf_se
 	const double sigma_n2
 )
 {
-	const int n1 = X1.cols(), n2 = X2.cols();
+	const int n1 = X1.rows(), n2 = X2.rows();
 	MatrixXd kernel(n1, n2);
 	for (int i = 0; i < n1; i++)
 	{
@@ -36,7 +36,7 @@ MatrixXd rbf_se
 			kernel(i, j) = sigma_f2 * exp(-(pow((xi - xj), 2) / length_x2 + pow((pi - pj), 2) / length_p2) / 2.0);
 		}
 	}
-	return kernel + decltype(kernel)::Identity() * sigma_n2;
+	return kernel + decltype(kernel)::Identity(n1, n2) * sigma_n2;
 }
 
 /// the real return is log p(y|X)+n/2*log(2*pi),

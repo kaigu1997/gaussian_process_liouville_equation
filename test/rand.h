@@ -9,14 +9,15 @@
 #include <utility>
 
 #include <mkl.h>
-#define EIGEN_USE_MKL_ALL
+#ifndef EIGEN_USE_MKL_ALL
+	#define EIGEN_USE_MKL_ALL
+#endif
 #include <Eigen/Eigen>
 
 using namespace std;
 using namespace Eigen;
 
 const int NPoint = 10; ///< the size of training set
-mt19937_64 generator(chrono::system_clock::now().time_since_epoch().count()); ///< random number generator, 64 bits Mersenne twister engine
 
 /// @brief choose a time to regress
 /// @param[in] total_time_ticks the total time ticks available
