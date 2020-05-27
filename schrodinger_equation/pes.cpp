@@ -3,8 +3,16 @@
 
 #include <cmath>
 #include "general.h"
-#include "matrix.h"
 #include "pes.h"
+
+#include <mkl.h>
+#ifndef EIGEN_USE_MKL_ALL
+#define EIGEN_USE_MKL_ALL
+#endif // ! EIGEN_USE_MKL_ALL
+#include <Eigen/Eigen>
+
+using namespace std;
+using namespace Eigen;
 
 
 
@@ -26,27 +34,28 @@ static const double ECR_B = 0.10; ///< B in ECR model
 static const double ECR_C = 0.90; ///< C in ECR model
 
 /// Subsystem diabatic Hamiltonian, being the potential of the bath
-RealMatrix diabatic_potential(const double x)
+PESMatrix diabatic_potential(const double x)
 {
-    RealMatrix Potential(NumPES);
-    switch (TestModel)
-    {
-    case SAC: // Tully's 1st model
-        Potential[0][1] = Potential[1][0] = SAC_C * exp(-SAC_D * x * x);
-        Potential[0][0] = sgn(x) * SAC_A * (1.0 - exp(-sgn(x) * SAC_B * x));
-        Potential[1][1] = -Potential[0][0];
-        break;
-    case DAC: // Tully's 2nd model
-        Potential[0][1] = Potential[1][0] = DAC_C * exp(-DAC_D * x * x);
-        Potential[1][1] = DAC_E - DAC_A * exp(-DAC_B * x * x);
-        break;
-    case ECR: // Tully's 3rd model
-        Potential[0][0] = ECR_A;
-        Potential[1][1] = -ECR_A;
-        Potential[0][1] = Potential[1][0] = ECR_B * (1 - sgn(x) * (exp(-sgn(x) * ECR_C * x) - 1));
-        break;
-    }
-    return Potential;
+	Matrix<double, NumPES, NumPES> Potential;
+	switch (TestModel)
+	{
+	case SAC: // Tully's 1st model
+		Potential(0, 1) = Potential(1, 0) = SAC_C * exp(-SAC_D * x * x);
+		Potential(0, 0) = sgn(x) * SAC_A * (1.0 - exp(-sgn(x) * SAC_B * x));
+		Potential(1, 1) = -Potential(0, 0);
+		break;
+	case DAC: // Tully's 2nd model
+		Potential(0, 1) = Potential(1, 0) = DAC_C * exp(-DAC_D * x * x);
+		Potential(0, 0) = 0;
+		Potential(1, 1) = DAC_E - DAC_A * exp(-DAC_B * x * x);
+		break;
+	case ECR: // Tully's 3rd model
+		Potential(0, 0) = ECR_A;
+		Potential(1, 1) = -ECR_A;
+		Potential(0, 1) = Potential(1, 0) = ECR_B * (1 - sgn(x) * (exp(-sgn(x) * ECR_C * x) - 1));
+		break;
+	}
+	return Potential;
 }
 
 static const double c = sqrt(2) * comp_ellint_1(1.0 / sqrt(2)); ///< the constant used in absorbing potential
@@ -66,50 +75,45 @@ static const double c = sqrt(2) * comp_ellint_1(1.0 / sqrt(2)); ///< the constan
 /// c=sqrt(2)*K(1/sqrt(2))
 double absorbing_potential
 (
-    const double mass,
-    const double xmin,
-    const double xmax,
-    const double AbsorbingRegionLength,
-    const double x
+	const double mass,
+	const double xmin,
+	const double xmax,
+	const double AbsorbingRegionLength,
+	const double x
 )
 {
-    // in the interacting region, no AP
-    if (x > xmin && x < xmax)
-    {
-        return 0;
-    }
-    // otherwise, return E(x)_ii
-    const double xx = c * (x < xmin ? x - xmin : x - xmax) / AbsorbingRegionLength;
-    return pow(PlanckH / AbsorbingRegionLength, 2) * 2.0 / mass
-        * (1.0 / pow(c - xx, 2) + 1.0 / pow(c + xx, 2) - 2.0 / pow(c, 2));
+	// in the interacting region, no AP
+	if (x > xmin && x < xmax)
+	{
+		return 0;
+	}
+	// otherwise, return E(x)_ii
+	const double xx = c * (x < xmin ? x - xmin : x - xmax) / AbsorbingRegionLength;
+	return pow(PlanckH / AbsorbingRegionLength, 2) * 2.0 / mass
+		* (1.0 / pow(c - xx, 2) + 1.0 / pow(c + xx, 2) - 2.0 / pow(c, 2));
 }
 
-/// i.e. C^T*psi(dia)=psi(adia), which diagonalize PES only (instead of diagonal H)
-ComplexMatrix diabatic_to_adiabatic(const int NGrids, const double* const GridCoordinate)
+/// C^T*psi(dia)=psi(adia), which diagonalize PES only (instead of diagonal H)
+MatrixXcd diabatic_to_adiabatic(const VectorXd& GridCoordinate)
 {
-    ComplexMatrix TransformationMatrix(NGrids * NumPES);
-    // EigVal stores the eigenvalues
-    double EigVal[NumPES];
-    
-    for (int i = 0; i < NGrids; i++)
-    {
-        // EigVec stores the V before diagonalization and 
-        // transformation matrix after diagonalization
-        RealMatrix EigVec = diabatic_potential(GridCoordinate[i]);
-        // diagonal each grid
-        if (LAPACKE_dsyev(LAPACK_ROW_MAJOR, 'V', 'U', NumPES, EigVec.data(), NumPES, EigVal) > 0)
-        {
-            cerr << "FAILING DIAGONALIZE DIABATIC POTENTIAL AT " << GridCoordinate[i] << endl;
-            exit(300);
-        }
-        // copy the transformation info to the whole matrix
-        for (int j = 0; j < NumPES; j++)
-        {
-            for (int k = 0; k < NumPES; k++)
-            {
-                TransformationMatrix[j * NGrids + i][k * NGrids + i] = EigVec[j][k];
-            }
-        }
-    }
-    return TransformationMatrix;
+	// NGrids is the number of grids in wavefunction
+	const int NGrids = GridCoordinate.size();
+	MatrixXcd TransformationMatrix(NGrids * NumPES, NGrids * NumPES);
+	
+	for (int i = 0; i < NGrids; i++)
+	{
+		// EigVec stores the V before diagonalization and 
+		// transformation matrix after diagonalization
+		SelfAdjointEigenSolver<PESMatrix> solver(diabatic_potential(GridCoordinate[i]));
+		PESMatrix EigVec = solver.eigenvectors();
+		// copy the transformation info to the whole matrix
+		for (int j = 0; j < NumPES; j++)
+		{
+			for (int k = 0; k < NumPES; k++)
+			{
+				TransformationMatrix(j * NGrids + i, k * NGrids + i) = EigVec(j, k);
+			}
+		}
+	}
+	return TransformationMatrix;
 }

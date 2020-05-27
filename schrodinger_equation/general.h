@@ -11,22 +11,33 @@
 #ifndef GENERAL_H
 #define GENERAL_H
 
+#include <complex>
 #include <iostream>
 #include <memory>
 #include <tuple>
 #include <valarray>
-#include "matrix.h"
 
+#include <mkl.h>
+#ifndef EIGEN_USE_MKL_ALL
+#define EIGEN_USE_MKL_ALL
+#endif // ! EIGEN_USE_MKL_ALL
+#include <Eigen/Eigen>
+
+using namespace std;
+using namespace Eigen;
+
+/// a shorter name for double-precision complex number
+using Complex = complex<double>;
 /// array of complex that could do numerical calculations
-typedef valarray<Complex> ComplexArray;
+using ComplexArray = valarray<Complex>;
 
 const double pi = acos(-1.0); ///< mathematical constant, pi
 const double hbar = 1.0; ///< physical constant, reduced Planck constant
 const double PlanckH = 2 * pi * hbar; ///< physical constant, Planck constant
 // Alpha and Beta are for cblas complex matrix multiplication functions
 // as they behave as A=alpha*B*C+beta*A
-const Complex Alpha(1.0, 0.0); ///< constant for cblas, A=alpha*B*C+beta*A
-const Complex Beta(0.0, 0.0); ///< constant for cblas, A=alpha*B*C+beta*A
+const Complex Alpha = 1.0; ///< constant for cblas, A=alpha*B*C+beta*A
+const Complex Beta = 0.0; ///< constant for cblas, A=alpha*B*C+beta*A
 // for RK4, things are different
 const ComplexArray RK4Parameter = { 1.0, 2.0, 2.0, 1.0 }; ///< coefficient in RK4. ki=f(x+dt/para,y+dt/para*k[i-1]), y+=ki*dt/6*para
 const Complex RK4kAlpha = 1.0 / 1.0i / hbar; ///< constant for RK4-calling cblas, k_{n+1}=H/ihbar*(psi+dt/1~2*kn)
@@ -48,7 +59,7 @@ double cutoff(const double val);
 template <typename valtype>
 inline int sgn(const valtype& val)
 {
-    return (val > valtype(0.0)) - (val < valtype(0.0));
+	return (val > valtype(0.0)) - (val < valtype(0.0));
 }
 
 /// @brief returns (-1)^n
@@ -77,6 +88,21 @@ ostream& show_time(ostream& os);
 
 // evolution related functions
 
+/// @brief initialize the gaussian wavepacket, and normalize it
+/// @param GridCoordinate the coordinate of each grid, i.e., x_i
+/// @param dx the grid spacing
+/// @param x0 the initial average position
+/// @param p0 the initial average momentum
+/// @param SigmaX the initial standard deviation of position. SigmaP is not needed due to the minimum uncertainty principle
+/// @return the wavefunction to be initialized in adiabatic representation
+VectorXcd wavefunction_initialization
+(
+	const VectorXd& GridCoordinate,
+	const double x0,
+	const double p0,
+	const double SigmaX
+);
+
 /// @brief construct the diabatic Hamiltonian
 /// @param NGrids the number of grids in wavefunction
 /// @param GridCoordinate the coordinate of each grid, i.e., x_i
@@ -87,97 +113,89 @@ ostream& show_time(ostream& os);
 /// @param xmax the right boundary, only used with ABC
 /// @param AbsorbingRegionLength the extended region for absoptiong, only used with ABC
 /// @return the Hamiltonian, a complex matrix, hermitian if no ABC
-ComplexMatrix Hamiltonian_construction
+MatrixXcd Hamiltonian_construction
 (
-    const int NGrids,
-    const double* const GridCoordinate,
-    const double dx,
-    const double mass,
-    const bool Absorbed = false,
-    const double xmin = 0.0,
-    const double xmax = 0.0,
-    const double AbsorbingRegionLength = 0.0
-);
-
-/// @brief initialize the gaussian wavepacket, and normalize it
-/// @param NGrids the number of grids in wavefunction
-/// @param GridCoordinate the coordinate of each grid, i.e., x_i
-/// @param dx the grid spacing
-/// @param x0 the initial average position
-/// @param p0 the initial average momentum
-/// @param SigmaX the initial standard deviation of position. SigmaP is not needed due to the minimum uncertainty principle
-/// @param psi the wavefunction to be initialized in adiabatic representation
-void wavefunction_initialization
-(
-    const int NGrids,
-    const double* const GridCoordinate,
-    const double dx,
-    const double x0,
-    const double p0,
-    const double SigmaX,
-    Complex* const Psi
+	const VectorXd& GridCoordinate,
+	const double dx,
+	const double mass,
+	const bool Absorbed = false,
+	const double xmin = 0.0,
+	const double xmax = 0.0,
+	const double AbsorbingRegionLength = 0.0
 );
 
 /// the class to do the evolution, inspired by FFT_HANDLE
 class Evolution
 {
 private:
-    // general variables
-    const bool Absorbed; ///< whether have absorbing potential or not
-    const int dim; ///< the number of grids / the size of Hamiltonian
-    ComplexMatrix Hamiltonian; ///< the Hamiltonain Matrix
-    Complex* Intermediate1; ///< No ABC, psi_diag(0); with ABC, (psi(t)+k[i-1]*dt/n)/ihbar
-    Complex* Intermediate2; ///< No ABC, psi_diag(t); with ABC, H*(psi(t)+k[i-1]*dt/n)/ihbar
-    Complex* PsiAtTimeT; /// wavefunction at time t; the evolved result
-    // used when Absorbed == true
-    ComplexMatrix& EigVec; ///< the eigenvectors of Hamiltonian, the basis transformation matrix
-    double* EigVal; ///< the eigenvalues of Hamiltonian, the diagonalized Hamiltonian
-    // used when Absorbed == false
-    const double dt; ///< time step
-    const ComplexArray RK4kBeta; ///< used in RK4, = dt/RK4Parameter[i]/i/hbar
-    const ComplexArray RK4PsiAlpha; ///< used in RK4, = dt/6.0*RK4Parameter[i]
+	// general variables
+	const bool Absorbed; ///< whether have absorbing potential or not
+	const int dim; ///< the number of grids / the size of Hamiltonian
+	const MatrixXcd Hamiltonian; ///< the Hamiltonain Matrix
+	VectorXcd Intermediate1; ///< No ABC, psi_diag(0); with ABC, (psi(t)+k[i-1]*dt/n)/ihbar
+	VectorXcd Intermediate2; ///< No ABC, psi_diag(t); with ABC, H*(psi(t)+k[i-1]*dt/n)/ihbar
+	VectorXcd PsiAtTimeT; /// wavefunction at time t; the evolved result
+	// used when Absorbed == false
+	SelfAdjointEigenSolver<MatrixXcd> solver;
+	const MatrixXcd EigVec; ///< the eigenvectors of Hamiltonian, the basis transformation matrix
+	const MatrixXd EigVal; ///< the eigenvalues of Hamiltonian, the diagonalized Hamiltonian
+	// used when Absorbed == true
+	const double dt; ///< time step
+	const ComplexArray RK4kBeta; ///< used in RK4, = dt/RK4Parameter[i]/i/hbar
+	const ComplexArray RK4PsiAlpha; ///< used in RK4, = dt/6.0*RK4Parameter[i]
 public:
-    /// @brief the constructor
-    /// @param IsAbsorb whether to use absorbing potential or not
-    /// @param DiaH the diabatic Hamiltonian, should be hermitian
-    /// @param Psi0 the initial diabatic wavefunction
-    /// @param TimeStep the time interval, or dt
-    Evolution
-    (
-        const bool IsAbsorb,
-        const ComplexMatrix& DiaH,
-        const Complex* const Psi0,
-        const double TimeStep
-    );
-    /// @brief destructor
-    ~Evolution(void);
-    /// @brief evolve for a time step
-    /// @param Psi the diabatic wavefunction at time t-dt
-    /// @param Time the time when the output psi would be
-    void evolve(Complex* Psi, const double Time);
+	/// @brief the constructor
+	/// @param IsAbsorb whether to use absorbing potential or not
+	/// @param DiaH the diabatic Hamiltonian, should be hermitian
+	/// @param Psi0 the initial diabatic wavefunction
+	/// @param TimeStep the time interval, or dt
+	Evolution
+	(
+		const bool IsAbsorb,
+		const MatrixXcd& DiaH,
+		const VectorXcd& Psi0,
+		const double TimeStep
+	);
+	/// @brief destructor
+	~Evolution(void);
+	/// @brief evolve for a time step
+	/// @param Psi the diabatic wavefunction at time t-dt
+	/// @param Time the time when the output psi would be
+	void evolve(VectorXcd& Psi, const double Time);
 };
 
 /// @brief output the population on each grid and PES, i.e. |psi_i(x_j)|^2
 /// @param os an ostream object (could be ofstream/osstream) to output
-/// @param NGrids the number of grids in wavefunction
 /// @param Psi the (adiabatic) wavefunction
-void output_grided_population(ostream& os, const int NGrids, const Complex* const Psi);
+void output_grided_population(ostream& os, const VectorXcd Psi);
 
 /// @brief calculate the phase space distribution, and output it
 /// @param os an ostream object (could be ofstream/osstream) to output
-/// @param NGrids the number of grids in wavefunction
 /// @param GridCoordinate the coordinate of each grid, i.e., x_i
 /// @param dx the grid spacing
 /// @param p0 the initial average momentum
 /// @param Psi the (adiabatic) wavefunction
 void output_phase_space_distribution
 (
-    ostream& os,
-    const int NGrids,
-    const double* const GridCoordinate,
-    const double dx,
-    const double p0,
-    const Complex* const Psi
+	ostream& os,
+	const VectorXd& GridCoordinate,
+	const double dx,
+	const double p0,
+	const VectorXcd& Psi
+);
+
+/// @brief calculate average energy, x, and p
+/// @param GridCoordinate the coordinate of each grid, i.e., x_i
+/// @param dx the grid spacing
+/// @param mass the mass of the bath (the nucleus mass)
+/// @param Psi the (adiabatic) wavefunction
+/// @return average energy, x, and p
+tuple<double, double, double> calculate_average
+(
+	const VectorXd& GridCoordinate,
+	const double dx,
+	const double mass,
+	const VectorXcd& Psi
 );
 
 /// @brief calculate the population on each PES
@@ -188,25 +206,10 @@ void output_phase_space_distribution
 /// @param Psi the (adiabatic) wavefunction
 void calculate_population
 (
-    const int NGrids,
-    const double dx,
-    const Complex* const Psi,
-    double* const Population
-);
-
-/// @brief calculate average energy, x, and p
-/// @param NGrids the number of grids in wavefunction
-/// @param GridCoordinate the coordinate of each grid, i.e., x_i
-/// @param dx the grid spacing
-/// @param mass the mass of the bath (the nucleus mass)
-/// @param Psi the (adiabatic) wavefunction
-tuple<double, double, double> calculate_average
-(
-    const int NGrids,
-    const double* const GridCoordinate,
-    const double dx,
-    const double mass,
-    const Complex* const Psi
+	const int NGrids,
+	const double dx,
+	const VectorXcd& Psi,
+	double* const Population
 );
 
 #endif // !GENERAL_H
