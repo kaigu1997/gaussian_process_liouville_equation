@@ -240,7 +240,7 @@ int main(void)
 				GridCoordinate,
 				dx,
 				mass,
-				AdiabaticPsi
+				DiabaticPsi
 			);
 			// ... then output                
 			Log << Time << ' ' << AverageE << ' ' << AverageX << ' ' << AverageP;
