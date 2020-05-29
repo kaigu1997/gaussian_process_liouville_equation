@@ -75,11 +75,6 @@ int pow_minus_one(const int n);
 /// @return the real value read from the stream
 double read_double(istream& is);
 
-/// @brief check if absorbing potential is used or not
-/// @param is an istream object (could be ifstream/isstream) to input
-/// @return a boolean, true means Absorbed Boundary Condition (ABC) is used, false means not
-bool read_absorb(istream& is);
-
 /// @brief to print current time
 /// @param os an ostream object (could be ifstream/isstream) to output
 /// @return the ostream object of the parameter after output the time
@@ -87,6 +82,19 @@ ostream& show_time(ostream& os);
 
 
 // evolution related functions
+
+/// @enum the boundary condition
+/// @sa Hamiltonian_construction(), Evolve, output_phase_space_distribution()
+enum BoundaryCondition
+{
+	Absorbing, ///< absorbing potential, have imaginary part on diagonal elements
+	Periodic, ///< periodic boundary, using finite difference
+	Reflective ///< reflective boundary, also using finite difference
+};
+
+#ifndef TestBoundaryCondition
+const BoundaryCondition TestBoundaryCondition = Periodic; ///< the boundary condition used
+#endif // !TestBoundaryCondition
 
 /// @brief initialize the gaussian wavepacket, and normalize it
 /// @param GridCoordinate the coordinate of each grid, i.e., x_i
@@ -108,7 +116,6 @@ VectorXcd wavefunction_initialization
 /// @param GridCoordinate the coordinate of each grid, i.e., x_i
 /// @param dx the grid spacing
 /// @param mass the mass of the bath (the nucleus mass)
-/// @param absorbed whethe the ABC is used or not
 /// @param xmin the left boundary, only used with ABC
 /// @param xmax the right boundary, only used with ABC
 /// @param AbsorbingRegionLength the extended region for absoptiong, only used with ABC
@@ -118,7 +125,6 @@ MatrixXcd Hamiltonian_construction
 	const VectorXd& GridCoordinate,
 	const double dx,
 	const double mass,
-	const bool Absorbed = false,
 	const double xmin = 0.0,
 	const double xmax = 0.0,
 	const double AbsorbingRegionLength = 0.0
@@ -129,7 +135,6 @@ class Evolution
 {
 private:
 	// general variables
-	const bool Absorbed; ///< whether have absorbing potential or not
 	const int dim; ///< the number of grids / the size of Hamiltonian
 	const MatrixXcd Hamiltonian; ///< the Hamiltonain Matrix
 	VectorXcd Intermediate1; ///< No ABC, psi_diag(0); with ABC, (psi(t)+k[i-1]*dt/n)/ihbar
@@ -151,7 +156,6 @@ public:
 	/// @param TimeStep the time interval, or dt
 	Evolution
 	(
-		const bool IsAbsorb,
 		const MatrixXcd& DiaH,
 		const VectorXcd& Psi0,
 		const double TimeStep

@@ -75,12 +75,10 @@ int main(void)
 	// grids in [xmin, xmax]
 	const int InteractingGrid = static_cast<int>((xmax - xmin) / dx) + 1;
 
-	// read whether have absorb potential or not
-	const bool Absorbed = read_absorb(in);
 	// absorbing region length from [2] and [3], determined by p0
 	const double AbsorbingRegionLength = [&]
 	{
-		if (Absorbed == true)
+		if (TestBoundaryCondition == Absorbing)
 		{
 			return PlanckH / p0min;
 		}
@@ -130,13 +128,13 @@ int main(void)
 	// read dt. criteria is from J. Comput. Phys., 1983, 52(1): 35-53.
 	const double dt = [&]
 	{
-		if (Absorbed == false)
+		if (TestBoundaryCondition == Absorbing)
 		{
-			return OutputTime;
+			return cutoff(min(read_double(in), hbar / 500.0 / (SigmaP * p0 / mass)));
 		}
 		else
 		{
-			return cutoff(min(read_double(in), hbar / 500.0 / (SigmaP * p0 / mass)));
+			return OutputTime;
 		}
 	}();
 	// finish reading
@@ -170,7 +168,6 @@ int main(void)
 	// c is the coefficient, c[m*NGrids+n] is the nth grid on the mth surface
 	Evolution EvolveObject = Evolution
 	(
-		Absorbed,
 		Hamiltonian_construction
 		(
 			GridCoordinate,

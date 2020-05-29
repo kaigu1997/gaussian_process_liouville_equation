@@ -56,36 +56,6 @@ double read_double(istream& is)
 	return temp;
 }
 
-/// Judge by the string in the input.
-///
-/// If the string is "on", use ABC, return true.
-///
-/// If the string is "off", not use ABC, return false.
-///
-/// Otherwise, the input is invalid, kills the program
-bool read_absorb(istream& is)
-{
-	string buffer, WhetherAbsorb;
-	bool Absorbed;
-	getline(is, buffer);
-	is >> WhetherAbsorb;
-	getline(is, buffer);
-	if (strcmp(WhetherAbsorb.c_str(), "on") == 0)
-	{
-		Absorbed = true;
-	}
-	else if (strcmp(WhetherAbsorb.c_str(), "off") == 0)
-	{
-		Absorbed = false;
-	}
-	else
-	{
-		cerr << "UNKNOWN CASE OF ABSORBING POTENTIAL" << endl;
-		exit(200);
-	}
-	return Absorbed;
-}
-
 ostream& show_time(ostream& os)
 {
 	auto time = chrono::system_clock::to_time_t(chrono::system_clock::now());
@@ -143,7 +113,6 @@ MatrixXcd Hamiltonian_construction
 	const VectorXd& GridCoordinate,
 	const double dx,
 	const double mass,
-	const bool absorbed,
 	const double xmin,
 	const double xmax,
 	const double AbsorbingRegionLength
@@ -164,27 +133,10 @@ MatrixXcd Hamiltonian_construction
 			}
 		}
 	}
-	// 2. d2/dx2 (over all pes)
-	for (int m = 0; m < NumPES; m++)
+	// 2. d2/dx2 (over all pes) and absorbing (if have)
+	switch (TestBoundaryCondition)
 	{
-		for (int n = 0; n < NGrids; n++)
-		{
-			for (int nn = 0; nn < NGrids; nn++)
-			{
-				if (nn == n)
-				{
-					Hamiltonian(m * NGrids + n, m * NGrids + nn) += pow(pi * hbar / dx, 2) / 6.0 / mass;
-				}
-				else
-				{
-					Hamiltonian(m * NGrids + n, m * NGrids + nn) += pow_minus_one(nn - n) * pow(hbar / dx / (nn - n), 2) / mass;
-				}
-			}
-		}
-	}
-	// 3. absorbing potential
-	if (absorbed == true)
-	{
+	case Absorbing:
 		for (int n = 0; n < NGrids; n++)
 		{
 			const double&& An = absorbing_potential(mass, xmin, xmax, AbsorbingRegionLength, GridCoordinate[n]);
@@ -193,6 +145,50 @@ MatrixXcd Hamiltonian_construction
 				Hamiltonian(m * NGrids + n, m * NGrids + n) -= 1.0i * An;
 			}
 		}
+	case Reflective:
+		const double L = xmax - xmin;
+		for (int m = 0; m < NumPES; m++)
+		{
+			for (int n = 0; n < NGrids; n++)
+			{
+				for (int nn = 0; nn < NGrids; nn++)
+				{
+					if (nn == n)
+					{
+						// T_{ii}=\frac{\pi^2\hbar^2}{6m\Delta x^2}
+						Hamiltonian(m * NGrids + n, m * NGrids + nn) += pow(pi * hbar / dx, 2) / 6.0 / mass;
+					}
+					else
+					{
+						// T_{ij}=\frac{(-1)^{i-j}\hbar^2}{(i-j)^2m\Delta x^2}
+						Hamiltonian(m * NGrids + n, m * NGrids + nn) += pow_minus_one(nn - n) * pow(hbar / dx / (nn - n), 2) / mass;
+					}
+				}
+			}
+		}
+		break;
+	case Periodic:
+		for (int m = 0; m < NumPES; m++)
+		{
+			for (int n = 0; n < NGrids; n++)
+			{
+				for (int nn = 0; nn < NGrids; nn++)
+				{
+					if (nn == n)
+					{
+						// T_{ii}=\frac{\pi^2\hbar^2((2N+1)^2-1)}{6mL^2}
+						Hamiltonian(m * NGrids + n, m * NGrids + nn) += pow(pi * hbar / L, 2) / 6.0 / mass * (NGrids * NGrids - 1);
+					}
+					else
+					{
+						// T_{ij}=\frac{(-1)^{i-j}\pi^2\hbar^2\cos(\frac{(i-j)\pi}{2N+1})}{mL^2\sin[2](\frac{(i-j)\pi}{2N+1})}
+						const double diff = (n - nn) * pi / NGrids;
+						Hamiltonian(m * NGrids + n, m * NGrids + nn) += pow_minus_one(nn - n) * cos(diff) * pow(pi * hbar / L / sin(diff), 2) / mass;
+					}
+				}
+			}
+		}
+		break;
 	}
 	return Hamiltonian;
 }
@@ -200,25 +196,23 @@ MatrixXcd Hamiltonian_construction
 /// Constructor. It allocates memory, and if there is no ABC, diagonalize Hamiltonian
 Evolution::Evolution
 (
-	const bool IsAbsorb,
 	const MatrixXcd& DiaH,
 	const VectorXcd& Psi0,
 	const double TimeStep
 ):
-	Absorbed(IsAbsorb),
 	dim(DiaH.rows()),
 	Hamiltonian(DiaH),
 	Intermediate1(dim),
 	Intermediate2(dim),
 	PsiAtTimeT(dim),
 	solver(DiaH),
-	EigVec(Absorbed == false? solver.eigenvectors() : MatrixXcd(0,0)),
-	EigVal(Absorbed == false? solver.eigenvalues() : VectorXd(0)),
+	EigVec(TestBoundaryCondition != Absorbing? solver.eigenvectors() : MatrixXcd(0,0)),
+	EigVal(TestBoundaryCondition != Absorbing ? solver.eigenvalues() : VectorXd(0)),
 	dt(TimeStep),
 	RK4kBeta(Complex(dt) / RK4Parameter),
 	RK4PsiAlpha(Complex(dt / 6.0) * RK4Parameter)
 {
-	if (Absorbed == false)
+	if (TestBoundaryCondition != Absorbing)
 	{
 		Intermediate1 = EigVec.adjoint() * Psi0;
 	}
@@ -238,7 +232,7 @@ Evolution::~Evolution(void)
 /// =C*exp(-iHd*t/hbar)*C^T*psi(0)_dia=C*exp(-iHd*t/hbar)*psi(0)_diag
 void Evolution::evolve(VectorXcd& Psi, const double Time)
 {
-	if (Absorbed == false)
+	if (TestBoundaryCondition != Absorbing)
 	{
 		// no ABC, using the diagonalized wavefunction
 
@@ -328,10 +322,23 @@ void output_phase_space_distribution
 					// do the numerical integral
 					Complex integral = 0.0;
 					// 0 <= (x+y, x-y) < NGrids 
-					for (int yk = max(-xi, xi + 1 - NGrids); yk <= min(xi, NGrids - 1 - xi); yk++)
+					switch (TestBoundaryCondition)
 					{
-						const double y = yk * dx;
-						integral += exp(2.0 * p * y / hbar * 1.0i) * Psi[xi - yk + iPES * NGrids] * conj(Psi[xi + yk + jPES * NGrids]);
+					case Absorbing:
+					case Reflective:
+						for (int yk = max(-xi, xi + 1 - NGrids); yk <= min(xi, NGrids - 1 - xi); yk++)
+						{
+							const double y = yk * dx;
+							integral += exp(2.0 * p * y / hbar * 1.0i) * Psi[xi - yk + iPES * NGrids] * conj(Psi[xi + yk + jPES * NGrids]);
+						}
+						break;
+					case Periodic:
+						for (int yk = 0; yk < NGrids; yk++)
+						{
+							const double y = yk * dx;
+							integral += exp(2.0 * p * y / hbar * 1.0i) * Psi[(xi - yk + NGrids) % NGrids + iPES * NGrids] * conj(Psi[(xi + yk) % NGrids + jPES * NGrids]);
+						}
+						break;
 					}
 					integral /= pi * hbar;
 					os << ' ' << integral.real() << ' ' << integral.imag();

@@ -37,7 +37,9 @@ const int NumPES = 2; ///< the number of potential energy surfaces
 /// the Potential matrix and its derivatives
 using PESMatrix = Matrix<double, NumPES, NumPES>;
 
+#ifndef TestModel
 const Model TestModel = DAC; ///< the model to use
+#endif // !TestModel
 
 /// @brief diabatic PES matrix: the analytical form
 /// @param x the position
