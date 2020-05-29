@@ -493,7 +493,7 @@
         \begin{equation}
             c'_k=\sum_{n=-N}^N{f_n\exp(-\frac{2nk\pi\mathrm{i}}{2N+1})}
         \end{equation}
-        这与上文离散傅里叶变换(Discrete Fourier Transformation, DFT)的结果是类似的，此外有$L=2N\Delta x$。\par
+        这与上文离散傅里叶变换(Discrete Fourier Transformation, DFT)的结果是类似的，此外有$L=(2N+1)\Delta x$。\par
         那么对于一阶导，有
         \begin{align}
             \eval{\dv{f}{x}}_{x=x_m}=&\frac{1}{2N+1}\sum_{k=-N}^N{c'_k\qty(\frac{2k\pi\mathrm{i}}{L})\exp(\frac{2mk\pi\mathrm{i}}{2N+1})} \\
@@ -501,7 +501,7 @@
             =&\frac{2\pi\mathrm{i}}{(2N+1)L}\sum_{n=-N}^N{f_n\qty[\sum_{k=-N}^N{\exp(-\frac{2nk\pi\mathrm{i}}{2N+1})k\exp(\frac{2mk\pi\mathrm{i}}{2N+1})}]} \\
             =&\frac{2\pi\mathrm{i}}{(2N+1)L}\sum_{n=-N}^N{f_n\qty[\sum_{k=-N}^N{k\exp(\frac{2(m-n)k\pi\mathrm{i}}{2N+1})}]}
         \end{align}
-        对于内层的求和，令
+        对于内层的求和，当$m\neq n$时，令
         \begin{equation}
             a=\frac{2(m-n)\pi\mathrm{i}}{2N+1}
         \end{equation}
@@ -513,12 +513,16 @@
             =&\frac{[(N+1)\mathrm{e}^{a(N+1)}+N\mathrm{e}^{-aN}](\mathrm{e}^{a}-1)-(\mathrm{e}^{a(N+1)}-\mathrm{e}^{-aN})\mathrm{e}^{a}}{(\mathrm{e}^{a}-1)^2} \\
             =&\frac{(2N+1)\mathrm{e}^{-aN}}{\mathrm{e}^{a}-1}
         \end{align}
+        而当$m=n$时，
+        \begin{equation}
+            \sum_{k=-N}^N{k}=0
+        \end{equation}
         因此，
         \begin{align}
-            \eval{\dv{f}{x}}_{x=x_m}=&\frac{2\pi\mathrm{i}}{(2N+1)L}\sum_{n=-N}^N{f_n\frac{(2N+1)\mathrm{e}^{-aN}}{\mathrm{e}^{a}-1}} \\
-            =&\frac{\pi}{L}\sum_{n=-N}^N{f_n\frac{\exp[-\frac{2(m-n)\pi\mathrm{i}}{2N+1}\qty(N+\frac{1}{2})]}{\frac{1}{2\mathrm{i}}\qty[\exp(\frac{(m-n)\pi\mathrm{i}}{2N+1})-\exp(-\frac{(m-n)\pi\mathrm{i}}{2N+1})]}} \\
-            =&\sum_{n=-N}^N{f_n\frac{(-1)^{m-n}\pi}{L\sin(\frac{(m-n)\pi}{2N+1})}} \\
-            =&\sum_{n=-N}^N{D_{mn}f_n}
+            \eval{\dv{f}{x}}_{x=x_m}=&\frac{2\pi\mathrm{i}}{(2N+1)L}\sum_{\mathclap{\substack{n=-N\\n\neq m}}}^N{f_n\frac{(2N+1)\mathrm{e}^{-aN}}{\mathrm{e}^{a}-1}} \\
+            =&\frac{\pi}{L}\sum_{\mathclap{\substack{n=-N\\n\neq m}}}^N{f_n\frac{\exp[-\frac{2(m-n)\pi\mathrm{i}}{2N+1}\qty(N+\frac{1}{2})]}{\frac{1}{2\mathrm{i}}\qty[\exp(\frac{(m-n)\pi\mathrm{i}}{2N+1})-\exp(-\frac{(m-n)\pi\mathrm{i}}{2N+1})]}} \\
+            =&\sum_{\mathclap{\substack{n=-N\\n\neq m}}}^N{f_n\frac{(-1)^{m-n}\pi}{L\sin(\frac{(m-n)\pi}{2N+1})}} \\
+            =&\sum_{\mathclap{\substack{n=-N\\n\neq m}}}^N{D_{mn}f_n}
         \end{align}
         故而周期性边界条件下的一阶导矩阵元为
         \begin{equation}
@@ -527,5 +531,42 @@
                 \frac{(-1)^{i-j}\pi}{L\sin(\frac{(i-j)\pi}{2N+1})},\qotherwise
             \end{cases}
         \end{equation}
-        可以看出，这个矩阵是反厄米的。二阶及更高阶导数的推导也是类似的。
+        可以看出，这个矩阵是反厄米的。\par
+        对于二阶导，
+        \begin{align}
+            \eval{\dv[2]{f}{x}}_{x=x_m}=&-\frac{1}{2N+1}\sum_{k=-N}^N{c'_k\frac{4k^2\pi^2}{L^2}\exp(\frac{2mk\pi\mathrm{i}}{2N+1})} \\
+            =&-\frac{4\pi^2}{(2N+1)L^2}\sum_{k=-N}^N{\qty[\sum_{n=-N}^N{f_n\exp(-\frac{2nk\pi\mathrm{i}}{2N+1})}]k^2\exp(\frac{2mk\pi\mathrm{i}}{2N+1})} \\
+            =&-\frac{4\pi^2}{(2N+1)L^2}\sum_{n=-N}^N{f_n\qty[\sum_{k=-N}^N{k^2\exp(\frac{2(m-n)k\pi\mathrm{i}}{2N+1})}]}
+        \end{align}
+        对于内层的求和，当$m\neq n$时，同样令
+        \begin{equation}
+            a=\frac{2(m-n)\pi\mathrm{i}}{2N+1}
+        \end{equation}
+        所以$\exp[(2N+1)a]=1$，则
+        \begin{align}
+            \sum_{k=-N}^N{k^2\exp(\frac{2(m-n)k\pi\mathrm{i}}{2N+1})}=&\pdv[2]{a} \qty[\frac{\mathrm{e}^{a(N+1)}-\mathrm{e}^{-aN}}{\mathrm{e}^{a}-1}] \\
+            =&\frac{\mathrm{e}^{-aN}}{(\mathrm{e}^{a}-1)^3}[N^2\mathrm{e}^{(2N+3)a}+(1-2N-2N^2)\mathrm{e}^{(2N+2)a} \nonumber \\
+            &+(N+1)^2\mathrm{e}^{(2N+1)a}-(N+1)^2\mathrm{e}^{2x}+(2N^2+2N-1)\mathrm{e}^{x}-N^2] \\
+            =&-\frac{(2N+1)\mathrm{e}^{-aN}(\mathrm{e}^{a}+1)}{(\mathrm{e}^{a}-1)^2}
+        \end{align}
+        而当$m=n$时，显然有
+        \begin{equation}
+            \sum_{k=-N}^N{k^2}=\frac{N(N+1)(2N+1)}{3}
+        \end{equation}
+        因此，
+        \begin{align}
+            -\frac{\hbar^2}{2m}\eval{\dv[2]{f}{x}}_{x=x_m}=&-\frac{2\pi^2\hbar^2}{(2N+1)mL^2}\sum_{\mathclap{\substack{n=-N\\n\neq m}}}^N{f_n\frac{(2N+1)\mathrm{e}^{-aN}(\mathrm{e}^{a}+1)}{(\mathrm{e}^{a}-1)^2}} \nonumber \\
+            &+f_m\frac{2\pi^2\hbar^2}{(2N+1)mL^2}\frac{N(N+1)(2N+1)}{3} \\
+            =&\frac{\pi^2\hbar^2}{mL^2}\sum_{\mathclap{\substack{n=-N\\n\neq m}}}^N{f_n\frac{\exp[-\frac{(m-n)(2N+1)\pi\mathrm{i}}{2N+1}]\frac{1}{2}\qty[\exp(\frac{(m-n)\pi\mathrm{i}}{2N+1})+\exp(-\frac{(m-n)\pi\mathrm{i}}{2N+1})]}{\qty(\frac{1}{2\mathrm{i}}\qty[\exp(\frac{(m-n)\pi\mathrm{i}}{2N+1})-\exp(-\frac{(m-n)\pi\mathrm{i}}{2N+1})])^2}} \nonumber \\
+            &+f_m\frac{2N(N+1)\pi^2\hbar^2}{3mL^2} \\
+            =&\sum_{n=-N}^N{f_n\qty[\frac{(-1)^{m-n}\pi^2\hbar^2\cos(\frac{(m-n)\pi}{2N+1})}{mL^2\sin[2](\frac{(m-n)\pi}{2N+1})}(1-\delta_{mn})+\frac{[(2N+1)^2-1]\pi^2\hbar^2}{6mL^2}\delta_{mn}]} \\
+            =&\sum_{n=-N}^N{T_{mn}f_n}
+        \end{align}
+        即周期性边界条件下的动能矩阵元为
+        \begin{equation}
+            T_{ij}=\frac{\pi^2\hbar^2}{mL^2}\times\begin{cases}
+                \frac{(2N+1)^2-1}{6},\qif i=j \\
+                \frac{(-1)^{i-j}\cos(\frac{(i-j)\pi}{2N+1})}{\sin[2](\frac{(i-j)\pi}{2N+1})},\qotherwise
+            \end{cases}
+        \end{equation}
 \end{document}
