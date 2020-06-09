@@ -119,6 +119,7 @@
                 &K(X_*,X_*)-K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}K(X,X_*))
             \end{align}
             可以注意到均值是已知输出的线性叠加，所以高斯过程是\textbf{线性预测器}，对于有无噪声的情况皆然。\par
+            如果需要在只有一维高斯随机数生成器的情况下生成多维高斯变量$\vb{x}\sim\mathcal{N}(\vb{m},K)$，则首先对协方差矩阵作楚列斯基分解$K=LL^\top$，其中$L$是一个下三角矩阵。之后，产生若干相互独立的高斯变量$\vb{u}\sim\mathcal{N}(\vb{0},I)$，则$\vb{x}=\vb{m}+L\vb{u}$即为满足对应分布的随机变量。\par
             此外需要引入边缘似然函数$p(\vb{y}|X)$，这里是指对函数值的边缘化
             \begin{equation}
                 p(\vb{y}|X)=\int{\dd{\vb{f}}p(\vb{y}|\vb{f},X)p(\vb{f}|X)}\sim\mathcal{N}(\vb{0},K(X,X)+\sigma_n^2I)
@@ -529,4 +530,34 @@
                 对于每个超参数的计算量都为$\mathcal{O}(n^3)$，负担比对边缘似然的类似计算更重。\par
                 这里将负对数验证密度作为损失函数，但还可以设想使用其他损失函数，如常用的平方误差损失函数。但是，此损失函数只是预测平均值的函数，而忽略了验证集方差。此外，由于均值预测与协方差的大小无关（即，将信号和噪声的协方差乘以任意正常数不会改变均值预测结果），因此基于平方误差（或仅取决于均值预测的任何其他）损失函数的LOO-CV会导致有一个自由度是不确定的，而显然完整的预测分布确实取决于协方差函数的尺度。此外，基于平方误差损失的导数计算具有与负对数验证密度损失相似的计算复杂度。总之，将基于平方误差损失的LOO-CV用于超参数选择似乎没有吸引力。\par
                 将LOO-CV方法的伪似然与前文的的边际似然进行比较，他们的计算量基本一致，于是在什么情况下某种方法可能更可取是一个有趣的问题。这个问题还没有进行太多的经验研究。但是要注意边际似然在给定模型假设的情况下给出了观测概率，而LOO-CV则不管是否有任何假设的条件下给出了预测概率的对数的估计，所以交叉验证在对抗模型的推测失误上可能是更鲁棒的。
+    \section{应用——混合量子经典刘维尔方程(MQCLE)}
+        \subsection{守恒}
+			高斯过程的预测应当符合物理实际，例如布居和能量应当是守恒量，而这则会体现在对超参数的限制上。\par
+			在以下考虑中，核函数取平方指数(SE)型，即
+			\begin{equation}
+				k(\vb{x},\vb{x}')=\sigma_f^2\exp[-\sum_{i=1}^d{\frac{(x_i-x'_i)^2}{2\sigma_{x_i}^2}}]+\sigma_n^2\delta(\vb{x}-\vb{x}')
+			\end{equation}
+			其中$d$是变量的维度。在MQCLE中$d=2$，因此上式也可以写作
+			\begin{equation}
+				k(x,p,x',p')=\sigma_f^2\exp[-\frac{(x-x')^2}{2\sigma_x^2}-\frac{(p-p')^2}{2\sigma_p^2}]+\sigma_n^2\delta(x-x')\delta(p-p')
+			\end{equation}\par
+			对于布居守恒，考虑有若干势能面（编号从$0$到$m$），每个势能面上有其各自的超参数$\sigma_{fi}$，$\sigma_{xi}$，$\sigma_{pi}$和$\sigma_{ni}$，也有若干采样点$(x_{i0}, p_{i0})$，$(x_{i1},p_{i1})$，……，$(x_{in},p_{in})$，共计$n+1$个，且已知$\rho_{ii}(x_{ij},p_{ij})=f_{ij}$。\par
+			于是，根据高斯过程，$\forall x,p$，
+			\begin{align}
+				\ev{\rho_{ii}(x,p)}=&\mqty(k_i(x,p,x_{i0},p_{i0}) & k_i(x,p,x_{i1},p_{i1}) & \dots & k_i(x,p,x_{in},p_{in})) \nonumber \\
+				&\times\mqty(k_i(x_{i0},p_{i0},x_{i0},p_{i0}) & k_i(x_{i0},p_{i0},x_{i1},p_{i1}) & \dots & k_i(x_{i0},p_{i0},x_{in},p_{in}) \\
+				k_i(x_{i1},p_{i1},x_{i0},p_{i0}) & k_i(x_{i1},p_{i1},x_{i1},p_{i1}) & \dots & k_i(x_{i1},p_{i1},x_{in},p_{in}) \\
+				\vdots & \vdots & \ddots & \vdots \\
+				k_i(x_{in},p_{in},x_{i0},p_{i0}) & k_i(x_{in},p_{in},x_{i1},p_{i1}) & \dots & k_i(x_{in},p_{in},x_{in},p_{in}))^{-1}\mqty(f_{i0} \\ f_{i1} \\ \vdots \\ f_{in})
+			\end{align}
+			第二行的部分不含有变量，因此对$x$和$p$的积分可以直接作用于第一行的矢量，可得
+			\begin{align}
+				\ev{\rho_{ii}}=&\int\limits_{\mathbb{R}^2}{\dd{\Gamma}\ev{\rho_{ii}(x,p)}} \\
+				=&\mqty(\int\limits_{\mathbb{R}^2}{\dd{\Gamma}k_i(x,p,x_{i0},p_{i0})} & \int\limits_{\mathbb{R}^2}{\dd{\Gamma}k_i(x,p,x_{i1},p_{i1})} & \dots & \int\limits_{\mathbb{R}^2}{\dd{\Gamma}k_i(x,p,x_{in},p_{in})})K_i^{-1}\vb{f}_i \\
+				=&(2\pi\sigma_{xi}\sigma_{pi}\sigma_{fi}^2+\sigma_{ni}^2)\mqty(1 & 1 & \dots & 1)K_i^{-1}\vb{f}_i
+			\end{align}
+			其中$\dd{\Gamma}=\dd{x}\dd{p}$是相空间面元。于是，归一化可以写为
+			\begin{equation}
+				1=\sum_{i=0}^m{\ev{\rho_{ii}}}=\mqty(1 & 1 & \dots & 1)\sum_{i=0}^m{(2\pi\sigma_{xi}\sigma_{pi}\sigma_{fi}^2+\sigma_{ni}^2)K_i^{-1}\vb{f}_i}
+			\end{equation}
 \end{document}
