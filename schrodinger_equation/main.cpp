@@ -97,29 +97,30 @@ int main(void)
 	const int dim = NGrids * NumPES;
 
 	// the coordinates of the grids, i.e. value of xi
-	VectorXd GridCoordinate(NGrids);
-	// XGrids contains each grid coordinate, one in a line
-	ofstream XGrids("x.txt");
-	XGrids.sync_with_stdio(false);
-	// PGrids contains the calculated p values in the phase space distribution
-	ofstream PGrids("p.txt");
-	PGrids.sync_with_stdio(false);
+	VectorXd XCoordinate(NGrids), PCoordinate(NGrids);
 	// pmin and pmax are the minimum/maximum calculate p value in the phase space distribution
 	// they are centered at p0, dp=pi*hbar/L, Lp=pi*hbar/dx
-	// in main function, they are just to output to the file, and are not passed to any functions
 	const double pmin = p0 - pi * hbar / dx / 2.0;
 	const double pmax = p0 + pi * hbar / dx / 2.0;
 	// calculate the grid coordinates, and print them
 	for (int i = 0; i < NGrids; i++)
 	{
-		GridCoordinate[i] = xmin + dx * (i - AbsorbingGrid);
-		XGrids << GridCoordinate[i] << '\n';
-		PGrids << ((NGrids - 1 - i) * pmin + i * pmax) / (NGrids - 1) << '\n';
+		XCoordinate[i] = xmin + dx * (i - AbsorbingGrid);
+		PCoordinate[i] = ((NGrids - 1 - i) * pmin + i * pmax) / (NGrids - 1);
 	}
-	XGrids.close();
-	PGrids.close();
+	// XGrids contains each grid coordinate, one in a line
+	ofstream Grids;
+	Grids.sync_with_stdio(false);
+	// x.txt contains the grid coordinate, one in a line
+	Grids.open("x.txt");
+	Grids << XCoordinate;
+	Grids.close();
+	// p.txt contains the calculated p values in the phase space distribution
+	Grids.open("p.txt");
+	Grids << PCoordinate;
+	Grids.close();
 	clog << "dx = " << dx << ", and there is overall " << NGrids << " grids from "
-		<< GridCoordinate[0] << " to " << GridCoordinate[NGrids - 1] << ".\n";
+		<< XCoordinate[0] << " to " << XCoordinate[NGrids - 1] << ".\n";
 
 	// read evolving time and output time, in unit of a.u.
 	// total time is estimated as a uniform linear motion
@@ -149,14 +150,14 @@ int main(void)
 	// psi(x)=exp(-((x-x0)/2sigma_x)^2+i*p0*x/hbar)/sqrt(sqrt(2*pi)*sigma_x)
 	VectorXcd AdiabaticPsi = wavefunction_initialization
 	(
-		GridCoordinate,
+		XCoordinate,
 		x0,
 		p0,
 		SigmaX
 	);
 	// TransformationMatrix makes dia to adia
 	// and transform to diabatic representation C^T*psi(dia)*C=psi(adia), so psi(dia)=C*psi(adia)
-	const MatrixXcd TransformationMatrix = diabatic_to_adiabatic(GridCoordinate);
+	const MatrixXcd TransformationMatrix = diabatic_to_adiabatic(XCoordinate);
 	VectorXcd DiabaticPsi = TransformationMatrix * AdiabaticPsi;
 
 	// the population on each PES
@@ -170,10 +171,9 @@ int main(void)
 	(
 		Hamiltonian_construction
 		(
-			GridCoordinate,
+			XCoordinate,
 			dx,
 			mass,
-			Absorbed,
 			xmin,
 			xmax,
 			AbsorbingRegionLength
@@ -204,7 +204,7 @@ int main(void)
 	// Steps contains when is each step, also one in a line
 	ofstream Steps("t.txt");
 	Steps.sync_with_stdio(false);
-	clog << "Finish initialization. Begin evolving." << endl << show_time << endl;
+	clog << "Finish initialization. Begin evolving.\n" << show_time << endl;
 
 
 	// evolution
@@ -225,16 +225,17 @@ int main(void)
 			output_phase_space_distribution
 			(
 				PhaseOutput,
-				GridCoordinate,
+				PCoordinate,
 				dx,
 				p0,
 				AdiabaticPsi
 			);
 			// calcuate <E>, <x> and <p>
 			// using structured binding in C++17
+			// since the H is diabatic, using diabatic wavefunction
 			auto [AverageE, AverageX, AverageP] = calculate_average
 			(
-				GridCoordinate,
+				XCoordinate,
 				dx,
 				mass,
 				DiabaticPsi
@@ -264,7 +265,7 @@ int main(void)
 					cerr << "DIRECTION REVERSED DUE TO REFLECTION / PBC, STOP EVOLVING AT " << Time << endl;
 					break;
 				}
-				if (Absorbed == true && accumulate(Population, Population + NumPES, 0.0) < PplLim)
+				if (TestBoundaryCondition == Absorbing && accumulate(Population, Population + NumPES, 0.0) < PplLim)
 				{
 					cerr << "ALMOST ALL POPULATION HAVE BEEN ABSORBED, STOP EVOLVING AT " << Time << endl;
 					break;

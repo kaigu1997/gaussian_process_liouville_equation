@@ -63,8 +63,8 @@ double absorbing_potential
 );
 
 /// @brief calculate the transformation matrix from diabatic state to adiabatic state
-/// @param GridCoordinate the coordinate of each grid, i.e., x_i
+/// @param XCoordinate the coordinate of each grid, i.e., x_i
 /// @return the transformation matrix
-MatrixXcd diabatic_to_adiabatic(const VectorXd& GridCoordinate);
+MatrixXcd diabatic_to_adiabatic(const VectorXd& XCoordinate);
 
 #endif // !PES_H

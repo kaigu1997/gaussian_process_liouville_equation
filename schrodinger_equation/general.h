@@ -97,7 +97,7 @@ const BoundaryCondition TestBoundaryCondition = Periodic; ///< the boundary cond
 #endif // !TestBoundaryCondition
 
 /// @brief initialize the gaussian wavepacket, and normalize it
-/// @param GridCoordinate the coordinate of each grid, i.e., x_i
+/// @param XCoordinate the coordinate of each grid, i.e., x_i
 /// @param dx the grid spacing
 /// @param x0 the initial average position
 /// @param p0 the initial average momentum
@@ -105,7 +105,7 @@ const BoundaryCondition TestBoundaryCondition = Periodic; ///< the boundary cond
 /// @return the wavefunction to be initialized in adiabatic representation
 VectorXcd wavefunction_initialization
 (
-	const VectorXd& GridCoordinate,
+	const VectorXd& XCoordinate,
 	const double x0,
 	const double p0,
 	const double SigmaX
@@ -113,7 +113,7 @@ VectorXcd wavefunction_initialization
 
 /// @brief construct the diabatic Hamiltonian
 /// @param NGrids the number of grids in wavefunction
-/// @param GridCoordinate the coordinate of each grid, i.e., x_i
+/// @param XCoordinate the coordinate of each grid, i.e., x_i
 /// @param dx the grid spacing
 /// @param mass the mass of the bath (the nucleus mass)
 /// @param xmin the left boundary, only used with ABC
@@ -122,7 +122,7 @@ VectorXcd wavefunction_initialization
 /// @return the Hamiltonian, a complex matrix, hermitian if no ABC
 MatrixXcd Hamiltonian_construction
 (
-	const VectorXd& GridCoordinate,
+	const VectorXd& XCoordinate,
 	const double dx,
 	const double mass,
 	const double xmin = 0.0,
@@ -175,28 +175,28 @@ void output_grided_population(ostream& os, const VectorXcd Psi);
 
 /// @brief calculate the phase space distribution, and output it
 /// @param os an ostream object (could be ofstream/osstream) to output
-/// @param GridCoordinate the coordinate of each grid, i.e., x_i
+/// @param PGridCoordinate the coordinate of each grid on p direction, i.e., p_i
 /// @param dx the grid spacing
 /// @param p0 the initial average momentum
 /// @param Psi the (adiabatic) wavefunction
 void output_phase_space_distribution
 (
 	ostream& os,
-	const VectorXd& GridCoordinate,
+	const VectorXd& PGridCoordinate,
 	const double dx,
 	const double p0,
 	const VectorXcd& Psi
 );
 
 /// @brief calculate average energy, x, and p
-/// @param GridCoordinate the coordinate of each grid, i.e., x_i
+/// @param XCoordinate the coordinate of each grid, i.e., x_i
 /// @param dx the grid spacing
 /// @param mass the mass of the bath (the nucleus mass)
 /// @param Psi the (adiabatic) wavefunction
 /// @return average energy, x, and p
 tuple<double, double, double> calculate_average
 (
-	const VectorXd& GridCoordinate,
+	const VectorXd& XCoordinate,
 	const double dx,
 	const double mass,
 	const VectorXcd& Psi

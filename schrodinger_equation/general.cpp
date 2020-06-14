@@ -73,25 +73,28 @@ ostream& show_time(ostream& os)
 /// this function is also only called once, for initialization of the adiabatic wavefunction
 VectorXcd wavefunction_initialization
 (
-	const VectorXd& GridCoordinate,
+	const VectorXd& XCoordinate,
 	const double x0,
 	const double p0,
 	const double SigmaX
 )
 {
-	const int NGrids = GridCoordinate.size();
+	const int NGrids = XCoordinate.size();
+	const double dx = (XCoordinate[NGrids - 1] - XCoordinate[0]) / (NGrids - 1);
 	// the wavefunction
 	VectorXcd Psi(NGrids * NumPES);
 	// for higher PES, the initial wavefunction is zero
 	memset(Psi.data() + NGrids, 0, NGrids * (NumPES - 1) * sizeof(Complex));
 	// for ground state, it is a gaussian. psi(x)=A*exp(-(x-x0)^2/4sigmax^2+ip0x/hbar)
+#pragma omp parallel for default(none) shared(Psi, XCoordinate) schedule(static, 1)
 	for (int i = 0; i < NGrids; i++)
 	{
-		const double& x = GridCoordinate[i];
+		const double& x = XCoordinate[i];
 		Psi[i] = exp(-pow((x - x0) / 2 / SigmaX, 2) + p0 * x / hbar * 1.0i) / sqrt(sqrt(2.0 * pi) * SigmaX);
 	}
 	// normalization
-	const double NormFactor = Psi.norm();
+	const double NormFactor = sqrt(Psi.squaredNorm() * dx);
+#pragma omp parallel for default(none) shared(Psi, XCoordinate) schedule(static, 1)
 	for (int i = 0; i < NGrids; i++)
 	{
 		Psi[i] /= NormFactor;
@@ -110,7 +113,7 @@ VectorXcd wavefunction_initialization
 /// This function is called only once for the initialization of Hamiltonian
 MatrixXcd Hamiltonian_construction
 (
-	const VectorXd& GridCoordinate,
+	const VectorXd& XCoordinate,
 	const double dx,
 	const double mass,
 	const double xmin,
@@ -118,13 +121,14 @@ MatrixXcd Hamiltonian_construction
 	const double AbsorbingRegionLength
 )
 {
-	const int NGrids = GridCoordinate.size();
+	const int NGrids = XCoordinate.size();
 	MatrixXcd Hamiltonian(NGrids * NumPES, NGrids * NumPES);
 	memset(Hamiltonian.data(), 0, Hamiltonian.size() * sizeof(Complex));
 	// 1. V_{mm'}(R_n), n=n'
+#pragma omp parallel for default(none) shared(Hamiltonian, XCoordinate) schedule(static, 1)
 	for (int n = 0; n < NGrids; n++)
 	{
-		const PESMatrix& Vn = diabatic_potential(GridCoordinate[n]);
+		const PESMatrix& Vn = diabatic_potential(XCoordinate[n]);
 		for (int m = 0; m < NumPES; m++)
 		{
 			for (int mm = 0; mm < NumPES; mm++)
@@ -137,16 +141,17 @@ MatrixXcd Hamiltonian_construction
 	switch (TestBoundaryCondition)
 	{
 	case Absorbing:
+#pragma omp parallel for default(none) shared(Hamiltonian, XCoordinate) schedule(static, 1)
 		for (int n = 0; n < NGrids; n++)
 		{
-			const double&& An = absorbing_potential(mass, xmin, xmax, AbsorbingRegionLength, GridCoordinate[n]);
+			const double&& An = absorbing_potential(mass, xmin, xmax, AbsorbingRegionLength, XCoordinate[n]);
 			for (int m = 0; m < NumPES; m++)
 			{
 				Hamiltonian(m * NGrids + n, m * NGrids + n) -= 1.0i * An;
 			}
 		}
 	case Reflective:
-		const double L = xmax - xmin;
+#pragma omp parallel for default(none) shared(Hamiltonian) schedule(static, 1)
 		for (int m = 0; m < NumPES; m++)
 		{
 			for (int n = 0; n < NGrids; n++)
@@ -168,6 +173,8 @@ MatrixXcd Hamiltonian_construction
 		}
 		break;
 	case Periodic:
+		const double L = XCoordinate[NGrids - 1] - XCoordinate[0];
+#pragma omp parallel for default(none) shared(Hamiltonian) schedule(static, 1)
 		for (int m = 0; m < NumPES; m++)
 		{
 			for (int n = 0; n < NGrids; n++)
@@ -295,16 +302,16 @@ void output_grided_population(ostream& os, const VectorXcd Psi)
 void output_phase_space_distribution
 (
 	ostream& os,
-	const VectorXd& GridCoordinate,
+	const VectorXd& PGridCoordinate,
 	const double dx,
 	const double p0,
 	const VectorXcd& Psi
 )
 {
 	// NGrids is the number of grids in wavefunction
-	const int NGrids = GridCoordinate.size();
-	const double pmin = p0 - pi * hbar / dx / 2.0;
-	const double pmax = p0 + pi * hbar / dx / 2.0;
+	const int NGrids = PGridCoordinate.size();
+	// PhaseSpaceDistribution saves phase space distribution of one element of PWTDM
+	static MatrixXcd PhaseSpaceDistribution(NGrids, NGrids);
 	// Wigner Transformation: P(x,p)=int{dy*exp(2ipy/hbar)<x-y|rho|x+y>}/(pi*hbar)
 	// the interval of p is p0+pi*hbar/dx*[-1,1), dp=2*pi*hbar/(xmax-xmin)
 	// loop over pes first
@@ -312,15 +319,16 @@ void output_phase_space_distribution
 	{
 		for (int jPES = 0; jPES < NumPES; jPES++)
 		{
+#pragma omp parallel for default(none) shared(Psi, PGridCoordinate, iPES, jPES, PhaseSpaceDistribution)
 			// loop over x
 			for (int xi = 0; xi < NGrids; xi++)
 			{
 				// loop over p
 				for (int pj = 0; pj < NGrids; pj++)
 				{
-					const double p = ((NGrids - 1 - pj) * pmin + pj * pmax) / (NGrids - 1);
+					const double p = PGridCoordinate[pj];
 					// do the numerical integral
-					Complex integral = 0.0;
+					PhaseSpaceDistribution(xi, pj) = 0;
 					// 0 <= (x+y, x-y) < NGrids 
 					switch (TestBoundaryCondition)
 					{
@@ -329,19 +337,26 @@ void output_phase_space_distribution
 						for (int yk = max(-xi, xi + 1 - NGrids); yk <= min(xi, NGrids - 1 - xi); yk++)
 						{
 							const double y = yk * dx;
-							integral += exp(2.0 * p * y / hbar * 1.0i) * Psi[xi - yk + iPES * NGrids] * conj(Psi[xi + yk + jPES * NGrids]);
+							PhaseSpaceDistribution(xi, pj) += exp(2.0 * p * y / hbar * 1.0i) * Psi[xi - yk + iPES * NGrids] * conj(Psi[xi + yk + jPES * NGrids]);
 						}
 						break;
 					case Periodic:
-						for (int yk = 0; yk < NGrids; yk++)
+						for (int yk = -NGrids / 2; yk < (NGrids + 1) / 2; yk++)
 						{
 							const double y = yk * dx;
-							integral += exp(2.0 * p * y / hbar * 1.0i) * Psi[(xi - yk + NGrids) % NGrids + iPES * NGrids] * conj(Psi[(xi + yk) % NGrids + jPES * NGrids]);
+							PhaseSpaceDistribution(xi, pj) += exp(2.0 * p * y / hbar * 1.0i) * Psi[(xi - yk + NGrids) % NGrids + iPES * NGrids] * conj(Psi[(xi + yk + NGrids) % NGrids + jPES * NGrids]);
 						}
 						break;
 					}
-					integral /= pi * hbar;
-					os << ' ' << integral.real() << ' ' << integral.imag();
+				}
+			}
+			PhaseSpaceDistribution *= dx / (pi * hbar);
+			// output
+			for (int i = 0; i < NGrids; i++)
+			{
+				for (int j = 0; j < NGrids; j++)
+				{
+					os << ' ' << PhaseSpaceDistribution(i, j).real() << ' ' << PhaseSpaceDistribution(i, j).imag();
 				}
 			}
 			os << '\n';
@@ -358,6 +373,7 @@ static MatrixXd derivative(const int NGrids, const double dx)
 {
 	MatrixXd result(NumPES * NGrids, NumPES * NGrids);
 	memset(result.data(), 0, result.size() * sizeof(double));
+#pragma omp parallel for default(none) shared(result) schedule(static, 1)
 	for (int i = 0; i < NumPES; i++)
 	{
 		for (int j = 0; j < NGrids; j++)
@@ -381,39 +397,38 @@ static MatrixXd derivative(const int NGrids, const double dx)
 /// <E,p> = <psi|A|psi>
 tuple<double, double, double> calculate_average
 (
-	const VectorXd& GridCoordinate,
+	const VectorXd& XCoordinate,
 	const double dx,
 	const double mass,
 	const VectorXcd& Psi
 )
 {
 	// NGrids is the number of grids in wavefunction
-	const int NGrids = GridCoordinate.size();
+	const int NGrids = XCoordinate.size();
 	// the number of elements in psi
 	const int dim = Psi.size();
 	// construct the p and H matrix
 	static const MatrixXcd P = -1.0i * hbar * derivative(NGrids, dx);
 	static const MatrixXcd H = Hamiltonian_construction
 	(
-		GridCoordinate,
+		XCoordinate,
 		dx,
 		mass
 	);
-	static Complex* MatMul = new Complex[dim];
-	Complex result;
 	// first, <E>
-	const double E = Psi.dot(H * Psi).real();
+	const double E = Psi.dot(H * Psi).real() * dx;
 	// next, <x>
 	double x = 0.0;
 	for (int i = 0; i < NumPES; i++)
 	{
 		for (int j = 0; j < NGrids; j++)
 		{
-			x += GridCoordinate[j] * (Psi[i * NGrids + j] * conj(Psi[i * NGrids + j])).real();
+			x += XCoordinate[j] * (Psi[i * NGrids + j] * conj(Psi[i * NGrids + j])).real();
 		}
 	}
+	x *= dx;
 	// finally, <p>, same as <E>
-	const double p = Psi.dot(P * Psi).real();
+	const double p = Psi.dot(P * Psi).real() * dx;
 	return make_tuple(E, x, p);
 }
 
@@ -430,6 +445,6 @@ void calculate_population
 	// again, calling cblas_zdotc_sub rather than cblas_znrm2 due to higher accuracy
 	for (int i = 0; i < NumPES; i++)
 	{
-		Population[i] = Psi.segment(i * NGrids, NGrids).squaredNorm();
+		Population[i] = Psi.segment(i * NGrids, NGrids).squaredNorm() * dx;
 	}
 }

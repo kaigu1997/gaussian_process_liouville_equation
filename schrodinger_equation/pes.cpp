@@ -94,17 +94,18 @@ double absorbing_potential
 }
 
 /// C^T*psi(dia)=psi(adia), which diagonalize PES only (instead of diagonal H)
-MatrixXcd diabatic_to_adiabatic(const VectorXd& GridCoordinate)
+MatrixXcd diabatic_to_adiabatic(const VectorXd& XCoordinate)
 {
 	// NGrids is the number of grids in wavefunction
-	const int NGrids = GridCoordinate.size();
+	const int NGrids = XCoordinate.size();
 	MatrixXcd TransformationMatrix(NGrids * NumPES, NGrids * NumPES);
 	
+#pragma omp parallel for default(none) shared(TransformationMatrix, XCoordinate) schedule(static, 1)
 	for (int i = 0; i < NGrids; i++)
 	{
 		// EigVec stores the V before diagonalization and 
 		// transformation matrix after diagonalization
-		SelfAdjointEigenSolver<PESMatrix> solver(diabatic_potential(GridCoordinate[i]));
+		SelfAdjointEigenSolver<PESMatrix> solver(diabatic_potential(XCoordinate[i]));
 		PESMatrix EigVec = solver.eigenvectors();
 		// copy the transformation info to the whole matrix
 		for (int j = 0; j < NumPES; j++)
