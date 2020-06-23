@@ -175,15 +175,19 @@ void output_grided_population(ostream& os, const VectorXcd Psi);
 
 /// @brief calculate the phase space distribution, and output it
 /// @param os an ostream object (could be ofstream/osstream) to output
-/// @param PGridCoordinate the coordinate of each grid on p direction, i.e., p_i
+/// @param XCoordinate the coordinate of each grid on x direction, i.e., x_i
+/// @param PCoordinate the coordinate of each grid on p direction, i.e., p_j
 /// @param dx the grid spacing
+/// @param mass the mass of the bath (the nucleus mass)
 /// @param p0 the initial average momentum
 /// @param Psi the (adiabatic) wavefunction
-void output_phase_space_distribution
+/// @return average energy, x, and p
+tuple<double, double, double> output_phase_space_distribution
 (
 	ostream& os,
-	const VectorXd& PGridCoordinate,
-	const double dx,
+	const VectorXd& XCoordinate,
+	const VectorXd& PCoordinate,
+	const double mass,
 	const double p0,
 	const VectorXcd& Psi
 );

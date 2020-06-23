@@ -222,11 +222,12 @@ int main(void)
 			// print population on each grid
 			output_grided_population(PsiOutput, AdiabaticPsi);
 			// print phase space distribution
-			output_phase_space_distribution
+			auto [AveragePhaseE, AveragePhaseX, AveragePhaseP] = output_phase_space_distribution
 			(
 				PhaseOutput,
+				XCoordinate,
 				PCoordinate,
-				dx,
+				mass,
 				p0,
 				AdiabaticPsi
 			);
@@ -249,7 +250,7 @@ int main(void)
 			{
 				Log << ' ' << Population[i];
 			}
-			Log << endl;
+			Log << ' ' << AveragePhaseE << ' ' << AveragePhaseX << ' ' << AveragePhaseP << endl;
 
 			// compare with the last moment to see if stopping evolving
 			if (AverageX > 0.0)

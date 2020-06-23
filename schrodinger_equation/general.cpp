@@ -12,6 +12,7 @@
 #include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 #include "general.h"
 #include "pes.h"
 
@@ -286,6 +287,27 @@ void output_grided_population(ostream& os, const VectorXcd Psi)
 	os << endl;
 }
 
+/// the eigenvalues of potential matrix
+using PESVector = Matrix<double, NumPES, 1>;
+
+/// @brief calculate the adiabatic energy on each position grid
+/// @param XCoordinate the coordinate of each grid on x direction, i.e., x_i
+/// @return a container, each element is a VectorNd, N is NumPES, the vector is the adiabatic potential
+static vector<PESVector> adiabatic_energy(const VectorXd& XCoordinate)
+{
+	// the number of grids
+	const int NGrids = XCoordinate.size();
+	// the container
+	vector<PESVector> result(NGrids);
+	for (int i = 0; i < NGrids; i++)
+	{
+		// calculate the diagonalized eigen(adiabatic) potential energy
+		SelfAdjointEigenSolver<PESMatrix> solver(diabatic_potential(XCoordinate[i]));
+		result[i] = solver.eigenvalues();
+	}
+	return result;
+}
+
 /// Output one element of ComplexMatrix in a line, change column first, then row
 ///
 /// That is to say,
@@ -299,17 +321,24 @@ void output_grided_population(ostream& os, const VectorXcd Psi)
 /// The region of momentum is the Fourier transformation of position, and moved to centered at initial momentum.
 ///
 /// In other words, p in p0+pi*hbar/dx*[-1,1], dp=2*pi*hbar/(xmax-xmin)
-void output_phase_space_distribution
+tuple<double, double, double> output_phase_space_distribution
 (
 	ostream& os,
-	const VectorXd& PGridCoordinate,
-	const double dx,
+	const VectorXd& XCoordinate,
+	const VectorXd& PCoordinate,
+	const double mass,
 	const double p0,
 	const VectorXcd& Psi
 )
 {
 	// NGrids is the number of grids in wavefunction
-	const int NGrids = PGridCoordinate.size();
+	const int NGrids = XCoordinate.size();
+	const double dx = (XCoordinate[NGrids - 1] - XCoordinate[0]) / (NGrids - 1);
+	const double dp = (PCoordinate[NGrids - 1] - PCoordinate[0]) / (NGrids - 1);
+	// solve the adiabatic energies on each grids
+	static const auto AdiabaticPotential = adiabatic_energy(XCoordinate);
+	// average energy, position, momentum
+	double E = 0, x = 0, p = 0;
 	// PhaseSpaceDistribution saves phase space distribution of one element of PWTDM
 	static MatrixXcd PhaseSpaceDistribution(NGrids, NGrids);
 	// Wigner Transformation: P(x,p)=int{dy*exp(2ipy/hbar)<x-y|rho|x+y>}/(pi*hbar)
@@ -319,21 +348,21 @@ void output_phase_space_distribution
 	{
 		for (int jPES = 0; jPES < NumPES; jPES++)
 		{
-#pragma omp parallel for default(none) shared(Psi, PGridCoordinate, iPES, jPES, PhaseSpaceDistribution)
+#pragma omp parallel for default(none) shared(Psi, PCoordinate, iPES, jPES, PhaseSpaceDistribution) schedule(static, 1)
 			// loop over x
 			for (int xi = 0; xi < NGrids; xi++)
 			{
 				// loop over p
 				for (int pj = 0; pj < NGrids; pj++)
 				{
-					const double p = PGridCoordinate[pj];
-					// do the numerical integral
+					const double p = PCoordinate[pj];
 					PhaseSpaceDistribution(xi, pj) = 0;
-					// 0 <= (x+y, x-y) < NGrids 
+					// do the numerical integral
 					switch (TestBoundaryCondition)
 					{
 					case Absorbing:
 					case Reflective:
+						// 0 <= (x+y, x-y) < NGrids 
 						for (int yk = max(-xi, xi + 1 - NGrids); yk <= min(xi, NGrids - 1 - xi); yk++)
 						{
 							const double y = yk * dx;
@@ -341,7 +370,8 @@ void output_phase_space_distribution
 						}
 						break;
 					case Periodic:
-						for (int yk = -NGrids / 2; yk < (NGrids + 1) / 2; yk++)
+						// when y=L/2, psi(x+y)=psi(x-y), gives 2 wavepackets in phase spaces, so do not integrate near that
+						for (int yk = -NGrids / 3; yk <= NGrids / 3; yk++)
 						{
 							const double y = yk * dx;
 							PhaseSpaceDistribution(xi, pj) += exp(2.0 * p * y / hbar * 1.0i) * Psi[(xi - yk + NGrids) % NGrids + iPES * NGrids] * conj(Psi[(xi + yk + NGrids) % NGrids + jPES * NGrids]);
@@ -360,9 +390,24 @@ void output_phase_space_distribution
 				}
 			}
 			os << '\n';
+			// calculate average on diagonal elements of PWTDM
+			if (iPES == jPES)
+			{
+#pragma omp parallel for default(none) shared(iPES, XCoordinate, PCoordinate, AdiabaticPotential, PhaseSpaceDistribution) reduction(+:E,x,p) schedule(static, 1)
+				for (int i = 0; i < NGrids; i++)
+				{
+					// grid on the same row have same position, and potential energy
+					x += PhaseSpaceDistribution.row(i).sum().real() * XCoordinate[i];
+					E += PhaseSpaceDistribution.row(i).sum().real() * AdiabaticPotential[i][iPES];
+					// grid on the same column have same momentum, and kinetic energy
+					p += PhaseSpaceDistribution.col(i).sum().real() * PCoordinate[i];
+					E += PhaseSpaceDistribution.col(i).sum().real() * pow(PCoordinate[i], 2) / 2.0 / mass;
+				}
+			}
 		}
 	}
 	os << endl;
+	return make_tuple(E * dx * dp, x * dx * dp, p * dx * dp);
 }
 
 /// @brief construct the first order derivative derived from finite difference
