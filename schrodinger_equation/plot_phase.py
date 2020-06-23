@@ -10,16 +10,16 @@ NUMPES = 2 # number of potential energy surfaces
 
 # read input grid and time
 def read_input():
-    xfile = open('x.txt', 'r')
-    x = np.array(xfile.readlines(), dtype=float)
-    xfile.close()
-    pfile = open('p.txt', 'r')
-    p = np.array(pfile.readlines(), dtype=float)
-    pfile.close()
-    tfile = open('t.txt', 'r')
-    t = np.array(tfile.readlines(), dtype=int)
-    tfile.close()
-    return x, p, t
+	xfile = open('x.txt', 'r')
+	x = np.array(xfile.readlines(), dtype=float)
+	xfile.close()
+	pfile = open('p.txt', 'r')
+	p = np.array(pfile.readlines(), dtype=float)
+	pfile.close()
+	tfile = open('t.txt', 'r')
+	t = np.array(tfile.readlines(), dtype=int)
+	tfile.close()
+	return x, p, t
 
 # plot preparation
 x, p, t = read_input()
@@ -32,16 +32,16 @@ xv, pv = np.meshgrid(x, p) # transform to vector for plotting
 
 # plot population evolution
 def calc_pop():
-    file = open('phase.txt', 'r')
-    ppl = [[],[]]
-    for i in range(LEN_T):
-        ppl[0].append(sum(np.array(file.readline().split(), dtype=float)) * dx * dp)
-        file.readline() # rho[0][1]
-        file.readline() # rho[1][0]
-        ppl[1].append(sum(np.array(file.readline().split(), dtype=float)) * dx * dp)
-        file.readline() # blank line
-    file.close()
-    return ppl
+	file = open('phase.txt', 'r')
+	ppl = [[],[]]
+	for i in range(LEN_T):
+		ppl[0].append(sum(np.array(file.readline().split(), dtype=float)) * dx * dp)
+		file.readline() # rho[0][1]
+		file.readline() # rho[1][0]
+		ppl[1].append(sum(np.array(file.readline().split(), dtype=float)) * dx * dp)
+		file.readline() # blank line
+	file.close()
+	return ppl
 
 ppl = calc_pop()
 plt.plot(t, ppl[0], color='r', label='Population[0]')
@@ -58,8 +58,8 @@ plt.clf()
 xmax = [[0.2, 0.1], [0.1, 0.05]]
 levels= [[], []]
 for i in range(NUMPES):
-    for j in range(NUMPES):
-        levels[i].append(MaxNLocator(nbins=15).tick_values(-xmax[i][j],xmax[i][j])) # color region
+	for j in range(NUMPES):
+		levels[i].append(MaxNLocator(nbins=15).tick_values(-xmax[i][j],xmax[i][j])) # color region
 cmap = plt.get_cmap('seismic') # the kind of color: red-white-blue
 #norm = BoundaryNorm(levels, ncolors=cmap.N, clip=True) # the mapping rule
 
@@ -71,59 +71,59 @@ time_template = 'time = %da.u.'
 
 # initialization: blank page
 def init():
-    # clear, then set x/y label, title of subplot, and colorbar
-    cfs = [[], []]
-    for i in range(NUMPES):
-        for j in range(NUMPES):
-            axs[i][j].clear()
-            axs[i][j].set_xlabel('x')
-            axs[i][j].set_ylabel('p')
-            if i == j:
-                axs[i][j].set_title(r'$\rho_{%d%d}$' % (i, j))
-            elif i < j:
-                axs[i][j].set_title(r'$\Re(\rho_{%d%d})$' % (i, j))
-            else:
-                axs[i][j].set_title(r'$\Im(\rho_{%d%d})$' % (j, i))
-            cfs[i].append(axs[i][j].contourf(xv, pv, np.zeros((LEN_X,LEN_P)), levels=levels[i][j], cmap=cmap))
-            fig.colorbar(cfs[i][j], extend='both', ax=axs[i][j])
-            cfs[i][j].set_clim(-xmax[i][j], xmax[i][j])
-    # figure settings: make them closer, title to be time
-    fig.suptitle('')
-    return fig, axs,
+	# clear, then set x/y label, title of subplot, and colorbar
+	cfs = [[], []]
+	for i in range(NUMPES):
+		for j in range(NUMPES):
+			axs[i][j].clear()
+			axs[i][j].set_xlabel('x')
+			axs[i][j].set_ylabel('p')
+			if i == j:
+				axs[i][j].set_title(r'$\rho_{%d%d}$' % (i, j))
+			elif i < j:
+				axs[i][j].set_title(r'$\Re(\rho_{%d%d})$' % (i, j))
+			else:
+				axs[i][j].set_title(r'$\Im(\rho_{%d%d})$' % (j, i))
+			cfs[i].append(axs[i][j].contourf(xv, pv, np.zeros((LEN_X,LEN_P)), levels=levels[i][j], cmap=cmap))
+			fig.colorbar(cfs[i][j], extend='both', ax=axs[i][j])
+			cfs[i][j].set_clim(-xmax[i][j], xmax[i][j])
+	# figure settings: make them closer, title to be time
+	fig.suptitle('')
+	return fig, axs,
 
 # animation: each timestep in phase.txt
 def ani(i):
-    # get data, in rhoi_real
-    file = open('phase.txt', 'r')
-    # old data
-    for j in range(i - 1):
-        for k in range(NUMPES*NUMPES):
-            file.readline() # rho
-        file.readline() # blank line
-    # new data
-    rho = []
-    for j in range(NUMPES*NUMPES):
-        rho.append(np.array(file.readline().split(), dtype=float))
-    LENGTH = len(rho[0])
-    rho = np.reshape(np.asarray(rho),(NUMPES,NUMPES,LENGTH))
-    for j in range(LENGTH//2):
-        for k in range(NUMPES):
-            rho[k,k,j] = rho[k,k,2*j]
-            for l in range(k+1,NUMPES):
-                rho[k,l,j] = (rho[k,l,2*j]+rho[l,k,2*j])/2.0
-                rho[l,k,j] = (rho[k,l,2*j+1]-rho[l,k,2*j+1])/2.0
-    rhoi = [[],[]]
-    for j in range(NUMPES):
-        for k in range(NUMPES):
-            rhoi[j].append(rho[j,k,0:LENGTH//2].reshape(LEN_P,LEN_X).T)
-    file.close()
+	# get data, in rhoi_real
+	file = open('phase.txt', 'r')
+	# old data
+	for j in range(i - 1):
+		for k in range(NUMPES*NUMPES):
+			file.readline() # rho
+		file.readline() # blank line
+	# new data
+	rho = []
+	for j in range(NUMPES*NUMPES):
+		rho.append(np.array(file.readline().split(), dtype=float))
+	LENGTH = len(rho[0])
+	rho = np.reshape(np.asarray(rho),(NUMPES,NUMPES,LENGTH))
+	for j in range(LENGTH//2):
+		for k in range(NUMPES):
+			rho[k,k,j] = rho[k,k,2*j]
+			for l in range(k+1,NUMPES):
+				rho[k,l,j] = (rho[k,l,2*j]+rho[l,k,2*j])/2.0
+				rho[l,k,j] = (rho[k,l,2*j+1]-rho[l,k,2*j+1])/2.0
+	rhoi = [[],[]]
+	for j in range(NUMPES):
+		for k in range(NUMPES):
+			rhoi[j].append(rho[j,k,0:LENGTH//2].reshape(LEN_P,LEN_X).T)
+	file.close()
 
-    # print contourfs
-    for j in range(NUMPES):
-        for k in range(NUMPES):
-            axs[j][k].contourf(xv, pv, rhoi[j][k], levels=levels[j][k], cmap=cmap)
-    fig.suptitle(time_template % t[i])
-    return fig, axs,
+	# print contourfs
+	for j in range(NUMPES):
+		for k in range(NUMPES):
+			axs[j][k].contourf(xv, pv, rhoi[j][k], levels=levels[j][k], cmap=cmap)
+	fig.suptitle(time_template % t[i])
+	return fig, axs,
 
 # make the animation
 ani = animation.FuncAnimation(fig, ani, LEN_T, init, interval=10000//(t[1]-t[0]), repeat=False, blit=False)

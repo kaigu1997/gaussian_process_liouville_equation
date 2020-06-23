@@ -6,13 +6,13 @@ from matplotlib import animation
 
 # read input grid and time
 def read_input():
-    xfile = open('x.txt', 'r')
-    x = np.array(xfile.readlines(), dtype=float)
-    xfile.close()
-    tfile = open('t.txt', 'r')
-    t = np.array(tfile.readlines(), dtype=int)
-    tfile.close()
-    return x, t
+	xfile = open('x.txt', 'r')
+	x = np.array(xfile.readlines(), dtype=float)
+	xfile.close()
+	tfile = open('t.txt', 'r')
+	t = np.array(tfile.readlines(), dtype=int)
+	tfile.close()
+	return x, t
 
 # plot preparation
 x, t = read_input()
@@ -27,7 +27,7 @@ plt.ylabel('Population')
 lines = []
 plotcolor = ['red', 'blue']
 for i in range(2):
-    lines.append(ax.plot([], [], lw=2, color=plotcolor[i])[0])
+	lines.append(ax.plot([], [], lw=2, color=plotcolor[i])[0])
 
 # set time text
 # warning: position is the place on the screen, not the x-y coordinates shown
@@ -36,24 +36,24 @@ time_text = ax.text(0.02, 0.93, '', fontdict={'size': 16}, transform=ax.transAxe
 
 # initialization: blank page
 def init():
-    for line in lines:
-        line.set_data([], [])
-    time_text.set_text('')
-    return lines, time_text
+	for line in lines:
+		line.set_data([], [])
+	time_text.set_text('')
+	return lines, time_text
 
 # animation: each line in psi.txt
 def ani(i):
-    psifile = open('psi.txt', 'r')
-    for j in range(i - 1):
-        psifile.readline()
-    psi = np.array(psifile.readline().split(), dtype=float)
-    psifile.close()
-    xlist = [x, x]
-    ylist = [psi[0:len(x)], psi[len(x):len(psi)]]
-    for lnum, line in enumerate(lines):
-        line.set_data(xlist[lnum], ylist[lnum])
-    time_text.set_text(time_template % t[i])
-    return lines, time_text
+	psifile = open('psi.txt', 'r')
+	for j in range(i - 1):
+		psifile.readline()
+	psi = np.array(psifile.readline().split(), dtype=float)
+	psifile.close()
+	xlist = [x, x]
+	ylist = [psi[0:len(x)], psi[len(x):len(psi)]]
+	for lnum, line in enumerate(lines):
+		line.set_data(xlist[lnum], ylist[lnum])
+	time_text.set_text(time_template % t[i])
+	return lines, time_text
 
 # make the animation
 ani = animation.FuncAnimation(fig, ani, len(t), init, interval=10000//(t[1]-t[0]), repeat=False, blit=False)
@@ -64,14 +64,14 @@ ani.save('psi.gif','imagemagick')
 
 # plot population evolution
 def calc_pop():
-    psifile = open('psi.txt', 'r')
-    ppl = [[],[]]
-    for line in psifile:
-        psi = np.array(line.split(), dtype=float)
-        ppl[0].append(sum(psi[0:len(x)])*dx)
-        ppl[1].append(sum(psi[len(x):len(x)*2])*dx)
-    psifile.close()
-    return ppl
+	psifile = open('psi.txt', 'r')
+	ppl = [[],[]]
+	for line in psifile:
+		psi = np.array(line.split(), dtype=float)
+		ppl[0].append(sum(psi[0:len(x)])*dx)
+		ppl[1].append(sum(psi[len(x):len(x)*2])*dx)
+	psifile.close()
+	return ppl
 
 plt.clf()
 ppl = calc_pop()
