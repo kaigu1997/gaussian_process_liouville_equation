@@ -64,7 +64,7 @@ cmap = plt.get_cmap('seismic') # the kind of color: red-white-blue
 #norm = BoundaryNorm(levels, ncolors=cmap.N, clip=True) # the mapping rule
 
 # initialize the plot
-fig, axs = plt.subplots(nrows=NUMPES, ncols=NUMPES, figsize=(120,60))
+fig, axs = plt.subplots(nrows=NUMPES, ncols=NUMPES, figsize=(20,10))
 
 # set time text
 time_template = 'time = %da.u.'
