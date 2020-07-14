@@ -56,8 +56,9 @@ plt.clf()
 # pick the desired colormap, sensible levels, and define a normalization
 # instance which takes data values and translates those into levels.
 xmax = [[0.2, 0.1], [0.1, 0.05]]
-levels= [[], []]
+levels = []
 for i in range(NUMPES):
+	levels.append([])
 	for j in range(NUMPES):
 		levels[i].append(MaxNLocator(nbins=15).tick_values(-xmax[i][j],xmax[i][j])) # color region
 cmap = plt.get_cmap('seismic') # the kind of color: red-white-blue
@@ -72,8 +73,9 @@ time_template = 'time = %da.u.'
 # initialization: blank page
 def init():
 	# clear, then set x/y label, title of subplot, and colorbar
-	cfs = [[], []]
+	cfs = []
 	for i in range(NUMPES):
+		cfs.append([])
 		for j in range(NUMPES):
 			axs[i][j].clear()
 			axs[i][j].set_xlabel('x')
@@ -102,26 +104,26 @@ def ani(i):
 		file.readline() # blank line
 	# new data
 	rho = []
-	for j in range(NUMPES*NUMPES):
-		rho.append(np.array(file.readline().split(), dtype=float))
-	LENGTH = len(rho[0])
-	rho = np.reshape(np.asarray(rho),(NUMPES,NUMPES,LENGTH))
-	for j in range(LENGTH//2):
+	for j in range(NUMPES):
+		rho.append([])
 		for k in range(NUMPES):
-			rho[k,k,j] = rho[k,k,2*j]
+			rho[j].append(np.array(file.readline().split(), dtype=float))
+	LENGTH = len(rho[0][0])//2
+	for j in range(LENGTH):
+		for k in range(NUMPES):
+			rho[k][k][j] = rho[k][k][2*j]
 			for l in range(k+1,NUMPES):
-				rho[k,l,j] = (rho[k,l,2*j]+rho[l,k,2*j])/2.0
-				rho[l,k,j] = (rho[k,l,2*j+1]-rho[l,k,2*j+1])/2.0
-	rhoi = [[],[]]
+				rho[k][l][j] = (rho[k][l][2*j]+rho[l][k][2*j])/2.0
+				rho[l][k][j] = (rho[k][l][2*j+1]-rho[l][k][2*j+1])/2.0
 	for j in range(NUMPES):
 		for k in range(NUMPES):
-			rhoi[j].append(rho[j,k,0:LENGTH//2].reshape(LEN_P,LEN_X).T)
+			rho[j][k] = rho[j][k][:LENGTH].reshape(LEN_P,LEN_X).T
 	file.close()
 
 	# print contourfs
 	for j in range(NUMPES):
 		for k in range(NUMPES):
-			axs[j][k].contourf(xv, pv, rhoi[j][k], levels=levels[j][k], cmap=cmap)
+			axs[j][k].contourf(xv, pv, rho[j][k], levels=levels[j][k], cmap=cmap)
 	fig.suptitle(time_template % t[i])
 	return fig, axs,
 
