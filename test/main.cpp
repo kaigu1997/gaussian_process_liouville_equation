@@ -51,6 +51,7 @@ using namespace Eigen;
 using namespace shogun;
 
 const int NPoint = 100; ///< the size of training set
+const int NRound = 10; ///< the number of MC chosen
 
 /// to read the coordinate (of x, p and t) from a file
 /// @param[in] filename the name of the input file
@@ -73,6 +74,24 @@ static mt19937_64 generator(chrono::system_clock::now().time_since_epoch().count
 
 const double epsilon = exp(-12.5) / sqrt(2 * acos(-1.0)); ///< value below this are regarded as 0; x=5sigma for normal distribution
 
+/// judge if all points has very small weight
+/// @param[in] data the gridded phase space distribution
+/// @return if abs of all value are below epsilon, return true, else return false
+bool is_very_small(const MatrixXd& data)
+{
+	for (int i = 0; i < data.rows(); i++)
+	{
+		for (int j = 0; j < data.cols(); j++)
+		{
+			if (abs(data(i,j)) > epsilon)
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 /// choose npoint points based on their weight using MC. If the point has already chosen, redo
 /// @param[in] data the gridded phase space distribution
 /// @param[in] nx the number of x grids
@@ -84,20 +103,8 @@ set<pair<int, int>> choose_point(const MatrixXd& data, const VectorXd& x, const 
 {
 	set<pair<int, int>> result;
 	const int nx = data.rows(), np = data.cols(), n = data.size();
-	const double weight = accumulate(data.data(), data.data() + n, 0.0, [](double a, double b)->double { return abs(a) + abs(b); });
-	if (weight < n * epsilon)
+	if (is_very_small(data) == true)
 	{
-		// if the weight is very small, check if all points are very small
-		for (int i = 0; i < nx; i++)
-		{
-			for (int j = 0; j < np; j++)
-			{
-				if (abs(data(i, j)) > epsilon)
-				{
-					goto normal_choose;
-				}
-			}
-		}
 		// if not stopped before, then all points are very small
 		// uniformly choose points
 		uniform_int_distribution<int> x_dis(0, nx - 1), p_dis(0, np - 1);
@@ -106,27 +113,28 @@ set<pair<int, int>> choose_point(const MatrixXd& data, const VectorXd& x, const 
 			const int ranx = x_dis(generator), ranp = p_dis(generator);
 			result.insert(make_pair(ranx, ranp));
 		}
-		result.insert(make_pair(INT_MAX, INT_MAX)); // indicate that they are small
-		return result;
 	}
-normal_choose:
-	uniform_real_distribution<double> urd(0.0, weight);
-	while (result.size() < NPoint)
+	else
 	{
-		double acc_weight = urd(generator);
-		for (int j = 0; j < nx; j++)
+		const double weight = accumulate(data.data(), data.data() + n, 0.0, [](double a, double b)->double { return abs(a) + abs(b); });
+		uniform_real_distribution<double> urd(0.0, weight);
+		while (result.size() < NPoint)
 		{
-			for (int k = 0; k < np; k++)
+			double acc_weight = urd(generator);
+			for (int j = 0; j < nx; j++)
 			{
-				acc_weight -= abs(data(j, k));
-				if (acc_weight < 0)
+				for (int k = 0; k < np; k++)
 				{
-					result.insert(make_pair(j, k));
-					goto next;
+					acc_weight -= abs(data(j, k));
+					if (acc_weight < 0)
+					{
+						result.insert(make_pair(j, k));
+						goto next;
+					}
 				}
 			}
+		next:;
 		}
-	next:;
 	}
 	return result;
 }
@@ -152,6 +160,84 @@ void output_point
 	out << '\n';
 }
 
+/// print kernel information. If a combined kernel, print its inner
+/// @param[in] kernel_ptr a raw pointer to a CKernel object to be printed
+/// @param[in] layer the layer of the kernel
+void print_kernel(CKernel* kernel_ptr, int layer)
+{
+	for (int i = 0; i < layer; i++)
+	{
+		cout << '\t';
+	}
+	cout << kernel_ptr << " - " << kernel_ptr->get_name() << " weight = " << kernel_ptr->get_combined_kernel_weight() << '\n';
+	switch (kernel_ptr->get_kernel_type())
+	{
+		case K_GAUSSIAN:
+		{
+			for (int i = 0; i <= layer; i++)
+			{
+				cout << '\t';
+			}
+			cout << "width = " << dynamic_cast<CGaussianKernel*>(kernel_ptr)->get_width() << '\n';
+		}
+		break;
+		case K_COMBINED:
+		{
+			CCombinedKernel* combined_kernel_ptr = dynamic_cast<CCombinedKernel*>(kernel_ptr);
+			for (int i = 0; i < combined_kernel_ptr->get_num_kernels(); i++)
+			{
+				print_kernel(combined_kernel_ptr->get_kernel(i), layer + 1);
+			}
+		}
+		break;
+		case K_DIAG:
+		{
+			for (int i = 0; i <= layer; i++)
+			{
+				cout << '\t';
+			}
+			cout << "diag = " << dynamic_cast<CDiagKernel*>(kernel_ptr)->kernel(0, 0) << '\n';
+		}
+		break;
+		case K_GAUSSIANARD:
+		{
+			SGMatrix<double> weight = dynamic_cast<CGaussianARDKernel*>(kernel_ptr)->get_weights();
+			for (int i = 0; i <= layer; i++)
+			{
+				cout << '\t';
+			}
+			cout << "weight = [";
+			for (int i = 0; i < weight.num_rows; i++)
+			{
+				if (i != 0)
+				{
+					cout << ", ";
+				}
+				cout << '[';
+				for (int j = 0; j < weight.num_cols; j++)
+				{
+					if (j != 0)
+					{
+						cout << ", ";
+					}
+					cout << weight(i, j);
+				}
+				cout << ']';
+			}
+			cout << "]\n";
+		}
+		break;
+		default:
+		{
+			for (int i = 0; i <= layer; i++)
+			{
+				cout << '\t';
+			}
+			cout << "UNIDENTIFIED KERNEL\n";
+		}
+	}
+}
+
 /// calculate the difference between GPR and exact value
 /// @param[in] data the exact value
 /// @param[in] x the gridded position coordinates
@@ -170,11 +256,7 @@ void fit
 )
 {
 	const int nx = x.size(), np = p.size(), n = data.size();
-	// choose the points
-	const set<pair<int, int>> chosen = choose_point(data, x, p);
-	// output the chosen points
-	output_point(chosen, x, p, choose);
-	if (chosen.size() == NPoint + 1 && chosen.crbegin()->first == INT_MAX && chosen.crbegin()->second == INT_MAX)
+	if (is_very_small(data) == true)
 	{
 		// in case all points are very small, assuming they are all zero
 		for (int i = 0; i < nx * np; i++)
@@ -183,107 +265,146 @@ void fit
 		}
 		sim << '\n';
 		log << ' ' << accumulate(data.data(), data.data() + n, 0.0, [](double a, double b)->double { return a + b * b; }) / n << ' ' << NAN;
+		// choose the points
+		const set<pair<int, int>> chosen = choose_point(data, x, p);
+		// output the chosen points
+		output_point(chosen, x, p, choose);
 	}
 	else
 	{
-		// otherwise, select the points
-		MatrixXd training_feature(2, NPoint);
-		VectorXd training_label(NPoint);
-		const int NTest = nx * np - NPoint;
-		MatrixXd test_feature(2, NTest);
-		VectorXd test_label(NTest);
-		for (int i = 0, itrain = 0, itest = 0; i < nx; i++)
+		double minMSE = DBL_MAX, neg_log_marg_ll = 0;
+		set<pair<int, int>> finally_chosen;
+		MatrixXd finally_predict(nx, np);
+		for (int i = 0; i < NRound; i++)
 		{
-			for (int j = 0; j < np; j++)
+			cout << "\tRound " << i << '\n'; 
+			// choose the points
+			const set<pair<int, int>> chosen = choose_point(data, x, p);
+			// otherwise, select the points
+			MatrixXd training_feature(2, NPoint);
+			VectorXd training_label(NPoint);
+			const int NTest = nx * np - NPoint;
+			MatrixXd test_feature(2, NTest);
+			VectorXd test_label(NTest);
+			for (int i = 0, itrain = 0, itest = 0; i < nx; i++)
 			{
-				if (chosen.find(make_pair(i, j)) != chosen.end())
+				for (int j = 0; j < np; j++)
 				{
-					// in the training set
-					training_feature(0, itrain) = x(i);
-					training_feature(1, itrain) = p(j);
-					training_label(itrain) = data(i, j);
-					itrain++;
+					if (chosen.find(make_pair(i, j)) != chosen.end())
+					{
+						// in the training set
+						training_feature(0, itrain) = x(i);
+						training_feature(1, itrain) = p(j);
+						training_label(itrain) = data(i, j);
+						itrain++;
+					}
+					else
+					{
+						// in the test set
+						test_feature(0, itest) = x(i);
+						test_feature(1, itest) = p(j);
+						test_label(itest) = data(i, j);
+						itest++;
+					}
 				}
-				else
+			}
+			Some<CDenseFeatures<double>> train_feature_ptr = some<CDenseFeatures<double>>(training_feature);
+			Some<CDenseFeatures<double>> test_feature_ptr = some<CDenseFeatures<double>>(test_feature);
+			Some<CRegressionLabels> train_label_ptr = some<CRegressionLabels>(training_label);
+			Some<CRegressionLabels> test_label_ptr = some<CRegressionLabels>(test_label);
+
+			// create combined kernel: k(x,x')=c1*exp(-|x-x'|^2/t^2)+c2*delta(x-x')
+			// use gaussianARD kernel first and optimize it
+			Some<CGaussianARDKernel> kernel_gaussianARD_ptr = some<CGaussianARDKernel>();
+			kernel_gaussianARD_ptr->set_matrix_weights(SGMatrix<double>::create_identity_matrix(2, 1.0));
+			kernel_gaussianARD_ptr->init(train_feature_ptr, train_feature_ptr);
+			cout << "\t\tBefore training:\n";
+			print_kernel((CKernel*)(kernel_gaussianARD_ptr.get()), 2);
+
+			// create mean function: 0 mean
+			Some<CZeroMean> mean_ptr = some<CZeroMean>();
+			// likelihood: gaussian likelihood
+			Some<CGaussianLikelihood> likelihood_ptr = some<CGaussianLikelihood>();
+			// exact inference
+			Some<CExactInferenceMethod> inference_ptr = some<CExactInferenceMethod>(kernel_gaussianARD_ptr, train_feature_ptr, mean_ptr, train_label_ptr, likelihood_ptr);
+			// gp regression
+			Some<CGaussianProcessRegression> gpr_ptr = some<CGaussianProcessRegression>(inference_ptr);
+
+			// optimize
+			// the criterion: gradient
+			Some<CGradientCriterion> grad_criterion_ptr = some<CGradientCriterion>();
+			// the evaluation: also gradient
+			Some<CGradientEvaluation> grad_eval_ptr = some<CGradientEvaluation>(gpr_ptr, train_feature_ptr, train_label_ptr, grad_criterion_ptr);
+			grad_eval_ptr->set_function(inference_ptr);
+			// model selection: gradient
+			Some<CGradientModelSelection> grad_model_sel_ptr = some<CGradientModelSelection>(grad_eval_ptr);
+			// get the best hyperparameter, theta
+			Some<CParameterCombination> best_hyperparam_gaussianARD_ptr = some<CParameterCombination>(grad_model_sel_ptr->select_model());
+			// use this to the gpr machine
+			best_hyperparam_gaussianARD_ptr->apply_to_machine(gpr_ptr);
+			// print kernel weights
+			cout << "\t\tAfter training:\n";
+			print_kernel((CKernel*)(kernel_gaussianARD_ptr.get()), 2);
+
+			// reset diag kernel
+			Some<CDiagKernel> kernel_diag_ptr = some<CDiagKernel>();
+			Some<CCombinedKernel> kernel_combined_ptr = some<CCombinedKernel>();
+			kernel_combined_ptr->append_kernel(kernel_gaussianARD_ptr);
+			kernel_combined_ptr->append_kernel(kernel_diag_ptr);
+			kernel_combined_ptr->init(train_feature_ptr, train_feature_ptr);
+			kernel_combined_ptr->enable_subkernel_weight_learning();
+			cout << "\t\tBefore training:\n";
+			print_kernel((CKernel*)(kernel_combined_ptr.get()), 2);
+			inference_ptr->set_kernel(kernel_combined_ptr);
+			Some<CParameterCombination> best_hyperparam_combined_ptr = some<CParameterCombination>(grad_model_sel_ptr->select_model());
+			// use this to the gpr machine
+			best_hyperparam_combined_ptr->apply_to_machine(gpr_ptr);
+			// training the model
+			gpr_ptr->train();
+			// print kernel weights
+			cout << "\t\tAfter training:\n";
+			print_kernel((CKernel*)(kernel_combined_ptr.get()), 2);
+
+			// predict
+			Some<CRegressionLabels> predict_label_ptr(gpr_ptr->apply_regression(test_feature_ptr));
+			Some<CMeanSquaredError> eval = some<CMeanSquaredError>();
+			const double this_term_mse = eval->evaluate(predict_label_ptr, test_label_ptr);
+			if (this_term_mse < minMSE)
+			{
+				// this time a smaller min MSE is gotten, using this value
+				minMSE = this_term_mse;
+				neg_log_marg_ll = inference_ptr->get_negative_log_marginal_likelihood();
+				finally_chosen = chosen;
+				for (int i = 0, itest = 0; i < nx; i++)
 				{
-					// in the test set
-					test_feature(0, itest) = x(i);
-					test_feature(1, itest) = p(j);
-					test_label(itest) = data(i, j);
-					itest++;
+					for (int j = 0; j < np; j++)
+					{
+						if (chosen.find(make_pair(i, j)) != chosen.end())
+						{
+							finally_predict(i,j) = data(i, j);
+						}
+						else
+						{
+							finally_predict(i,j) = predict_label_ptr->get_label(itest);
+							itest++;
+						}
+					}
 				}
 			}
 		}
-		Some<CDenseFeatures<double>> train_feature_ptr = some<CDenseFeatures<double>>(training_feature);
-		Some<CDenseFeatures<double>> test_feature_ptr = some<CDenseFeatures<double>>(test_feature);
-		Some<CRegressionLabels> train_label_ptr = some<CRegressionLabels>(training_label);
-		Some<CRegressionLabels> test_label_ptr = some<CRegressionLabels>(test_label);
-
-		// create combined kernel: k(x,x')=c1*exp(-|x-x'|^2/t^2)+c2*delta(x-x')
-		/*auto kernel_gaussianARD = some<CGaussianARDKernel>();
-		VectorXd gaussian_weights(2);
-		gaussian_weights[0] = 1.0;
-		gaussian_weights[1] = 1.0;
-		kernel_gaussianARD->set_vector_weights(gaussian_weights);
-		auto kernel_diag = some<CDiagKernel>();
-		auto kernel_ptr = some<CCombinedKernel>();
-		kernel_ptr->append_kernel(kernel_gaussianARD.get());
-		kernel_ptr->append_kernel(kernel_diag.get());
-		kernel_ptr->init(train_feature_ptr.get(), train_feature_ptr.get());*/
-		Some<CGaussianKernel> kernel_ptr = some<CGaussianKernel>(train_feature_ptr, train_feature_ptr, 1.0);
-		// create mean function: 0 mean
-		Some<CZeroMean> mean_ptr = some<CZeroMean>();
-		// likelihood: gaussian likelihood
-		Some<CGaussianLikelihood> likelihood_ptr = some<CGaussianLikelihood>();
-		// exact inference
-		Some<CExactInferenceMethod> inference_ptr = some<CExactInferenceMethod>(kernel_ptr, train_feature_ptr, mean_ptr, train_label_ptr, likelihood_ptr);
-		// gp regression
-		Some<CGaussianProcessRegression> gpr_ptr = some<CGaussianProcessRegression>(inference_ptr);
-
-		// training the model
-		gpr_ptr->train();
-
-		// optimize
-		// the criterion: gradient
-		Some<CGradientCriterion> grad_criterion_ptr = some<CGradientCriterion>();
-		// the evaluation: also gradient
-		Some<CGradientEvaluation> grad_eval_ptr = some<CGradientEvaluation>(gpr_ptr, train_feature_ptr, train_label_ptr, grad_criterion_ptr);
-		grad_eval_ptr->set_function(inference_ptr);
-		// model selection: gradient
-		Some<CGradientModelSelection> grad_model_sel_ptr = some<CGradientModelSelection>(grad_eval_ptr);
-		// get the best hyperparameter, theta
-		Some<CParameterCombination> best_hyperparam_ptr = some<CParameterCombination>(grad_model_sel_ptr->select_model());
-		// use this to the gpr machine
-		best_hyperparam_ptr->apply_to_machine(gpr_ptr);
-		gpr_ptr->train();
-
-		// predict
-		Some<CRegressionLabels> predict_label_ptr(gpr_ptr->apply_regression(test_feature_ptr));
-		for (int i = 0, itest = 0; i < nx; i++)
+		output_point(finally_chosen, x, p, choose);
+		log << ' ' << minMSE << ' ' << neg_log_marg_ll;
+		for (int i = 0; i < finally_predict.rows(); i++)
 		{
-			for (int j = 0; j < np; j++)
-			{
-				sim << ' ';
-				if (chosen.find(make_pair(i, j)) != chosen.end())
-				{
-					sim << data(i, j);
-				}
-				else
-				{
-					sim << predict_label_ptr->get_label(itest);
-					itest++;
-				}
-			}
+			sim << ' ' << finally_predict.row(i);
 		}
-		Some<CMeanSquaredError> eval = some<CMeanSquaredError>();
-		log << ' ' << eval->evaluate(predict_label_ptr, test_label_ptr)
-			<< ' ' << inference_ptr->get_negative_log_marginal_likelihood();
+		sim << '\n';
 	}
 }
 
 int main()
 {
-	clog.sync_with_stdio(false);
+	cout.sync_with_stdio(true);
 	init_shogun_with_defaults();
 	// read input
 	VectorXd x = read_coord("x.txt");
@@ -337,10 +458,14 @@ int main()
 			}
 		}
 		log << t(ti);
+		cout << "\nT = "<< t(ti) << "\nrho[0][0]:\n";
 		fit(rho0, x, p, sim, choose, log);
-		fit(rho1, x, p, sim, choose, log);
+		cout << "\nRe(rho[0][1]):\n";
 		fit(rho_re, x, p, sim, choose, log);
+		cout << "\nIm(rho[0][1]):\n";
 		fit(rho_im, x, p, sim, choose, log);
+		cout << "\nrho[1][1]:\n";
+		fit(rho1, x, p, sim, choose, log);
 		log << endl;
 		sim << '\n';
 		choose << '\n';
