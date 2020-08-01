@@ -19,4 +19,5 @@ clean:
 
 .PHONY: distclean
 distclean: clean
-	\rm -rf -- *log *out* input *.txt *.png *.gif gp_test
+	find *.txt | egrep -v "(^x|^p|^t)" | xargs rm
+	\rm -rf -- *log *out* input *.png *.gif gp_test
