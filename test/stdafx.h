@@ -9,9 +9,9 @@
 #define STDAFX_H
 
 #include <algorithm>
+#include <cfloat>
 #include <chrono>
 #include <cmath>
-#include <climits>
 #include <cstdlib>
 #include <fstream>
 #include <gsl/gsl_multimin.h>
@@ -31,6 +31,8 @@
 #include <shogun/base/init.h>
 #include <shogun/base/some.h>
 #include <shogun/classifier/LDA.h>
+#include <shogun/evaluation/GradientCriterion.h>
+#include <shogun/evaluation/GradientEvaluation.h>
 #include <shogun/evaluation/MeanSquaredError.h>
 #include <shogun/features/DenseFeatures.h>
 #include <shogun/kernel/CombinedKernel.h>
@@ -42,6 +44,7 @@
 #include <shogun/machine/gp/GaussianLikelihood.h>
 #include <shogun/machine/gp/ExactInferenceMethod.h>
 #include <shogun/machine/gp/ZeroMean.h>
+#include <shogun/modelselection/GradientModelSelection.h>
 #include <shogun/regression/GaussianProcessRegression.h>
 #include <shogun/statistical_testing/internals/Kernel.h>
 #include <Eigen/Eigen>

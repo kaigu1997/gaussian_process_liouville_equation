@@ -24,8 +24,6 @@ static bool is_very_small(const MatrixXd& data)
 	return true;
 }
 
-static mt19937_64 generator(chrono::system_clock::now().time_since_epoch().count()); ///< random number generator, 64 bits Mersenne twister engine
-
 /// choose npoint points based on their weight using MC. If the point has already chosen, redo
 /// @param[in] data the gridded phase space distribution
 /// @param[in] nx the number of x grids
@@ -35,6 +33,7 @@ static mt19937_64 generator(chrono::system_clock::now().time_since_epoch().count
 /// @return a pair, first being the pointer to the coordinate table (first[i][0]=xi, first[i][1]=pi), second being the vector containing the phase space distribution at the point (second[i]=P(xi,pi))
 static set<pair<int, int>> choose_point(const MatrixXd& data, const VectorXd& x, const VectorXd& p)
 {
+	static mt19937_64 generator(chrono::system_clock::now().time_since_epoch().count()); ///< random number generator, 64 bits Mersenne twister engine
 	set<pair<int, int>> result;
 	const int nx = data.rows(), np = data.cols(), n = data.size();
 	if (is_very_small(data) == true)
@@ -80,11 +79,10 @@ static void set_hyperparameter(const gsl_vector* x, CCombinedKernel* kernel_ptr)
 {
 	// get parameter
 	SGMatrix<double> gaussian_kernel_weights(2, 2);
-	gaussian_kernel_weights(0, 0) = gsl_vector_get(x, 0);
+	gaussian_kernel_weights(0, 0) = abs(gsl_vector_get(x, 0));
 	gaussian_kernel_weights(0, 1) = 0;
 	gaussian_kernel_weights(1, 0) = gsl_vector_get(x, 1);
-	gaussian_kernel_weights(1, 1) = gsl_vector_get(x, 2);
-	const double diag_weight = gsl_vector_get(x, 3);
+	gaussian_kernel_weights(1, 1) = abs(gsl_vector_get(x, 2));
 	// set into kernel
 	CFeatures* lhs = kernel_ptr->get_lhs();
 	CFeatures* rhs = kernel_ptr->get_rhs();
@@ -94,19 +92,21 @@ static void set_hyperparameter(const gsl_vector* x, CCombinedKernel* kernel_ptr)
 		CKernel* subkernel_ptr = kernel_ptr->get_kernel(i);
 		switch (subkernel_ptr->get_kernel_type())
 		{
-		case K_DIAG:
-			static_cast<CDiagKernel*>(subkernel_ptr)->set_combined_kernel_weight(diag_weight);
-			break;
 		case K_GAUSSIANARD:
 		{
 			CGaussianARDKernel* gaussian_ard_kernel_ptr = static_cast<CGaussianARDKernel*>(subkernel_ptr);
 			gaussian_ard_kernel_ptr->set_matrix_weights(gaussian_kernel_weights);
-			gaussian_ard_kernel_ptr->set_combined_kernel_weight(1 - diag_weight);
+			gaussian_ard_kernel_ptr->set_combined_kernel_weight(abs(gsl_vector_get(x, 3)));
 		}
-		break;
+			break;
+		case K_DIAG:
+		{
+			(static_cast<CDiagKernel*>(subkernel_ptr))->set_combined_kernel_weight(abs(gsl_vector_get(x, 4)));
+		}
+			break;
 		default:
-			cerr << "UNIDENTIFIED KERNEL\n";
-			exit(EXIT_FAILURE);
+			cerr << "UNKNOWN KERNEL\n";
+			break;
 		}
 	}
 	kernel_ptr->init(lhs, rhs);
@@ -120,32 +120,35 @@ static double func(const gsl_vector* x, void* params)
 {
 	CGaussianProcessRegression* gpr_ptr = static_cast<CGaussianProcessRegression*>(params);
 	CInference* inference_ptr = gpr_ptr->get_inference_method();
+	static_cast<CGaussianLikelihood*>(inference_ptr->get_model())->set_sigma(abs(gsl_vector_get(x, 5)));
 	set_hyperparameter(x, static_cast<CCombinedKernel*>(inference_ptr->get_kernel()));
 	gpr_ptr->train();
 	return inference_ptr->get_negative_log_marginal_likelihood();
 }
 
-const int NumIter = 1000; ///< the maximum number of iteration
-const double AbsTol = 1e-5; ///< tolerance in minimization
-
-/// to opmitize the hyperparameters: 3 in gaussian kernel, and 1 weight for diagonal
+/// to opmitize the hyperparameters: 3 in gaussian kernel, and 2 weights
 /// @param[in] gpr_ptr the Gaussian Process Regression pointer
 static void optimize(CGaussianProcessRegression* gpr_ptr)
 {
-	const int NumVar = 4;
+	static const double InitStepSize = 5e-3;
+	static const int NumIter = 1000; ///< the maximum number of iteration
+	static const double AbsTol = 1e-5; ///< tolerance in minimization
+	static const int NumVar = 6; ///< the number of variables to optimize
 	// init the minizer
 	gsl_vector* x = gsl_vector_alloc(NumVar);
-	gsl_vector_set(x, 0, 1);
-	gsl_vector_set(x, 1, 0);
-	gsl_vector_set(x, 2, 1);
-	gsl_vector_set(x, 3, 0);
+	gsl_vector_set(x, 0, 1.0 + InitStepSize);
+	gsl_vector_set(x, 1, 0.0 + InitStepSize);
+	gsl_vector_set(x, 2, 1.0 + InitStepSize);
+	gsl_vector_set(x, 3, 1.0 + InitStepSize);
+	gsl_vector_set(x, 4, 0.0 + InitStepSize);
+	gsl_vector_set(x, 5, 1.0 + InitStepSize);
 	gsl_vector* step_size = gsl_vector_alloc(NumVar);
-	gsl_vector_set_all(step_size, 0.05);
+	gsl_vector_set_all(step_size, InitStepSize);
 	gsl_multimin_function my_func;
 	my_func.n = NumVar;
 	my_func.f = func;
 	my_func.params = gpr_ptr;
-	gsl_multimin_fminimizer* minimizer = gsl_multimin_fminimizer_alloc(gsl_multimin_fminimizer_nmsimplex2, NumVar);
+	gsl_multimin_fminimizer* minimizer = gsl_multimin_fminimizer_alloc(gsl_multimin_fminimizer_nmsimplex2rand, NumVar);
 	gsl_multimin_fminimizer_set(minimizer, &my_func, x, step_size);
 
 	// iteration
@@ -166,6 +169,7 @@ static void optimize(CGaussianProcessRegression* gpr_ptr)
 	}
 
 	// set hyperparameter
+	static_cast<CGaussianLikelihood*>(gpr_ptr->get_inference_method()->get_model())->set_sigma(abs(gsl_vector_get(x, 5)));
 	set_hyperparameter(minimizer->x, static_cast<CCombinedKernel*>(gpr_ptr->get_inference_method()->get_kernel()));
 
 	// free memory
@@ -174,7 +178,7 @@ static void optimize(CGaussianProcessRegression* gpr_ptr)
 	gsl_multimin_fminimizer_free(minimizer);
 }
 
-const int NRound = 10; ///< the number of MC chosen
+const int NRound = 1;// 0; ///< the number of MC chosen
 
 void fit
 (
@@ -245,7 +249,6 @@ void fit
 			Some<CRegressionLabels> test_label_ptr = some<CRegressionLabels>(test_label);
 
 			// create combined kernel: k(x,x')=c1*exp(-|x-x'|^2/t^2)+c2*delta(x-x')
-			// use gaussianARD kernel first and optimize it
 			Some<CGaussianARDKernel> kernel_gaussianARD_ptr = some<CGaussianARDKernel>();
 			kernel_gaussianARD_ptr->set_matrix_weights(SGMatrix<double>::create_identity_matrix(2, 1.0));
 			Some<CDiagKernel> kernel_diag_ptr = some<CDiagKernel>();
@@ -254,7 +257,7 @@ void fit
 			kernel_combined_ptr->append_kernel(kernel_diag_ptr);
 			kernel_combined_ptr->init(train_feature_ptr, train_feature_ptr);
 			cout << "\t\tBefore training:\n";
-			print_kernel((CKernel*)(kernel_combined_ptr.get()), 2);
+			print_kernel(kernel_combined_ptr.get(), 2);
 
 			// create mean function: 0 mean
 			Some<CZeroMean> mean_ptr = some<CZeroMean>();
@@ -267,11 +270,17 @@ void fit
 
 			// optimize
 			optimize(gpr_ptr);
+			kernel_combined_ptr->enable_subkernel_weight_learning();
+			Some<CGradientCriterion> grad_crit_ptr = some<CGradientCriterion>();
+			Some<CGradientEvaluation> grad_eval_ptr = some<CGradientEvaluation>(gpr_ptr, train_feature_ptr, train_label_ptr, grad_crit_ptr);
+			grad_eval_ptr->set_function(inference_ptr);
+			Some<CGradientModelSelection> grad_model_select_ptr = some<CGradientModelSelection>(grad_eval_ptr);
+			grad_model_select_ptr->select_model()->apply_to_machine(gpr_ptr);
 			// training the model
 			gpr_ptr->train();
 			// print kernel weights
 			cout << "\t\tAfter training:\n";
-			print_kernel((CKernel*)(kernel_combined_ptr.get()), 2);
+			print_kernel(kernel_combined_ptr.get(), 2);
 
 			// predict
 			Some<CRegressionLabels> predict_label_ptr(gpr_ptr->apply_regression(test_feature_ptr));
