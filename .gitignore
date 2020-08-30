@@ -4,6 +4,11 @@ mqcl
 dvr
 gp_test
 
+# scripts, especially for submission
+*.sh
+*PBS*
+*pbs*
+
 # output and input files
 *.txt
 *.png
@@ -19,7 +24,7 @@ out*
 *.vcxproj*
 
 # Doxygen document
-Doxyfile*
+*Doxyfile*
 html/
 latex/
 
