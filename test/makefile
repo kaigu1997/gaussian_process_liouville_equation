@@ -2,7 +2,7 @@ CXX := icpc
 WARNINGFLAGS := -Wall -Wextra
 CXXFLAGS := ${WARNINGFLAGS} -mkl -std=c++14 -fast -fopenmp -pch
 LDFLAGS := ${WARNINGFLAGS} -mkl -std=c++14 -ipo -Ofast -xHost -Wl,-fuse-ld=gold -fopenmp
-LDLIBS := -lpthread -lshogun -lgsl
+LDLIBS := -lpthread -lgsl
 Objects := io.o gpr.o main.o
 PCH := stdafx.h
 
@@ -26,3 +26,10 @@ clean:
 distclean: clean
 	find *.txt | egrep -v "(^x|^p|^t)" | xargs rm
 	\rm -rf -- *log *out* input *.png *.gif gp_test core.*
+
+.PHONY: format
+format:
+	for f in *.c* *.h*; \
+	do \
+		clang-format --style=file -i $${f}; \
+	done

@@ -27,3 +27,10 @@ clean:
 .PHONY: distclean
 distclean:
 	\rm -rf -- *log *out* core.* *.txt *.png *.gif *.o mqcl
+
+.PHONY: format
+format:
+	for f in *.c* *.h*; \
+	do \
+		clang-format --style=file -i $${f}; \
+	done

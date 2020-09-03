@@ -25,3 +25,10 @@ clean:
 .PHONY: distclean
 distclean: clean
 	\rm -rf -- *log *out* input *.txt *.png *.gif dvr
+
+.PHONY: format
+format:
+	for f in *.c* *.h*; \
+	do \
+		clang-format --style=file -i $${f}; \
+	done
