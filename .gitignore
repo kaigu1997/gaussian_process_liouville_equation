@@ -1,8 +1,10 @@
 # ELF files
 *.o
+*.pchi
 mqcl
 dvr
 gp_test
+gple
 
 # scripts, especially for submission
 *.sh
