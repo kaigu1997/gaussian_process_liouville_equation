@@ -4,13 +4,13 @@
 /// This file is the combination of all functions (including the main function)
 /// to rebuild the phase space distribution.
 
-#include "io.h"
 #include "gpr.h"
+#include "io.h"
 
 int main()
 {
+	cout << setprecision(numeric_limits<double>::digits10 + 1);
 	cout.sync_with_stdio(true);
-	init_shogun_with_defaults();
 	// read input
 	VectorXd x = read_coord("x.txt");
 	const int nx = x.size();
@@ -19,10 +19,10 @@ int main()
 	VectorXd t = read_coord("t.txt");
 	const int nt = t.size();
 
-	ifstream phase("phase.txt"); // phase space distribution for input
-	ofstream sim("sim.txt"); // simulated phase space distribution
+	ifstream phase("phase.txt");   // phase space distribution for input
+	ofstream sim("sim.txt");	   // simulated phase space distribution
 	ofstream choose("choose.txt"); // chosen point for simulation
-	ofstream log("log.txt"); // time, MSE and -log(Marginal likelihood)
+	ofstream log("log.txt");	   // time, MSE and -log(Marginal likelihood)
 	for (int ti = 0; ti < nt; ti++)
 	{
 		// then read the rho00 and rho11
@@ -63,7 +63,7 @@ int main()
 			}
 		}
 		log << t(ti);
-		cout << "\nT = "<< t(ti) << "\nrho[0][0]:\n";
+		cout << "\nT = " << t(ti) << "\nrho[0][0]:\n";
 		fit(rho0, x, p, sim, choose, log);
 		cout << "\nRe(rho[0][1]):\n";
 		fit(rho_re, x, p, sim, choose, log);
@@ -78,7 +78,5 @@ int main()
 	phase.close();
 	sim.close();
 	log.close();
-
-	exit_shogun();
 	return 0;
 }

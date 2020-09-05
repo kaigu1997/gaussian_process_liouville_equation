@@ -1,16 +1,20 @@
 /// @file gpr.cpp
 /// @brief definition of Gaussian Process Regression functions
 
-#include "io.h"
 #include "gpr.h"
 
-const double epsilon = exp(-12.5) / sqrt(2 * acos(-1.0)); ///< value below this are regarded as 0; x=5sigma for normal distribution
+#include "io.h"
 
-/// judge if all points has very small weight
+/// passed to gsl optimization for get negative_log_marginal_likelihood()
+using TrainingSet = pair<MatrixXd, VectorXd>;
+
+/// @brief judge if all points has very small weight
 /// @param[in] data the gridded phase space distribution
 /// @return if abs of all value are below epsilon, return true, else return false
 static bool is_very_small(const MatrixXd& data)
 {
+	// value below this are regarded as 0; x=5sigma for normal distribution
+	static const double epsilon = exp(-12.5) / sqrt(2 * acos(-1.0));
 	for (int i = 0; i < data.rows(); i++)
 	{
 		for (int j = 0; j < data.cols(); j++)
@@ -24,13 +28,15 @@ static bool is_very_small(const MatrixXd& data)
 	return true;
 }
 
-/// choose npoint points based on their weight using MC. If the point has already chosen, redo
-/// @param[in] data the gridded phase space distribution
-/// @param[in] nx the number of x grids
-/// @param[in] np the number of p grids
-/// @param[in] x the coordinates of x grids
-/// @param[in] p the coordinates of p grids
-/// @return a pair, first being the pointer to the coordinate table (first[i][0]=xi, first[i][1]=pi), second being the vector containing the phase space distribution at the point (second[i]=P(xi,pi))
+/// @brief Choose npoint points based on their weight using MC. If the point has already chosen, redo
+/// @param[in] data The gridded phase space distribution
+/// @param[in] x The coordinates of x grids
+/// @param[in] p The coordinates of p grids
+/// @return A set containing the pointer to the coordinate table (first[i][0]=xi, first[i][1]=pi)
+///
+/// This function check if the values in the input matrix are all small or not.
+/// If all very small, then select points randomly without weight.
+/// Otherwise, select based on the weights at the point by MC procedure.
 static set<pair<int, int>> choose_point(const MatrixXd& data, const VectorXd& x, const VectorXd& p)
 {
 	static mt19937_64 generator(chrono::system_clock::now().time_since_epoch().count()); ///< random number generator, 64 bits Mersenne twister engine
@@ -49,7 +55,7 @@ static set<pair<int, int>> choose_point(const MatrixXd& data, const VectorXd& x,
 	}
 	else
 	{
-		const double weight = accumulate(data.data(), data.data() + n, 0.0, [](double a, double b)->double { return abs(a) + abs(b); });
+		const double weight = accumulate(data.data(), data.data() + n, 0.0, [](double a, double b) -> double { return abs(a) + abs(b); });
 		uniform_real_distribution<double> urd(0.0, weight);
 		while (result.size() < NPoint)
 		{
@@ -72,84 +78,134 @@ static set<pair<int, int>> choose_point(const MatrixXd& data, const VectorXd& x,
 	return result;
 }
 
-/// to set hyperparameter into the combined kernel
-/// @param[in] x the hyperparameters
-/// @param[in] kernel_ptr the pointer to the combined kernel
-static void set_hyperparameter(const gsl_vector* x, CCombinedKernel* kernel_ptr)
+/// @brief The Gaussian kernel function, \f$ K(X_1,X_2) \f$
+/// @param[in] LeftFeature The feature on the left, \f$ X_1 \f$
+/// @param[in] RightFeature The feature on the right, \f$ X_2 \f$
+/// @param[in] Character The characteristic matrix, see explanation below
+/// @param[in] weight The weight of Gaussian part
+/// @param[in] both_training Whether the two features are both training features or not (with at least one test feature)
+/// @param[in] noise The noise added when both features are training features
+/// @return The kernel matrix
+///
+/// This function calculates the Gaussian kernel with noise on training features,
+///
+/// /f[
+/// k(\mathbf{x}_1,\mathbf{x}_2)=\sigma_f^2\mathrm{exp}\left(-\frac{(\mathbf{x}_1-\mathbf{x}_2)^\top M (\mathbf{x}_1-\mathbf{x}_2)}{2}\right)+\sigma_n^2\delta(\mathbf{x}_1-\mathbf{x}_2)
+/// /f]
+///
+/// where \f$ M \f$ is the characteristic matrix in parameter list.
+/// Regarded as a real-symmetric matrix - only lower-triangular part are used，
+/// its diagonal term is the characteristic length of each dimention and
+/// off-diagonal term is the correlation between different dimensions
+///
+/// Noise part \f$ \sigma_n^2 \f$ is added when both features are training.
+///
+/// When there are more than one feature, the kernel matrix follows \f$ K_{ij}=k(X_{1_{\cdot i}}, X_{2_{\cdot j}}) \f$.
+static MatrixXd gaussian_kernel(
+	const MatrixXd& LeftFeature,
+	const MatrixXd& RightFeature,
+	const MatrixXd& Character,
+	const double weight,
+	const bool both_training = false,
+	const double noise = 0.0)
 {
-	// get parameter
-	SGMatrix<double> gaussian_kernel_weights(2, 2);
-	gaussian_kernel_weights(0, 0) = abs(gsl_vector_get(x, 0));
-	gaussian_kernel_weights(0, 1) = 0;
-	gaussian_kernel_weights(1, 0) = gsl_vector_get(x, 1);
-	gaussian_kernel_weights(1, 1) = abs(gsl_vector_get(x, 2));
-	// set into kernel
-	CFeatures* lhs = kernel_ptr->get_lhs();
-	CFeatures* rhs = kernel_ptr->get_rhs();
-	kernel_ptr->remove_lhs_and_rhs();
-	for (int i = 0; i < kernel_ptr->get_num_kernels(); i++)
+	const int Rows = LeftFeature.cols(), Cols = RightFeature.cols();
+	MatrixXd kernel = MatrixXd::Zero(Rows, Cols);
+	for (int i = 0; i < Rows; i++)
 	{
-		CKernel* subkernel_ptr = kernel_ptr->get_kernel(i);
-		switch (subkernel_ptr->get_kernel_type())
+		for (int j = 0; j < Cols; j++)
 		{
-		case K_GAUSSIANARD:
-		{
-			CGaussianARDKernel* gaussian_ard_kernel_ptr = static_cast<CGaussianARDKernel*>(subkernel_ptr);
-			gaussian_ard_kernel_ptr->set_matrix_weights(gaussian_kernel_weights);
-			gaussian_ard_kernel_ptr->set_combined_kernel_weight(abs(gsl_vector_get(x, 3)));
-		}
-			break;
-		case K_DIAG:
-		{
-			(static_cast<CDiagKernel*>(subkernel_ptr))->set_combined_kernel_weight(abs(gsl_vector_get(x, 4)));
-		}
-			break;
-		default:
-			cerr << "UNKNOWN KERNEL\n";
-			break;
+			const VectorXd& Diff = LeftFeature.col(i) - RightFeature.col(j);
+			kernel(i, j) = exp(-(Diff.adjoint() * Character * Character.adjoint() * Diff).value() / 2.0);
 		}
 	}
-	kernel_ptr->init(lhs, rhs);
+	kernel *= weight * weight;
+	if (both_training == true && LeftFeature.data() == RightFeature.data())
+	{
+		kernel += noise * noise * MatrixXd::Identity(Rows, Cols);
+	}
+	return kernel;
 }
 
-/// the function for gsl multidimentional minimization
-/// @param x a vector containing input variables
-/// @param params parameters used in function
-/// @return the function value based on the variables and parameters
-static double func(const gsl_vector* x, void* params)
+
+// some minimal for hyperparameters; below that would lead to non-sense
+const double NoiseMin = 1e-10;	  ///< Minimal value of the noise
+const double MagnitudeMin = 1e-4; ///< Minimal value of the magnitude of the normal kernel
+const double CharLenMin = 1e-4;	  ///< Minimal value of the characteristic length in Gaussian kernel
+
+/// @brief Calculate the negative marginal likelihood, \f$ -\mathrm{ln}p(\mathbf{y}|X,\mathbf{\theta}) \f$
+/// @param[in] x The gsl vector containing all the hyperparameters
+/// @param[in] params The pointer to a training set, including feature and label
+/// @return The negative marginal likelihood
+///
+/// The formula of negative marginal likelihood is
+///
+/// \f[
+/// -\mathrm{ln}{p(\mathbf{y}|X,\mathbf{\theta})}=\frac{1}{2}\mathbf{y}^\top K_y^{-1}\mathbf{y}+\frac{1}{2}\mathbf{ln}|K_y|+\frac{n}{2}\mathbf{ln}2\pi
+/// \f]
+///
+/// where \f$ K_y \f$ is the kernel matrix of training set (may contain noise), \f$ \mathbf{y} \f$ is the training label,
+/// and the last term \f$ \frac{n}{2}\mathbf{ln}2\pi \f$ is a constant during optimizing of hyperparameter. Overall, the return
+/// of this function is \mathbf{y}^\top K_y^{-1}\mathbf{y}+\mathbf{ln}|K_y|, neglecting constant coefficient and add-on.
+///
+/// The parameters of this function is quiet weird compared with other functions, as the requirement of gsl interface.
+static double negative_log_marginal_likelihood(const gsl_vector* x, void* params)
 {
-	CGaussianProcessRegression* gpr_ptr = static_cast<CGaussianProcessRegression*>(params);
-	CInference* inference_ptr = gpr_ptr->get_inference_method();
-	static_cast<CGaussianLikelihood*>(inference_ptr->get_model())->set_sigma(abs(gsl_vector_get(x, 5)));
-	set_hyperparameter(x, static_cast<CCombinedKernel*>(inference_ptr->get_kernel()));
-	gpr_ptr->train();
-	return inference_ptr->get_negative_log_marginal_likelihood();
+	const TrainingSet* ts_ptr = static_cast<TrainingSet*>(params);
+	const MatrixXd& TrainFeature = ts_ptr->first;
+	const VectorXd& TrainLabel = ts_ptr->second;
+	MatrixXd character(2, 2);
+	character(0, 0) = abs(gsl_vector_get(x, 0)) < CharLenMin ? CharLenMin : gsl_vector_get(x, 0);
+	character(0, 1) = 0;
+	character(1, 0) = gsl_vector_get(x, 1);
+	character(1, 1) = abs(gsl_vector_get(x, 2)) < CharLenMin ? CharLenMin : gsl_vector_get(x, 2);
+	const MatrixXd& KernelMatrix = gaussian_kernel(
+		TrainFeature,
+		TrainFeature,
+		character,
+		abs(gsl_vector_get(x, 3)) < MagnitudeMin ? MagnitudeMin : gsl_vector_get(x, 3),
+		true,
+		abs(gsl_vector_get(x, 4)) < NoiseMin ? NoiseMin : gsl_vector_get(x, 4));
+	LLT<MatrixXd> LLTOfKernel(KernelMatrix);
+	const MatrixXd& L = LLTOfKernel.matrixL();
+	return (TrainLabel.adjoint() * LLTOfKernel.solve(TrainLabel)).value() / 2.0 + L.diagonal().array().abs().log().sum();
 }
 
-/// to opmitize the hyperparameters: 3 in gaussian kernel, and 2 weights
-/// @param[in] gpr_ptr the Gaussian Process Regression pointer
-static void optimize(CGaussianProcessRegression* gpr_ptr)
+/// @brief To opmitize the hyperparameters: 3 in gaussian kernel, and 2 weights
+/// @param[in] TrainFeature The features of the training set
+/// @param[in] TrainLabel The corresponding labels of the training set
+/// @return The vector containing optimized hyperparameters.
+///
+/// This function using the gsl multidimensional optimization to optimize the hyperparameters and return them.
+static vector<double> optimize(const MatrixXd& TrainFeature, const VectorXd& TrainLabel)
 {
-	static const double InitStepSize = 5e-3;
-	static const int NumIter = 1000; ///< the maximum number of iteration
-	static const double AbsTol = 1e-5; ///< tolerance in minimization
-	static const int NumVar = 6; ///< the number of variables to optimize
+	// initial step size
+	static const double InitStepSize = 0.5;
+	// the maximum number of iteration
+	static const int NumIter = 1000;
+	// tolerance in minimization
+	static const double AbsTol = 1e-10;
+	// the number of variables to optimize
+	static const int NumVar = 5;
 	// init the minizer
 	gsl_vector* x = gsl_vector_alloc(NumVar);
-	gsl_vector_set(x, 0, 1.0 + InitStepSize);
-	gsl_vector_set(x, 1, 0.0 + InitStepSize);
-	gsl_vector_set(x, 2, 1.0 + InitStepSize);
-	gsl_vector_set(x, 3, 1.0 + InitStepSize);
+	gsl_vector_set(x, 0, 1.5);
+	gsl_vector_set(x, 1, 0.0);
+	gsl_vector_set(x, 2, 1.5);
+	gsl_vector_set(x, 3, 1.0);
 	gsl_vector_set(x, 4, 0.0 + InitStepSize);
-	gsl_vector_set(x, 5, 1.0 + InitStepSize);
 	gsl_vector* step_size = gsl_vector_alloc(NumVar);
 	gsl_vector_set_all(step_size, InitStepSize);
 	gsl_multimin_function my_func;
 	my_func.n = NumVar;
-	my_func.f = func;
-	my_func.params = gpr_ptr;
+	my_func.f = negative_log_marginal_likelihood;
+	TrainingSet ts_temp = make_pair(TrainFeature, TrainLabel);
+	my_func.params = &ts_temp;
 	gsl_multimin_fminimizer* minimizer = gsl_multimin_fminimizer_alloc(gsl_multimin_fminimizer_nmsimplex2rand, NumVar);
 	gsl_multimin_fminimizer_set(minimizer, &my_func, x, step_size);
+	cout << "\t\tInitial hyperparameters:\n";
+	print_kernel(cout, x, 3);
+	cout << ' ' << gsl_multimin_fminimizer_minimum(minimizer) << '\n';
 
 	// iteration
 	int status = GSL_CONTINUE;
@@ -160,6 +216,10 @@ static void optimize(CGaussianProcessRegression* gpr_ptr)
 		{
 			break;
 		}
+		// output
+		print_kernel(cout, gsl_multimin_fminimizer_x(minimizer), 3);
+		cout << ' ' << gsl_multimin_fminimizer_minimum(minimizer) << '\n';
+		// test convergence
 		double size = gsl_multimin_fminimizer_size(minimizer);
 		status = gsl_multimin_test_size(size, AbsTol);
 		if (status == GSL_SUCCESS)
@@ -167,29 +227,85 @@ static void optimize(CGaussianProcessRegression* gpr_ptr)
 			cout << "\t\tFinish optimize with " << i << " iterations\n";
 		}
 	}
+	gsl_vector* x_temp = gsl_multimin_fminimizer_x(minimizer);
+	print_kernel(cout, x_temp, 3);
+	cout << ' ' << gsl_multimin_fminimizer_minimum(minimizer) << '\n';
 
-	// set hyperparameter
-	static_cast<CGaussianLikelihood*>(gpr_ptr->get_inference_method()->get_model())->set_sigma(abs(gsl_vector_get(x, 5)));
-	set_hyperparameter(minimizer->x, static_cast<CCombinedKernel*>(gpr_ptr->get_inference_method()->get_kernel()));
-
-	// free memory
+	// set hyperparameter, free memory
+	vector<double> hyperparameters(NumVar + 1);
+	hyperparameters[0] = abs(gsl_vector_get(x, 0)) < CharLenMin ? CharLenMin : gsl_vector_get(x, 0);
+	hyperparameters[1] = gsl_vector_get(x, 1);
+	hyperparameters[2] = abs(gsl_vector_get(x, 2)) < CharLenMin ? CharLenMin : gsl_vector_get(x, 2);
+	hyperparameters[3] = abs(gsl_vector_get(x, 3)) < MagnitudeMin ? MagnitudeMin : gsl_vector_get(x, 3);
+	hyperparameters[4] = abs(gsl_vector_get(x, 4)) < NoiseMin ? NoiseMin : gsl_vector_get(x, 4);
+	hyperparameters[NumVar] = gsl_multimin_fminimizer_minimum(minimizer);
 	gsl_vector_free(x);
 	gsl_vector_free(step_size);
 	gsl_multimin_fminimizer_free(minimizer);
+	return hyperparameters;
 }
 
-const int NRound = 1;// 0; ///< the number of MC chosen
+/// @brief Predict labels of test set
+/// @param[in] TrainFeature Features of training set
+/// @param[in] TrainLabel Labels of training set
+/// @param[in] x The coordinates of x grids
+/// @param[in] p The coordinates of p grids
+/// @param[in] Hyperparameters Optimized hyperparameters used in kernel
+/// @return Predicted Labels of test set
+///
+/// This function follows the formula
+///
+/// \f[
+/// \mathcal{E}[p(\mathbf{f}_*|X_*,X,\mathbf{y})]=K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}\mathbf{y}
+/// \f]
+///
+/// where \f$ X_* \f$ is the test features, \f$ X \f$ is the training features, and  \f$ \mathbf{y} \f$ is the training labels.
+static MatrixXd predict_phase(
+	const MatrixXd& TrainFeature,
+	const VectorXd& TrainLabel,
+	const VectorXd& x,
+	const VectorXd& p,
+	const vector<double>& Hyperparameters)
+{
+	MatrixXd character(2, 2);
+	character(0, 0) = Hyperparameters[0];
+	character(0, 1) = 0;
+	character(1, 0) = Hyperparameters[1];
+	character(1, 1) = Hyperparameters[2];
+	const double& weight = Hyperparameters[3];
+	const MatrixXd& KernelMatrix = gaussian_kernel(
+		TrainFeature,
+		TrainFeature,
+		character,
+		weight,
+		true,
+		Hyperparameters[4]);
+	const VectorXd& Coe = KernelMatrix.llt().solve(TrainLabel);
+	const int nx = x.size(), np = p.size();
+	VectorXd coord(2);
+	MatrixXd result(nx, np);
+	for (int i = 0; i < nx; i++)
+	{
+		for (int j = 0; j < np; j++)
+		{
+			coord[0] = x[i];
+			coord[1] = p[j];
+			result(i, j) = (gaussian_kernel(coord, TrainFeature, character, weight) * Coe).value();
+		}
+	}
+	return result;
+}
 
-void fit
-(
+void fit(
 	const MatrixXd& data,
 	const VectorXd& x,
 	const VectorXd& p,
 	ostream& sim,
 	ostream& choose,
-	ostream& log
-)
+	ostream& log)
 {
+	// the number of MC chosen
+	static const int NRound = 1; // 0;
 	const int nx = x.size(), np = p.size(), n = data.size();
 	if (is_very_small(data) == true)
 	{
@@ -199,11 +315,11 @@ void fit
 			sim << ' ' << 0;
 		}
 		sim << '\n';
-		log << ' ' << accumulate(data.data(), data.data() + n, 0.0, [](double a, double b)->double { return a + b * b; }) / n << ' ' << NAN;
+		log << ' ' << accumulate(data.data(), data.data() + n, 0.0, [](double a, double b) -> double { return a + b * b; }) / n << ' ' << NAN;
 		// choose the points
 		const set<pair<int, int>> chosen = choose_point(data, x, p);
 		// output the chosen points
-		output_point(chosen, x, p, choose);
+		print_point(choose, chosen, x, p);
 	}
 	else
 	{
@@ -218,10 +334,7 @@ void fit
 			// select the points
 			MatrixXd training_feature(2, NPoint);
 			VectorXd training_label(NPoint);
-			const int NTest = nx * np - NPoint;
-			MatrixXd test_feature(2, NTest);
-			VectorXd test_label(NTest);
-			for (int i = 0, itrain = 0, itest = 0; i < nx; i++)
+			for (int i = 0, itrain = 0; i < nx; i++)
 			{
 				for (int j = 0; j < np; j++)
 				{
@@ -233,85 +346,27 @@ void fit
 						training_label(itrain) = data(i, j);
 						itrain++;
 					}
-					else
-					{
-						// in the test set
-						test_feature(0, itest) = x(i);
-						test_feature(1, itest) = p(j);
-						test_label(itest) = data(i, j);
-						itest++;
-					}
 				}
 			}
-			Some<CDenseFeatures<double>> train_feature_ptr = some<CDenseFeatures<double>>(training_feature);
-			Some<CDenseFeatures<double>> test_feature_ptr = some<CDenseFeatures<double>>(test_feature);
-			Some<CRegressionLabels> train_label_ptr = some<CRegressionLabels>(training_label);
-			Some<CRegressionLabels> test_label_ptr = some<CRegressionLabels>(test_label);
-
-			// create combined kernel: k(x,x')=c1*exp(-|x-x'|^2/t^2)+c2*delta(x-x')
-			Some<CGaussianARDKernel> kernel_gaussianARD_ptr = some<CGaussianARDKernel>();
-			kernel_gaussianARD_ptr->set_matrix_weights(SGMatrix<double>::create_identity_matrix(2, 1.0));
-			Some<CDiagKernel> kernel_diag_ptr = some<CDiagKernel>();
-			Some<CCombinedKernel> kernel_combined_ptr = some<CCombinedKernel>();
-			kernel_combined_ptr->append_kernel(kernel_gaussianARD_ptr);
-			kernel_combined_ptr->append_kernel(kernel_diag_ptr);
-			kernel_combined_ptr->init(train_feature_ptr, train_feature_ptr);
-			cout << "\t\tBefore training:\n";
-			print_kernel(kernel_combined_ptr.get(), 2);
-
-			// create mean function: 0 mean
-			Some<CZeroMean> mean_ptr = some<CZeroMean>();
-			// likelihood: gaussian likelihood
-			Some<CGaussianLikelihood> likelihood_ptr = some<CGaussianLikelihood>();
-			// exact inference
-			Some<CExactInferenceMethod> inference_ptr = some<CExactInferenceMethod>(kernel_combined_ptr, train_feature_ptr, mean_ptr, train_label_ptr, likelihood_ptr);
-			// gp regression
-			Some<CGaussianProcessRegression> gpr_ptr = some<CGaussianProcessRegression>(inference_ptr);
 
 			// optimize
-			optimize(gpr_ptr);
-			kernel_combined_ptr->enable_subkernel_weight_learning();
-			Some<CGradientCriterion> grad_crit_ptr = some<CGradientCriterion>();
-			Some<CGradientEvaluation> grad_eval_ptr = some<CGradientEvaluation>(gpr_ptr, train_feature_ptr, train_label_ptr, grad_crit_ptr);
-			grad_eval_ptr->set_function(inference_ptr);
-			Some<CGradientModelSelection> grad_model_select_ptr = some<CGradientModelSelection>(grad_eval_ptr);
-			grad_model_select_ptr->select_model()->apply_to_machine(gpr_ptr);
-			// training the model
-			gpr_ptr->train();
-			// print kernel weights
-			cout << "\t\tAfter training:\n";
-			print_kernel(kernel_combined_ptr.get(), 2);
+			const vector<double>& Hyperparameters = optimize(training_feature, training_label);
 
 			// predict
-			Some<CRegressionLabels> predict_label_ptr(gpr_ptr->apply_regression(test_feature_ptr));
-			Some<CMeanSquaredError> eval = some<CMeanSquaredError>();
-			const double this_term_mse = eval->evaluate(predict_label_ptr, test_label_ptr);
+			const MatrixXd& PredictPhase = predict_phase(training_feature, training_label, x, p, Hyperparameters);
+			const double this_term_mse = (data - PredictPhase).array().square().sum();
 			if (this_term_mse < minMSE)
 			{
 				// this time a smaller min MSE is gotten, using this value
 				minMSE = this_term_mse;
-				neg_log_marg_ll = inference_ptr->get_negative_log_marginal_likelihood();
+				neg_log_marg_ll = Hyperparameters[Hyperparameters.size() - 1];
 				finally_chosen = chosen;
-				for (int i = 0, itest = 0; i < nx; i++)
-				{
-					for (int j = 0; j < np; j++)
-					{
-						if (chosen.find(make_pair(i, j)) != chosen.end())
-						{
-							finally_predict(i, j) = data(i, j);
-						}
-						else
-						{
-							finally_predict(i, j) = predict_label_ptr->get_label(itest);
-							itest++;
-						}
-					}
-				}
+				finally_predict = PredictPhase;
 			}
 		}
-		output_point(finally_chosen, x, p, choose);
+		print_point(choose, finally_chosen, x, p);
 		log << ' ' << minMSE << ' ' << neg_log_marg_ll;
-		for (int i = 0; i < finally_predict.rows(); i++)
+		for (int i = 0; i < nx; i++)
 		{
 			sim << ' ' << finally_predict.row(i);
 		}

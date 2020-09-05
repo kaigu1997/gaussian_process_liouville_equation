@@ -7,22 +7,19 @@
 
 #include "stdafx.h"
 
-/// calculate the difference between GPR and exact value
-/// @param[in] data the exact value
-/// @param[in] x the gridded position coordinates
-/// @param[in] p the gridded momentum coordinates
-/// @param[inout] sim the output stream for simulated phase space distribution
-/// @param[inout] choose the output stream for the chosen point
-/// @param[inout] log the output stream for log info (mse, -log(marg ll))
-void fit
-(
+/// @brief Calculate the difference between GPR and exact value
+/// @param[in] data The exact value
+/// @param[in] x The gridded position coordinates
+/// @param[in] p The gridded momentum coordinates
+/// @param[inout] sim The output stream for simulated phase space distribution
+/// @param[inout] choose The output stream for the chosen point
+/// @param[inout] log The output stream for log info (mse, -log(marg ll))
+void fit(
 	const MatrixXd& data,
 	const VectorXd& x,
 	const VectorXd& p,
 	ostream& sim,
 	ostream& choose,
-	ostream& log
-);
+	ostream& log);
 
 #endif // !GPR_H
-
