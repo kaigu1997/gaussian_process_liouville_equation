@@ -1,3 +1,5 @@
+# This format file is based on clang-format 10.0.0/1,
+# and may not work for other versions where key/value changes.
 BasedOnStyle: Microsoft
 Language: Cpp
 AccessModifierOffset: -4
@@ -46,17 +48,17 @@ FixNamespaceComments: false
 ForEachMacros: ['BOOST_FOREACH']
 IncludeBlocks: Regroup
 IncludeCategories:
-  - Regex: '^<[[:lower:]_]+[.]h[^hpx]' # c headers
-    Priority: 0
-  - Regex: '<[[:lower:]_]+>' # c++ std headers
+  - Regex: '<[[:alnum:]_]+>' # c++ std headers, std c headers are generally here
     Priority: 1
-  - Regex: '^<[[:alnum:]_]+(/|[.]h[hpx]|[.]H)' # most of the third-party libraries
+  - Regex: '^<[[:alnum:]_]+(/|[.]h[hpx+])' # most of the third-party libraries: boost, gsl, Eigen, nlopt, ...
     Priority: 2
-# IncludeIsMainRegex
-# IncludeIsMainSourceRegex
+  - Regex: '^"[[:alnum:]_]+(/|[.]h[hpx+])' # current folder
+    Priority: 3
+IncludeIsMainRegex: '$'
+IncludeIsMainSourceRegex: '([.]h[hpx+])?$'
 IndentCaseLabels: false
-# IndentGotoLabels: true
-IndentPPDirectives: AfterHash
+IndentGotoLabels: true
+IndentPPDirectives: None
 IndentWidth: 4
 IndentWrappedFunctionNames: true
 # JavaImportGroups
