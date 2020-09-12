@@ -2,7 +2,7 @@ CXX := icpc
 WARNINGFLAGS := -Wall -Wextra
 CXXFLAGS := ${WARNINGFLAGS} -mkl -std=c++14 -fast -fopenmp -pch
 LDFLAGS := ${WARNINGFLAGS} -mkl -std=c++14 -ipo -Ofast -xHost -Wl,-fuse-ld=gold -fopenmp
-LDLIBS := -lpthread -lgsl
+LDLIBS := -lpthread -lnlopt -lshogun
 Objects := io.o gpr.o main.o
 PCH := stdafx.h
 

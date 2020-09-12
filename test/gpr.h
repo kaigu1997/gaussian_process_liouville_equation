@@ -1,5 +1,5 @@
 /// @file gpr.h
-/// @brief the header file containing gaussian process regression interfaces
+/// @brief The header file containing gaussian process regression interfaces
 
 #pragma once
 #ifndef GPR_H
@@ -11,15 +11,7 @@
 /// @param[in] data The exact value
 /// @param[in] x The gridded position coordinates
 /// @param[in] p The gridded momentum coordinates
-/// @param[inout] sim The output stream for simulated phase space distribution
-/// @param[inout] choose The output stream for the chosen point
-/// @param[inout] log The output stream for log info (mse, -log(marg ll))
-void fit(
-	const MatrixXd& data,
-	const VectorXd& x,
-	const VectorXd& p,
-	ostream& sim,
-	ostream& choose,
-	ostream& log);
+/// @return The fitting result tuple
+FittingResult fit(const Eigen::MatrixXd& data, const Eigen::VectorXd& x, const Eigen::VectorXd& p);
 
 #endif // !GPR_H

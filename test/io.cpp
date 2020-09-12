@@ -1,41 +1,86 @@
 /// @file io.cpp
-/// @brief definition of input-output functions
+/// @brief Definition of input-output functions
 
 #include "io.h"
 
-VectorXd read_coord(const string& filename)
+Eigen::VectorXd read_coord(const std::string& filename)
 {
-	vector<double> v;
+	std::vector<double> v;
 	double tmp;
-	ifstream f(filename);
+	std::ifstream f(filename);
 	while (f >> tmp)
 	{
 		v.push_back(tmp);
 	}
-	VectorXd coord(v.size());
-	copy(v.cbegin(), v.cend(), coord.data());
+	Eigen::VectorXd coord(v.size());
+	std::copy(v.cbegin(), v.cend(), coord.data());
 	return coord;
 }
 
-void print_kernel(ostream& os, const gsl_vector* x, const int indent)
-{
-	for (int i = 0; i < indent; i++)
-	{
-		os << '\t';
-	}
-	os << abs(gsl_vector_get(x, 3)) << " * [[" << abs(gsl_vector_get(x, 0)) << ", 0], [" << gsl_vector_get(x, 1) << ", " << abs(gsl_vector_get(x, 2)) << "]] + " << abs(gsl_vector_get(x, 4)) << " * I";
-}
-
 void print_point(
-	ostream& out,
-	const set<pair<int, int>>& point,
-	const VectorXd& x,
-	const VectorXd& p)
+	std::ostream& out,
+	const std::set<std::pair<int, int>>& point,
+	const Eigen::VectorXd& x,
+	const Eigen::VectorXd& p)
 {
-	set<pair<int, int>>::const_iterator iter = point.cbegin();
+	std::set<std::pair<int, int>>::const_iterator iter = point.cbegin();
 	for (int i = 0; i < NPoint; i++, ++iter)
 	{
 		out << ' ' << x(iter->first) << ' ' << p(iter->second);
 	}
 	out << '\n';
+}
+
+void print_kernel(
+	std::ostream& out,
+	const KernelTypeList& TypesOfKernels,
+	const std::vector<double>& Hyperparameters,
+	const int IndentLevel)
+{
+	const int NKernel = TypesOfKernels.size();
+	for (int i = 0, iparam = 0; i < NKernel; i++)
+	{
+		for (int j = 0; j < IndentLevel; j++)
+		{
+			out << '\t';
+		}
+		const double weight = Hyperparameters[iparam++];
+		switch (TypesOfKernels[i])
+		{
+		case shogun::EKernelType::K_DIAG:
+			out << "Diagonal Kernel: " << weight << '\n';
+			break;
+		case shogun::EKernelType::K_GAUSSIANARD:
+			out << "Gaussian Kernel with Relevance: " << weight << " * [";
+			for (int j = 0; j < PhaseDim; j++)
+			{
+				if (j != 0)
+				{
+					out << ", ";
+				}
+				out << '[';
+				for (int k = 0; k < PhaseDim; k++)
+				{
+					if (k <= j)
+					{
+						if (k != 0)
+						{
+							out << ", ";
+						}
+						out << Hyperparameters[iparam++];
+					}
+					else
+					{
+						out << ", 0";
+					}
+				}
+				out << ']';
+			}
+			out << "]\n";
+			break;
+		default:
+			std::clog << "UNKNOWN KERNEL!\n";
+			break;
+		}
+	}
 }

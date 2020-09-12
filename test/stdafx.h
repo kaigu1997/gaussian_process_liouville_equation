@@ -1,5 +1,5 @@
 /// @file stdafx.h
-/// @brief the header file containing all headers and constants.
+/// @brief The header file containing all headers and constants.
 ///
 /// This file will be the precompiled header(PCH), named
 /// after STanDard Application Framework eXtensions.
@@ -9,10 +9,12 @@
 #define STDAFX_H
 
 #include <algorithm>
+#include <cassert>
 #include <cfloat>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <exception>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -26,23 +28,33 @@
 #include <utility>
 #include <vector>
 
-#include <gsl/gsl_multimin.h>
 #ifndef EIGEN_USE_MKL_ALL
 #define EIGEN_USE_MKL_ALL
 #endif
-#ifdef __GSL_BLAS_TYPES_H__
-#define __MKL_CBLAS_H__
-#endif
 #include <Eigen/Eigen>
+#undef EIGEN_USE_MKL_ALL
 #include <nlopt.hpp>
+#pragma warning(push, 0)
+#pragma warning(disable: 3346 654)
+#include <shogun/base/init.h>
+#include <shogun/base/some.h>
+#include <shogun/features/DenseFeatures.h>
+#include <shogun/kernel/CombinedKernel.h>
+#include <shogun/kernel/DiagKernel.h>
+#include <shogun/kernel/GaussianARDKernel.h>
+#include <shogun/lib/SGMatrix.h>
+#include <shogun/lib/SGVector.h>
+#pragma warning(pop)
 
-//#pragma warning(push, 0)
-//#pragma warning(disable : 3346 654)
-//#pragma warning(pop)
+const int NPoint = 500;		  ///< The size of training set
+const int Dim = 1;			  ///< The dimension of the system, half the dimension of the phase space
+const int PhaseDim = Dim * 2; ///< The dimension of the phase space, twice the dimension of the system
 
-using namespace std;
-using namespace Eigen;
-
-const int NPoint = 500; ///< the size of training set
+/// Vector containing the type of all kernels
+using KernelTypeList = std::vector<shogun::EKernelType>;
+/// The set containing the index (instead of coordinate) of the selected points
+using PointSet = std::set<std::pair<int, int>>;
+/// The result of fitting: the fitted matrix, the selected points, and the -log(marginal likelihood)
+using FittingResult = std::tuple<Eigen::MatrixXd, PointSet, double>;
 
 #endif // !STDAFX_H

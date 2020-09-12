@@ -1,25 +1,26 @@
 /// @file gpr.cpp
-/// @brief definition of Gaussian Process Regression functions
+/// @brief Definition of Gaussian Process Regression functions
 
 #include "gpr.h"
 
 #include "io.h"
 
-/// passed to gsl optimization for get negative_log_marginal_likelihood()
-using TrainingSet = pair<MatrixXd, VectorXd>;
+/// Passed to optimization for get negative_log_marginal_likelihood()
+using TrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
 
-/// @brief judge if all points has very small weight
-/// @param[in] data the gridded phase space distribution
-/// @return if abs of all value are below epsilon, return true, else return false
-static bool is_very_small(const MatrixXd& data)
+/// @brief Judge if all points has very small weight
+/// @param[in] data The gridded phase space distribution
+/// @return If abs of all value are below epsilon, return true, else return false
+static bool is_very_small(const Eigen::MatrixXd& data)
 {
 	// value below this are regarded as 0; x=5sigma for normal distribution
-	static const double epsilon = exp(-12.5) / sqrt(2 * acos(-1.0));
-	for (int i = 0; i < data.rows(); i++)
+	static const double epsilon = std::exp(-12.5) / std::sqrt(2 * std::acos(-1.0));
+	const int Row = data.rows(), Col = data.cols();
+	for (int i = 0; i < Row; i++)
 	{
-		for (int j = 0; j < data.cols(); j++)
+		for (int j = 0; j < Col; j++)
 		{
-			if (abs(data(i, j)) > epsilon)
+			if (std::abs(data(i, j)) > epsilon)
 			{
 				return false;
 			}
@@ -37,26 +38,26 @@ static bool is_very_small(const MatrixXd& data)
 /// This function check if the values in the input matrix are all small or not.
 /// If all very small, then select points randomly without weight.
 /// Otherwise, select based on the weights at the point by MC procedure.
-static set<pair<int, int>> choose_point(const MatrixXd& data, const VectorXd& x, const VectorXd& p)
+static PointSet choose_point(const Eigen::MatrixXd& data, const Eigen::VectorXd& x, const Eigen::VectorXd& p)
 {
-	static mt19937_64 generator(chrono::system_clock::now().time_since_epoch().count()); ///< random number generator, 64 bits Mersenne twister engine
-	set<pair<int, int>> result;
+	static std::mt19937_64 generator(std::chrono::system_clock::now().time_since_epoch().count()); ///< random number generator, 64 bits Mersenne twister engine
+	PointSet result;
 	const int nx = data.rows(), np = data.cols(), n = data.size();
 	if (is_very_small(data) == true)
 	{
 		// if not stopped before, then all points are very small
 		// uniformly choose points
-		uniform_int_distribution<int> x_dis(0, nx - 1), p_dis(0, np - 1);
+		std::uniform_int_distribution<int> x_dis(0, nx - 1), p_dis(0, np - 1);
 		while (result.size() < NPoint)
 		{
 			const int ranx = x_dis(generator), ranp = p_dis(generator);
-			result.insert(make_pair(ranx, ranp));
+			result.insert(std::make_pair(ranx, ranp));
 		}
 	}
 	else
 	{
-		const double weight = accumulate(data.data(), data.data() + n, 0.0, [](double a, double b) -> double { return abs(a) + abs(b); });
-		uniform_real_distribution<double> urd(0.0, weight);
+		const double weight = std::accumulate(data.data(), data.data() + n, 0.0, [](double a, double b) -> double { return abs(a) + abs(b); });
+		std::uniform_real_distribution<double> urd(0.0, weight);
 		while (result.size() < NPoint)
 		{
 			double acc_weight = urd(generator);
@@ -67,7 +68,7 @@ static set<pair<int, int>> choose_point(const MatrixXd& data, const VectorXd& x,
 					acc_weight -= abs(data(j, k));
 					if (acc_weight < 0)
 					{
-						result.insert(make_pair(j, k));
+						result.insert(std::make_pair(j, k));
 						goto next;
 					}
 				}
@@ -78,16 +79,50 @@ static set<pair<int, int>> choose_point(const MatrixXd& data, const VectorXd& x,
 	return result;
 }
 
-/// @brief The Gaussian kernel function, \f$ K(X_1,X_2) \f$
+/// @brief Calculate the overall number of hyperparameters the optimization will use
+/// @param[in] TypesOfKernels The vector containing all the kernel type used in optimization
+/// @return The overall number of hyperparameters (including the magnitude of each kernel)
+static int number_of_overall_hyperparameters(const KernelTypeList& TypesOfKernels)
+{
+	const int size = TypesOfKernels.size();
+	int sum = 0;
+	for (int i = 0; i < size; i++)
+	{
+		sum++; // weight
+		switch (TypesOfKernels[i])
+		{
+		case shogun::EKernelType::K_DIAG:
+			sum += 0; // no extra hyperparameter for diagonal kernel
+			break;
+		case shogun::EKernelType::K_GAUSSIANARD:
+			sum += PhaseDim * (PhaseDim + 1) / 2; // extra hyperparameter from relevance and characteristic lengths
+			break;
+		default:
+			std::cerr << "UNKNOWN KERNEL!\n";
+			break;
+		}
+	}
+	return sum;
+}
+
+/// @brief Deep copy of Eigen matrix to shogun matrix
+/// @param[in] mat Eigen matrix
+/// @return shogun matrix of same content
+static shogun::SGMatrix<double> generate_shogun_matrix(const Eigen::MatrixXd& mat)
+{
+	shogun::SGMatrix<double> result(mat.rows(), mat.cols());
+	std::copy(mat.data(), mat.data() + mat.size(), result.data());
+	return result;
+}
+
+/// @brief Calculate the kernel matrix, \f$ K(X_1,X_2) \f$
 /// @param[in] LeftFeature The feature on the left, \f$ X_1 \f$
 /// @param[in] RightFeature The feature on the right, \f$ X_2 \f$
-/// @param[in] Character The characteristic matrix, see explanation below
-/// @param[in] weight The weight of Gaussian part
-/// @param[in] both_training Whether the two features are both training features or not (with at least one test feature)
-/// @param[in] noise The noise added when both features are training features
+/// @param[in] TypeOfKernel The vector containing type of all kernels that will be used
+/// @param[in] Hyperparameters The hyperparameters of all kernels (magnitude and other)
 /// @return The kernel matrix
 ///
-/// This function calculates the Gaussian kernel with noise on training features,
+/// This function calculates the kernel matrix with noise using the shogun library,
 ///
 /// /f[
 /// k(\mathbf{x}_1,\mathbf{x}_2)=\sigma_f^2\mathrm{exp}\left(-\frac{(\mathbf{x}_1-\mathbf{x}_2)^\top M (\mathbf{x}_1-\mathbf{x}_2)}{2}\right)+\sigma_n^2\delta(\mathbf{x}_1-\mathbf{x}_2)
@@ -98,43 +133,57 @@ static set<pair<int, int>> choose_point(const MatrixXd& data, const VectorXd& x,
 /// its diagonal term is the characteristic length of each dimention and
 /// off-diagonal term is the correlation between different dimensions
 ///
-/// Noise part \f$ \sigma_n^2 \f$ is added when both features are training.
-///
 /// When there are more than one feature, the kernel matrix follows \f$ K_{ij}=k(X_{1_{\cdot i}}, X_{2_{\cdot j}}) \f$.
-static MatrixXd gaussian_kernel(
-	const MatrixXd& LeftFeature,
-	const MatrixXd& RightFeature,
-	const MatrixXd& Character,
-	const double weight,
-	const bool both_training = false,
-	const double noise = 0.0)
+static Eigen::MatrixXd get_kernel_matrix(
+	const Eigen::MatrixXd& LeftFeature,
+	const Eigen::MatrixXd& RightFeature,
+	const KernelTypeList& TypesOfKernels,
+	const std::vector<double>& Hyperparameters)
 {
-	const int Rows = LeftFeature.cols(), Cols = RightFeature.cols();
-	MatrixXd kernel = MatrixXd::Zero(Rows, Cols);
-	for (int i = 0; i < Rows; i++)
+	assert(LeftFeature.rows() == PhaseDim && RightFeature.rows() == PhaseDim);
+	assert(Hyperparameters.size() == number_of_overall_hyperparameters(TypesOfKernels) || Hyperparameters.size() == number_of_overall_hyperparameters(TypesOfKernels) + 1);
+	// construct the feature
+	shogun::Some<shogun::CDenseFeatures<double>> left_feature = shogun::some<shogun::CDenseFeatures<double>>(generate_shogun_matrix(LeftFeature));
+	shogun::Some<shogun::CDenseFeatures<double>> right_feature = shogun::some<shogun::CDenseFeatures<double>>(generate_shogun_matrix(RightFeature));
+	const int NKernel = TypesOfKernels.size();
+	Eigen::MatrixXd result = Eigen::MatrixXd::Zero(LeftFeature.cols(), RightFeature.cols());
+	for (int i = 0, iparam = 0; i < NKernel; i++)
 	{
-		for (int j = 0; j < Cols; j++)
+		const double weight = Hyperparameters[iparam++];
+		std::shared_ptr<shogun::CKernel> kernel_ptr;
+		switch (TypesOfKernels[i])
 		{
-			const VectorXd& Diff = LeftFeature.col(i) - RightFeature.col(j);
-			kernel(i, j) = exp(-(Diff.adjoint() * Character * Character.adjoint() * Diff).value() / 2.0);
+		case shogun::EKernelType::K_DIAG:
+			kernel_ptr = std::make_shared<shogun::CDiagKernel>();
+			break;
+		case shogun::EKernelType::K_GAUSSIANARD:
+		{
+			Eigen::MatrixXd characteristic = Eigen::MatrixXd::Zero(PhaseDim, PhaseDim);
+			for (int j = 0; j < PhaseDim; j++)
+			{
+				for (int k = 0; k <= j; k++)
+				{
+					characteristic(j, k) = Hyperparameters[iparam++];
+				}
+			}
+			std::shared_ptr<shogun::CGaussianARDKernel> gauss_ard_kernel_ptr = std::make_shared<shogun::CGaussianARDKernel>();
+			gauss_ard_kernel_ptr->set_matrix_weights(characteristic);
+			kernel_ptr = gauss_ard_kernel_ptr;
 		}
+		break;
+		default:
+			std::cerr << "UNKNOWN KERNEL!\n";
+			break;
+		}
+		kernel_ptr->init(left_feature, right_feature);
+		result += weight * weight * static_cast<shogun::SGMatrix<double>::EigenMatrixXtMap>(kernel_ptr->get_kernel_matrix());
 	}
-	kernel *= weight * weight;
-	if (both_training == true && LeftFeature.data() == RightFeature.data())
-	{
-		kernel += noise * noise * MatrixXd::Identity(Rows, Cols);
-	}
-	return kernel;
+	return result;
 }
 
-
-// some minimal for hyperparameters; below that would lead to non-sense
-const double NoiseMin = 1e-10;	  ///< Minimal value of the noise
-const double MagnitudeMin = 1e-4; ///< Minimal value of the magnitude of the normal kernel
-const double CharLenMin = 1e-4;	  ///< Minimal value of the characteristic length in Gaussian kernel
-
 /// @brief Calculate the negative marginal likelihood, \f$ -\mathrm{ln}p(\mathbf{y}|X,\mathbf{\theta}) \f$
-/// @param[in] x The gsl vector containing all the hyperparameters
+/// @param[in] x The vector containing all the hyperparameters
+/// @param[out] grad The gradient of each hyperparameter (not used)
 /// @param[in] params The pointer to a training set, including feature and label
 /// @return The negative marginal likelihood
 ///
@@ -149,99 +198,120 @@ const double CharLenMin = 1e-4;	  ///< Minimal value of the characteristic lengt
 /// of this function is \mathbf{y}^\top K_y^{-1}\mathbf{y}+\mathbf{ln}|K_y|, neglecting constant coefficient and add-on.
 ///
 /// The parameters of this function is quiet weird compared with other functions, as the requirement of gsl interface.
-static double negative_log_marginal_likelihood(const gsl_vector* x, void* params)
+static double negative_log_marginal_likelihood(const std::vector<double>& x, std::vector<double>& grad, void* params)
 {
-	const TrainingSet* ts_ptr = static_cast<TrainingSet*>(params);
-	const MatrixXd& TrainFeature = ts_ptr->first;
-	const VectorXd& TrainLabel = ts_ptr->second;
-	MatrixXd character(2, 2);
-	character(0, 0) = abs(gsl_vector_get(x, 0)) < CharLenMin ? CharLenMin : gsl_vector_get(x, 0);
-	character(0, 1) = 0;
-	character(1, 0) = gsl_vector_get(x, 1);
-	character(1, 1) = abs(gsl_vector_get(x, 2)) < CharLenMin ? CharLenMin : gsl_vector_get(x, 2);
-	const MatrixXd& KernelMatrix = gaussian_kernel(
-		TrainFeature,
-		TrainFeature,
-		character,
-		abs(gsl_vector_get(x, 3)) < MagnitudeMin ? MagnitudeMin : gsl_vector_get(x, 3),
-		true,
-		abs(gsl_vector_get(x, 4)) < NoiseMin ? NoiseMin : gsl_vector_get(x, 4));
-	LLT<MatrixXd> LLTOfKernel(KernelMatrix);
-	const MatrixXd& L = LLTOfKernel.matrixL();
-	return (TrainLabel.adjoint() * LLTOfKernel.solve(TrainLabel)).value() / 2.0 + L.diagonal().array().abs().log().sum();
+	// receive the parameter
+	const TrainingSet& Training = *static_cast<TrainingSet*>(params);
+	// get the kernel matrix, x being the hyperparameters
+	const Eigen::MatrixXd& Feature = std::get<0>(Training);
+	const KernelTypeList& TypesOfKernels = std::get<2>(Training);
+	print_kernel(std::clog, TypesOfKernels, x, 3);
+	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(Feature, Feature, TypesOfKernels, x);
+	// calculate
+	Eigen::LLT<Eigen::MatrixXd> LLTOfKernel(KernelMatrix);
+	const Eigen::MatrixXd& L = LLTOfKernel.matrixL();
+	const Eigen::VectorXd& TrainLabel = std::get<1>(Training);
+	const double result = (TrainLabel.adjoint() * LLTOfKernel.solve(TrainLabel)).value() / 2.0 + L.diagonal().array().abs().log().sum();
+	std::clog << "\t\t\t\t" << result << std::endl;
+	return result;
 }
 
 /// @brief To opmitize the hyperparameters: 3 in gaussian kernel, and 2 weights
-/// @param[in] TrainFeature The features of the training set
-/// @param[in] TrainLabel The corresponding labels of the training set
-/// @return The vector containing optimized hyperparameters.
+/// @param[in] Training The training set, containing the features and labels of the training set and the types of all kernels
+/// @return The vector containing all hyperparameters, and the last element is the final function value
 ///
-/// This function using the gsl multidimensional optimization to optimize the hyperparameters and return them.
-static vector<double> optimize(const MatrixXd& TrainFeature, const VectorXd& TrainLabel)
+/// This function using the NLOPT to optimize the hyperparameters and return them.
+/// Currently the optimization method is Nelder-Mead Simplex algorithm.
+static std::vector<double> optimize(const TrainingSet& Training)
 {
-	// initial step size
-	static const double InitStepSize = 0.5;
-	// the maximum number of iteration
-	static const int NumIter = 1000;
-	// tolerance in minimization
-	static const double AbsTol = 1e-10;
-	// the number of variables to optimize
-	static const int NumVar = 5;
-	// init the minizer
-	gsl_vector* x = gsl_vector_alloc(NumVar);
-	gsl_vector_set(x, 0, 1.5);
-	gsl_vector_set(x, 1, 0.0);
-	gsl_vector_set(x, 2, 1.5);
-	gsl_vector_set(x, 3, 1.0);
-	gsl_vector_set(x, 4, 0.0 + InitStepSize);
-	gsl_vector* step_size = gsl_vector_alloc(NumVar);
-	gsl_vector_set_all(step_size, InitStepSize);
-	gsl_multimin_function my_func;
-	my_func.n = NumVar;
-	my_func.f = negative_log_marginal_likelihood;
-	TrainingSet ts_temp = make_pair(TrainFeature, TrainLabel);
-	my_func.params = &ts_temp;
-	gsl_multimin_fminimizer* minimizer = gsl_multimin_fminimizer_alloc(gsl_multimin_fminimizer_nmsimplex2rand, NumVar);
-	gsl_multimin_fminimizer_set(minimizer, &my_func, x, step_size);
-	cout << "\t\tInitial hyperparameters:\n";
-	print_kernel(cout, x, 3);
-	cout << ' ' << gsl_multimin_fminimizer_minimum(minimizer) << '\n';
-
-	// iteration
-	int status = GSL_CONTINUE;
-	for (int i = 1; i <= NumIter && status == GSL_CONTINUE; i++)
+	const KernelTypeList& TypesOfKernels = std::get<2>(Training);
+	const int NKernel = TypesOfKernels.size();
+	// constructor the NLOPT minimizer using Nelder-Mead simplex algorithm
+	static const int NoVar = number_of_overall_hyperparameters(TypesOfKernels); // the number of variables to optimize
+	nlopt::opt minimizer(nlopt::algorithm::LN_NELDERMEAD, NoVar);
+	// set minimizer function
+	minimizer.set_min_objective(negative_log_marginal_likelihood, const_cast<TrainingSet*>(&Training));
+	// set lower bound for noise and characteristic length, as well as for initial values
+	static const double MagnitudeMin = 1e-5; // Minimal value of the magnitude of the normal kernel
+	static const double CharLenMin = 1e-4;	 // Minimal value of the characteristic length in Gaussian kernel
+	std::vector<double> lower_bound(NoVar);
+	std::vector<double> hyperparameters(NoVar);
+	for (int i = 0, iparam = 0; i < NKernel; i++)
 	{
-		status = gsl_multimin_fminimizer_iterate(minimizer);
-		if (status)
+		lower_bound[iparam] = MagnitudeMin;
+		hyperparameters[iparam] = 1.0;
+		iparam++;
+		switch (TypesOfKernels[i])
 		{
+		case shogun::EKernelType::K_DIAG:
+			break;
+		case shogun::EKernelType::K_GAUSSIANARD:
+			for (int i = 0; i < PhaseDim; i++)
+			{
+				for (int j = 0; j < i; j++)
+				{
+					lower_bound[iparam] = std::numeric_limits<double>::lowest();
+					hyperparameters[iparam] = 0.0;
+					iparam++;
+				}
+				lower_bound[iparam] = CharLenMin;
+				hyperparameters[iparam] = 1.0;
+				iparam++;
+			}
+			break;
+		default:
+			std::cerr << "UNKNOWN KERNEL!\n";
 			break;
 		}
-		// output
-		print_kernel(cout, gsl_multimin_fminimizer_x(minimizer), 3);
-		cout << ' ' << gsl_multimin_fminimizer_minimum(minimizer) << '\n';
-		// test convergence
-		double size = gsl_multimin_fminimizer_size(minimizer);
-		status = gsl_multimin_test_size(size, AbsTol);
-		if (status == GSL_SUCCESS)
-		{
-			cout << "\t\tFinish optimize with " << i << " iterations\n";
-		}
 	}
-	gsl_vector* x_temp = gsl_multimin_fminimizer_x(minimizer);
-	print_kernel(cout, x_temp, 3);
-	cout << ' ' << gsl_multimin_fminimizer_minimum(minimizer) << '\n';
+	minimizer.set_lower_bounds(lower_bound);
+	// set stop criteria
+	static const double AbsTol = 1e-10; // tolerance in minimization
+	minimizer.set_xtol_abs(AbsTol);
+	static const int NumIter = 1000; // the maximum number of iteration
+	minimizer.set_maxeval(NumIter);
+	// set initial step size
+	static const double InitStepSize = 0.5; // initial step size
+	minimizer.set_initial_step(InitStepSize);
 
-	// set hyperparameter, free memory
-	vector<double> hyperparameters(NumVar + 1);
-	hyperparameters[0] = abs(gsl_vector_get(x, 0)) < CharLenMin ? CharLenMin : gsl_vector_get(x, 0);
-	hyperparameters[1] = gsl_vector_get(x, 1);
-	hyperparameters[2] = abs(gsl_vector_get(x, 2)) < CharLenMin ? CharLenMin : gsl_vector_get(x, 2);
-	hyperparameters[3] = abs(gsl_vector_get(x, 3)) < MagnitudeMin ? MagnitudeMin : gsl_vector_get(x, 3);
-	hyperparameters[4] = abs(gsl_vector_get(x, 4)) < NoiseMin ? NoiseMin : gsl_vector_get(x, 4);
-	hyperparameters[NumVar] = gsl_multimin_fminimizer_minimum(minimizer);
-	gsl_vector_free(x);
-	gsl_vector_free(step_size);
-	gsl_multimin_fminimizer_free(minimizer);
+	// optimize
+	std::clog << "\t\tBegin Optimization" << std::endl;
+	try
+	{
+		double final_value = 0.0;
+		nlopt::result result = minimizer.optimize(hyperparameters, final_value);
+		std::clog << "\t\t";
+		switch (result)
+		{
+		case nlopt::result::SUCCESS:
+			std::clog << "Successfully stopped";
+			break;
+		case nlopt::result::STOPVAL_REACHED:
+			std::clog << "Stopping value reached";
+			break;
+		case nlopt::result::FTOL_REACHED:
+			std::clog << "Function value tolerance reached";
+			break;
+		case nlopt::result::XTOL_REACHED:
+			std::clog << "Step size tolerance reached";
+			break;
+		case nlopt::result::MAXEVAL_REACHED:
+			std::clog << "Maximum evaluation time reached";
+			break;
+		case nlopt::result::MAXTIME_REACHED:
+			std::clog << "Maximum cpu time reached";
+			break;
+		}
+		std::clog << "\n\t\tBest Combination is\n";
+		print_kernel(std::clog, TypesOfKernels, hyperparameters, 3);
+		std::clog <<  "\t\t\t\t" << final_value << std::endl;
+		hyperparameters.push_back(final_value);
+	}
+	catch (const std::exception& e)
+	{
+		std::cerr << "\t\tNLOPT optimization failed for" << e.what() << '\n';
+	}
+
 	return hyperparameters;
 }
 
@@ -260,85 +330,59 @@ static vector<double> optimize(const MatrixXd& TrainFeature, const VectorXd& Tra
 /// \f]
 ///
 /// where \f$ X_* \f$ is the test features, \f$ X \f$ is the training features, and  \f$ \mathbf{y} \f$ is the training labels.
-static MatrixXd predict_phase(
-	const MatrixXd& TrainFeature,
-	const VectorXd& TrainLabel,
-	const VectorXd& x,
-	const VectorXd& p,
-	const vector<double>& Hyperparameters)
+static Eigen::MatrixXd predict_phase(
+	const TrainingSet& Training,
+	const Eigen::VectorXd& x,
+	const Eigen::VectorXd& p,
+	const std::vector<double>& Hyperparameters)
 {
-	MatrixXd character(2, 2);
-	character(0, 0) = Hyperparameters[0];
-	character(0, 1) = 0;
-	character(1, 0) = Hyperparameters[1];
-	character(1, 1) = Hyperparameters[2];
-	const double& weight = Hyperparameters[3];
-	const MatrixXd& KernelMatrix = gaussian_kernel(
-		TrainFeature,
-		TrainFeature,
-		character,
-		weight,
-		true,
-		Hyperparameters[4]);
-	const VectorXd& Coe = KernelMatrix.llt().solve(TrainLabel);
+	const Eigen::MatrixXd& TrainingFeature = std::get<0>(Training);
+	const KernelTypeList& TypesOfKernels = std::get<2>(Training);
+	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, TypesOfKernels, Hyperparameters);
+	const Eigen::VectorXd& TrainingLabel = std::get<1>(Training);
+	const Eigen::VectorXd& Coe = KernelMatrix.llt().solve(TrainingLabel);
 	const int nx = x.size(), np = p.size();
-	VectorXd coord(2);
-	MatrixXd result(nx, np);
+	Eigen::VectorXd coord(2);
+	Eigen::MatrixXd result(nx, np);
 	for (int i = 0; i < nx; i++)
 	{
 		for (int j = 0; j < np; j++)
 		{
 			coord[0] = x[i];
 			coord[1] = p[j];
-			result(i, j) = (gaussian_kernel(coord, TrainFeature, character, weight) * Coe).value();
+			result(i, j) = (get_kernel_matrix(coord, TrainingFeature, TypesOfKernels, Hyperparameters) * Coe).value();
 		}
 	}
 	return result;
 }
 
-void fit(
-	const MatrixXd& data,
-	const VectorXd& x,
-	const VectorXd& p,
-	ostream& sim,
-	ostream& choose,
-	ostream& log)
+FittingResult fit(const Eigen::MatrixXd& data, const Eigen::VectorXd& x, const Eigen::VectorXd& p)
 {
 	// the number of MC chosen
 	static const int NRound = 1; // 0;
 	const int nx = x.size(), np = p.size(), n = data.size();
 	if (is_very_small(data) == true)
 	{
-		// in case all points are very small, assuming they are all zero
-		for (int i = 0; i < nx * np; i++)
-		{
-			sim << ' ' << 0;
-		}
-		sim << '\n';
-		log << ' ' << accumulate(data.data(), data.data() + n, 0.0, [](double a, double b) -> double { return a + b * b; }) / n << ' ' << NAN;
-		// choose the points
-		const set<pair<int, int>> chosen = choose_point(data, x, p);
-		// output the chosen points
-		print_point(choose, chosen, x, p);
+		return std::make_tuple(Eigen::MatrixXd::Zero(nx, np), choose_point(data, x, p), NAN);
 	}
 	else
 	{
 		double minMSE = DBL_MAX, neg_log_marg_ll = 0;
-		set<pair<int, int>> finally_chosen;
-		MatrixXd finally_predict(nx, np);
+		PointSet finally_chosen;
+		Eigen::MatrixXd finally_predict(nx, np);
 		for (int i = 0; i < NRound; i++)
 		{
-			cout << "\tRound " << i << '\n';
+			std::clog << "\tRound " << i << '\n';
 			// choose the points
-			const set<pair<int, int>> chosen = choose_point(data, x, p);
+			const PointSet chosen = choose_point(data, x, p);
 			// select the points
-			MatrixXd training_feature(2, NPoint);
-			VectorXd training_label(NPoint);
+			Eigen::MatrixXd training_feature(2, NPoint);
+			Eigen::VectorXd training_label(NPoint);
 			for (int i = 0, itrain = 0; i < nx; i++)
 			{
 				for (int j = 0; j < np; j++)
 				{
-					if (chosen.find(make_pair(i, j)) != chosen.end())
+					if (chosen.find(std::make_pair(i, j)) != chosen.end())
 					{
 						// in the training set
 						training_feature(0, itrain) = x(i);
@@ -349,27 +393,24 @@ void fit(
 				}
 			}
 
+			// set the kernel to use
+			const KernelTypeList TypesOfKernels = { shogun::EKernelType::K_DIAG, shogun::EKernelType::K_GAUSSIANARD };
+			const TrainingSet& Training = std::make_tuple(training_feature, training_label, TypesOfKernels);
 			// optimize
-			const vector<double>& Hyperparameters = optimize(training_feature, training_label);
+			const std::vector<double>& Hyperparameters = optimize(Training);
 
 			// predict
-			const MatrixXd& PredictPhase = predict_phase(training_feature, training_label, x, p, Hyperparameters);
+			const Eigen::MatrixXd& PredictPhase = predict_phase(Training, x, p, Hyperparameters);
 			const double this_term_mse = (data - PredictPhase).array().square().sum();
 			if (this_term_mse < minMSE)
 			{
 				// this time a smaller min MSE is gotten, using this value
 				minMSE = this_term_mse;
-				neg_log_marg_ll = Hyperparameters[Hyperparameters.size() - 1];
 				finally_chosen = chosen;
 				finally_predict = PredictPhase;
+				neg_log_marg_ll = Hyperparameters[Hyperparameters.size() - 1];
 			}
 		}
-		print_point(choose, finally_chosen, x, p);
-		log << ' ' << minMSE << ' ' << neg_log_marg_ll;
-		for (int i = 0; i < nx; i++)
-		{
-			sim << ' ' << finally_predict.row(i);
-		}
-		sim << '\n';
+		return std::make_tuple(finally_predict, finally_chosen, neg_log_marg_ll);
 	}
 }
