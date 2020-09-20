@@ -7,6 +7,8 @@
 
 /// Passed to optimization for get negative_log_marginal_likelihood()
 using TrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
+/// An array of Eigen matrices, used for the derivatives of the kernel matrix
+using MatrixVector = std::vector<Eigen::MatrixXd, Eigen::aligned_allocator<Eigen::MatrixXd>>;
 
 /// @brief Judge if all points has very small weight
 /// @param[in] data The gridded phase space distribution
@@ -40,7 +42,7 @@ static bool is_very_small(const Eigen::MatrixXd& data)
 /// Otherwise, select based on the weights at the point by MC procedure.
 static PointSet choose_point(const Eigen::MatrixXd& data, const Eigen::VectorXd& x, const Eigen::VectorXd& p)
 {
-	static std::mt19937_64 generator(std::chrono::system_clock::now().time_since_epoch().count()); ///< random number generator, 64 bits Mersenne twister engine
+	static std::mt19937_64 generator(std::chrono::system_clock::now().time_since_epoch().count()); // random number generator, 64 bits Mersenne twister engine
 	PointSet result;
 	const int nx = data.rows(), np = data.cols(), n = data.size();
 	if (is_very_small(data) == true)
@@ -124,9 +126,9 @@ static shogun::SGMatrix<double> generate_shogun_matrix(const Eigen::MatrixXd& ma
 ///
 /// This function calculates the kernel matrix with noise using the shogun library,
 ///
-/// /f[
+/// \f[
 /// k(\mathbf{x}_1,\mathbf{x}_2)=\sigma_f^2\mathrm{exp}\left(-\frac{(\mathbf{x}_1-\mathbf{x}_2)^\top M (\mathbf{x}_1-\mathbf{x}_2)}{2}\right)+\sigma_n^2\delta(\mathbf{x}_1-\mathbf{x}_2)
-/// /f]
+/// \f]
 ///
 /// where \f$ M \f$ is the characteristic matrix in parameter list.
 /// Regarded as a real-symmetric matrix - only lower-triangular part are used，
@@ -159,9 +161,9 @@ static Eigen::MatrixXd get_kernel_matrix(
 		case shogun::EKernelType::K_GAUSSIANARD:
 		{
 			Eigen::MatrixXd characteristic = Eigen::MatrixXd::Zero(PhaseDim, PhaseDim);
-			for (int j = 0; j < PhaseDim; j++)
+			for (int k = 0; k < PhaseDim; k++)
 			{
-				for (int k = 0; k <= j; k++)
+				for (int j = k; j < PhaseDim; j++)
 				{
 					characteristic(j, k) = Hyperparameters[iparam++];
 				}
@@ -169,8 +171,8 @@ static Eigen::MatrixXd get_kernel_matrix(
 			std::shared_ptr<shogun::CGaussianARDKernel> gauss_ard_kernel_ptr = std::make_shared<shogun::CGaussianARDKernel>();
 			gauss_ard_kernel_ptr->set_matrix_weights(characteristic);
 			kernel_ptr = gauss_ard_kernel_ptr;
+			break;
 		}
-		break;
 		default:
 			std::cerr << "UNKNOWN KERNEL!\n";
 			break;
@@ -181,9 +183,81 @@ static Eigen::MatrixXd get_kernel_matrix(
 	return result;
 }
 
+/// @brief Calculate the derivative of kernel matrix over hyperparameters
+/// @param[in] Feature The left and right feature of the kernel
+/// @param[in] TypeOfKernel The vector containing type of all kernels that will be used
+/// @param[in] Hyperparameters The hyperparameters of all kernels (magnitude and other)
+/// @return A vector of matrices being the derivative of kernel matrix over hyperparameters, in the same order as Hyperparameters
+///
+/// This function calculate the derivative of kernel matrix over each hyperparameter,
+/// and each gives a matrix,  so that the overall result is a vector of matrices.
+///
+/// For general kernels, the derivative over the square root of its weight gives
+/// the square root times the kernel without any weight. For special cases
+/// (like the Gaussian kernel) the derivative are calculated correspondingly.
+static MatrixVector kernel_derivative_over_hyperparameters(
+	const Eigen::MatrixXd& Feature,
+	const KernelTypeList& TypesOfKernels,
+	const std::vector<double>& Hyperparameters)
+{
+	assert(Feature.rows() == PhaseDim);
+	assert(Hyperparameters.size() == number_of_overall_hyperparameters(TypesOfKernels));
+	// construct the feature
+	shogun::Some<shogun::CDenseFeatures<double>> feature = shogun::some<shogun::CDenseFeatures<double>>(generate_shogun_matrix(Feature));
+	const int NKernel = TypesOfKernels.size();
+	MatrixVector result;
+	for (int i = 0, iparam = 0; i < NKernel; i++)
+	{
+		const double weight = Hyperparameters[iparam++];
+		std::shared_ptr<shogun::CKernel> kernel_ptr;
+		switch (TypesOfKernels[i])
+		{
+		case shogun::EKernelType::K_DIAG:
+		{
+			std::shared_ptr<shogun::CDiagKernel> diag_kernel_ptr = std::make_shared<shogun::CDiagKernel>();
+			diag_kernel_ptr->init(feature, feature);
+			// calculate derivative over weight
+			result.push_back(weight * shogun::SGMatrix<double>::EigenMatrixXtMap(diag_kernel_ptr->get_kernel_matrix()));
+			break;
+		}
+		case shogun::EKernelType::K_GAUSSIANARD:
+		{
+			Eigen::MatrixXd characteristic = Eigen::MatrixXd::Zero(PhaseDim, PhaseDim);
+			for (int k = 0; k < PhaseDim; k++)
+			{
+				for (int j = k; j < PhaseDim; j++)
+				{
+					characteristic(j, k) = Hyperparameters[iparam++];
+				}
+			}
+			std::shared_ptr<shogun::CGaussianARDKernel> gauss_ard_kernel_ptr = std::make_shared<shogun::CGaussianARDKernel>();
+			gauss_ard_kernel_ptr->set_matrix_weights(characteristic);
+			gauss_ard_kernel_ptr->init(feature, feature);
+			// calculate derivative over weight
+			result.push_back(weight * shogun::SGMatrix<double>::EigenMatrixXtMap(gauss_ard_kernel_ptr->get_kernel_matrix()));
+			// calculate derivative over the characteristic matrix elements
+			const std::shared_ptr<shogun::TSGDataType> tsgdt_ptr = std::make_shared<shogun::TSGDataType>(shogun::EContainerType::CT_SGMATRIX, shogun::EStructType::ST_NONE, shogun::EPrimitiveType::PT_FLOAT64);
+			const std::shared_ptr<shogun::TParameter> tp_ptr = std::make_shared<shogun::TParameter>(tsgdt_ptr.get(), nullptr, "log_weights", nullptr);
+			for (int k = 0, index = 0; k < PhaseDim; k++)
+			{
+				for (int j = k; j < PhaseDim; j++)
+				{
+					result.push_back(weight * weight * shogun::SGMatrix<double>::EigenMatrixXtMap(gauss_ard_kernel_ptr->get_parameter_gradient(tp_ptr.get(), index)));
+				}
+			}
+			break;
+		}
+		default:
+			std::cerr << "UNKNOWN KERNEL!\n";
+			break;
+		}
+	}
+	return result;
+}
+
 /// @brief Calculate the negative marginal likelihood, \f$ -\mathrm{ln}p(\mathbf{y}|X,\mathbf{\theta}) \f$
 /// @param[in] x The vector containing all the hyperparameters
-/// @param[out] grad The gradient of each hyperparameter (not used)
+/// @param[out] grad The gradient of each hyperparameter
 /// @param[in] params The pointer to a training set, including feature and label
 /// @return The negative marginal likelihood
 ///
@@ -195,9 +269,22 @@ static Eigen::MatrixXd get_kernel_matrix(
 ///
 /// where \f$ K_y \f$ is the kernel matrix of training set (may contain noise), \f$ \mathbf{y} \f$ is the training label,
 /// and the last term \f$ \frac{n}{2}\mathbf{ln}2\pi \f$ is a constant during optimizing of hyperparameter. Overall, the return
-/// of this function is \mathbf{y}^\top K_y^{-1}\mathbf{y}+\mathbf{ln}|K_y|, neglecting constant coefficient and add-on.
+/// of this function is \f$ \mathbf{y}^\top K_y^{-1}\mathbf{y}/2+\mathbf{ln}|K_y|/2 \f$, neglecting the last term. With the helf of
+/// Cholesky decomposition (the kernel matrix is always positive-definite), the inverse and half log determinate could be done easily.
 ///
-/// The parameters of this function is quiet weird compared with other functions, as the requirement of gsl interface.
+/// The formula of the derivative over hyperparameter is
+///
+/// \f{eqnarray*}{
+/// -\frac{\partial}{\partial\theta}\mathrm{ln}{p(\mathbf{y}|X,\mathbf{\theta})}
+/// 	&=&	-\frac{1}{2}\mathbf{y}^\top K_y^{-1}\frac{\partial K_y}{\partial\theta}K_y^{-1}\mathbf{y}
+/// 		+\frac{1}{2}\mathrm{tr}\left(K_y^{-1}\frac{\partial K_y}{\partial\theta}\right) \\
+/// 	&=& \frac{1}{2}\mathrm{tr}\left[\left(K_y^{-1}-\mathbf{b}\mathbf{b}^\top\right)\frac{\partial K_y}{\partial\theta}\right]
+/// \f}
+///
+/// where \f$ \theta \f$ indicates one of the hyperparameters, \f$ \mathbf{b}=K_y^{-1}\mathbf{y} \f$ is a column vector. The negative
+/// sign in front of the whole expression is due to this function being the negative log marginal likelihood.
+///
+/// The parameters of this function is quiet weird compared with other functions, as the requirement of nlopt interface.
 static double negative_log_marginal_likelihood(const std::vector<double>& x, std::vector<double>& grad, void* params)
 {
 	// receive the parameter
@@ -205,13 +292,26 @@ static double negative_log_marginal_likelihood(const std::vector<double>& x, std
 	// get the kernel matrix, x being the hyperparameters
 	const Eigen::MatrixXd& Feature = std::get<0>(Training);
 	const KernelTypeList& TypesOfKernels = std::get<2>(Training);
+	// print current combination
 	print_kernel(std::clog, TypesOfKernels, x, 3);
+	// get kernel and the derivatives of kernel over hyperparameters
 	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(Feature, Feature, TypesOfKernels, x);
 	// calculate
-	Eigen::LLT<Eigen::MatrixXd> LLTOfKernel(KernelMatrix);
-	const Eigen::MatrixXd& L = LLTOfKernel.matrixL();
+	Eigen::LLT<Eigen::MatrixXd> DecompOfKernel(KernelMatrix);
+	const Eigen::MatrixXd& L = DecompOfKernel.matrixL();
+	const Eigen::MatrixXd& KInv = DecompOfKernel.solve(Eigen::MatrixXd::Identity(Feature.cols(), Feature.cols())); // inverse of kernel
 	const Eigen::VectorXd& TrainLabel = std::get<1>(Training);
-	const double result = (TrainLabel.adjoint() * LLTOfKernel.solve(TrainLabel)).value() / 2.0 + L.diagonal().array().abs().log().sum();
+	const Eigen::VectorXd& KInvLbl = DecompOfKernel.solve(TrainLabel); // K^{-1}*y
+	if (grad.empty() == false)
+	{
+		// need gradient information, calculated here
+		const MatrixVector& KernelDerivative = kernel_derivative_over_hyperparameters(Feature, TypesOfKernels, x);
+		for (int i = 0; i < x.size(); i++)
+		{
+			grad[i] = ((KInv - KInvLbl * KInvLbl.adjoint()) * KernelDerivative[i]).trace() / 2.0;
+		}
+	}
+	const double result = (TrainLabel.adjoint() * KInvLbl).value() / 2.0 + L.diagonal().array().abs().log().sum();
 	std::clog << "\t\t\t\t" << result << std::endl;
 	return result;
 }
@@ -228,7 +328,7 @@ static std::vector<double> optimize(const TrainingSet& Training)
 	const int NKernel = TypesOfKernels.size();
 	// constructor the NLOPT minimizer using Nelder-Mead simplex algorithm
 	static const int NoVar = number_of_overall_hyperparameters(TypesOfKernels); // the number of variables to optimize
-	nlopt::opt minimizer(nlopt::algorithm::LN_NELDERMEAD, NoVar);
+	nlopt::opt minimizer(nlopt::algorithm::LD_LBFGS, NoVar);
 	// set minimizer function
 	minimizer.set_min_objective(negative_log_marginal_likelihood, const_cast<TrainingSet*>(&Training));
 	// set lower bound for noise and characteristic length, as well as for initial values
@@ -246,17 +346,17 @@ static std::vector<double> optimize(const TrainingSet& Training)
 		case shogun::EKernelType::K_DIAG:
 			break;
 		case shogun::EKernelType::K_GAUSSIANARD:
-			for (int i = 0; i < PhaseDim; i++)
+			for (int j = 0; j < PhaseDim; j++)
 			{
-				for (int j = 0; j < i; j++)
+				lower_bound[iparam] = CharLenMin;
+				hyperparameters[iparam] = 1.0;
+				iparam++;
+				for (int i = j + 1; i < PhaseDim; i++)
 				{
 					lower_bound[iparam] = std::numeric_limits<double>::lowest();
 					hyperparameters[iparam] = 0.0;
 					iparam++;
 				}
-				lower_bound[iparam] = CharLenMin;
-				hyperparameters[iparam] = 1.0;
-				iparam++;
 			}
 			break;
 		default:
@@ -304,12 +404,12 @@ static std::vector<double> optimize(const TrainingSet& Training)
 		}
 		std::clog << "\n\t\tBest Combination is\n";
 		print_kernel(std::clog, TypesOfKernels, hyperparameters, 3);
-		std::clog <<  "\t\t\t\t" << final_value << std::endl;
+		std::clog << "\t\t\t\t" << final_value << std::endl;
 		hyperparameters.push_back(final_value);
 	}
 	catch (const std::exception& e)
 	{
-		std::cerr << "\t\tNLOPT optimization failed for" << e.what() << '\n';
+		std::cerr << "\t\tNLOPT optimization failed for " << e.what() << '\n';
 	}
 
 	return hyperparameters;
@@ -326,7 +426,7 @@ static std::vector<double> optimize(const TrainingSet& Training)
 /// This function follows the formula
 ///
 /// \f[
-/// \mathcal{E}[p(\mathbf{f}_*|X_*,X,\mathbf{y})]=K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}\mathbf{y}
+/// E[p(\mathbf{f}_*|X_*,X,\mathbf{y})]=K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}\mathbf{y}
 /// \f]
 ///
 /// where \f$ X_* \f$ is the test features, \f$ X \f$ is the training features, and  \f$ \mathbf{y} \f$ is the training labels.

@@ -35,7 +35,7 @@
 #undef EIGEN_USE_MKL_ALL
 #include <nlopt.hpp>
 #pragma warning(push, 0)
-#pragma warning(disable: 3346 654)
+#pragma warning(disable : 3346 654)
 #include <shogun/base/init.h>
 #include <shogun/base/some.h>
 #include <shogun/features/DenseFeatures.h>
