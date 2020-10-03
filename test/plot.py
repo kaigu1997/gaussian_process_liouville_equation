@@ -3,7 +3,6 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from matplotlib import animation
-from matplotlib.colors import BoundaryNorm
 from matplotlib.ticker import MaxNLocator
 from scipy import stats
 
@@ -111,7 +110,6 @@ for i in range(NUMPES):
 	for j in range(NUMPES):
 		levels[i].append(MaxNLocator(nbins=15).tick_values(-xmax[i][j],xmax[i][j])) # color region
 cmap = plt.get_cmap('seismic') # the kind of color: red-white-blue
-#norm = BoundaryNorm(levels, ncolors=cmap.N, clip=True) # the mapping rule
 
 # initialize the plot
 fig, axs = plt.subplots(nrows=NUMPES, ncols=NUMPES*2, figsize=(40,10))

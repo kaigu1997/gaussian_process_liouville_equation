@@ -77,6 +77,16 @@ static PointSet choose_point(const Eigen::MatrixXd& data, const Eigen::VectorXd&
 			}
 		next:;
 		}
+/*
+		Eigen::MatrixXd abs_data = data.array().abs();
+		while (result.size() < NPoint)
+		{
+			int idx_x, idx_p;
+			abs_data.maxCoeff(&idx_x, &idx_p);
+			abs_data(idx_x, idx_p) = 0;
+			result.insert(std::make_pair(idx_x, idx_p));
+		}
+*/
 	}
 	return result;
 }
@@ -122,6 +132,7 @@ static shogun::SGMatrix<double> generate_shogun_matrix(const Eigen::MatrixXd& ma
 /// @param[in] RightFeature The feature on the right, \f$ X_2 \f$
 /// @param[in] TypeOfKernel The vector containing type of all kernels that will be used
 /// @param[in] Hyperparameters The hyperparameters of all kernels (magnitude and other)
+/// @param[in] IsTraining Whether the features are all training set or not
 /// @return The kernel matrix
 ///
 /// This function calculates the kernel matrix with noise using the shogun library,
@@ -140,7 +151,8 @@ static Eigen::MatrixXd get_kernel_matrix(
 	const Eigen::MatrixXd& LeftFeature,
 	const Eigen::MatrixXd& RightFeature,
 	const KernelTypeList& TypesOfKernels,
-	const std::vector<double>& Hyperparameters)
+	const std::vector<double>& Hyperparameters,
+	const bool IsTraining = false)
 {
 	assert(LeftFeature.rows() == PhaseDim && RightFeature.rows() == PhaseDim);
 	assert(Hyperparameters.size() == number_of_overall_hyperparameters(TypesOfKernels) || Hyperparameters.size() == number_of_overall_hyperparameters(TypesOfKernels) + 1);
@@ -156,7 +168,14 @@ static Eigen::MatrixXd get_kernel_matrix(
 		switch (TypesOfKernels[i])
 		{
 		case shogun::EKernelType::K_DIAG:
-			kernel_ptr = std::make_shared<shogun::CDiagKernel>();
+			if (IsTraining == true)
+			{
+				kernel_ptr = std::make_shared<shogun::CDiagKernel>();
+			}
+			else
+			{
+				kernel_ptr = std::make_shared<shogun::CConstKernel>(0.0);
+			}
 			break;
 		case shogun::EKernelType::K_GAUSSIANARD:
 		{
@@ -242,7 +261,16 @@ static MatrixVector kernel_derivative_over_hyperparameters(
 			{
 				for (int j = k; j < PhaseDim; j++)
 				{
-					result.push_back(weight * weight * shogun::SGMatrix<double>::EigenMatrixXtMap(gauss_ard_kernel_ptr->get_parameter_gradient(tp_ptr.get(), index)));
+					const Eigen::Map<Eigen::MatrixXd>& Deriv = gauss_ard_kernel_ptr->get_parameter_gradient(tp_ptr.get(), index);
+					if (j == k)
+					{
+						result.push_back(weight * weight / characteristic(j, k) * Deriv);
+					}
+					else
+					{
+						result.push_back(weight * weight  * Deriv);
+					}
+					index++;
 				}
 			}
 			break;
@@ -295,7 +323,7 @@ static double negative_log_marginal_likelihood(const std::vector<double>& x, std
 	// print current combination
 	print_kernel(std::clog, TypesOfKernels, x, 3);
 	// get kernel and the derivatives of kernel over hyperparameters
-	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(Feature, Feature, TypesOfKernels, x);
+	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(Feature, Feature, TypesOfKernels, x, true);
 	// calculate
 	Eigen::LLT<Eigen::MatrixXd> DecompOfKernel(KernelMatrix);
 	const Eigen::MatrixXd& L = DecompOfKernel.matrixL();
@@ -310,6 +338,8 @@ static double negative_log_marginal_likelihood(const std::vector<double>& x, std
 		{
 			grad[i] = ((KInv - KInvLbl * KInvLbl.adjoint()) * KernelDerivative[i]).trace() / 2.0;
 		}
+		// print current gradient if uses gradient
+		print_kernel(std::clog, TypesOfKernels, grad, 4);
 	}
 	const double result = (TrainLabel.adjoint() * KInvLbl).value() / 2.0 + L.diagonal().array().abs().log().sum();
 	std::clog << "\t\t\t\t" << result << std::endl;
@@ -318,67 +348,106 @@ static double negative_log_marginal_likelihood(const std::vector<double>& x, std
 
 /// @brief To opmitize the hyperparameters: 3 in gaussian kernel, and 2 weights
 /// @param[in] Training The training set, containing the features and labels of the training set and the types of all kernels
+/// @param[in] xSize The size of the box of x direction
+/// @param[in] pSize The size of the box of p direction
+/// @param[in] ALGO The optimization algorithm, which is the nlopt::algorithm enum type
+/// @param[in] FirstRun Given if it is the first time doing optimization; if not, do not set hyperparameters and bounds
 /// @return The vector containing all hyperparameters, and the last element is the final function value
 ///
 /// This function using the NLOPT to optimize the hyperparameters and return them.
 /// Currently the optimization method is Nelder-Mead Simplex algorithm.
-static std::vector<double> optimize(const TrainingSet& Training)
+static std::vector<double> optimize(
+	const TrainingSet& Training,
+	const double xSize,
+	const double pSize,
+	const nlopt::algorithm& ALGO,
+	const bool FirstRun = false)
 {
 	const KernelTypeList& TypesOfKernels = std::get<2>(Training);
 	const int NKernel = TypesOfKernels.size();
 	// constructor the NLOPT minimizer using Nelder-Mead simplex algorithm
 	static const int NoVar = number_of_overall_hyperparameters(TypesOfKernels); // the number of variables to optimize
-	nlopt::opt minimizer(nlopt::algorithm::LD_LBFGS, NoVar);
+	nlopt::opt minimizer(nlopt::algorithm::AUGLAG_EQ, NoVar);
 	// set minimizer function
 	minimizer.set_min_objective(negative_log_marginal_likelihood, const_cast<TrainingSet*>(&Training));
-	// set lower bound for noise and characteristic length, as well as for initial values
-	static const double MagnitudeMin = 1e-5; // Minimal value of the magnitude of the normal kernel
+	// set bounds for noise and characteristic length, as well as for initial values
+	static const double DiagMagMin = 1e-8;	 // Minimal value of the magnitude of the diagonal kernel
+	static const double DiagMagMax = 1e-6;	 // Maximal value of the magnitude of the diagonal kernel
+	static const double GaussMagMin = 1e-4;	 // Minimal value of the magintude of the gaussian kernel
+	static const double GaussMagMax = 1.0;	 // Maximal value of the magnitude of the gaussian kernel
 	static const double CharLenMin = 1e-4;	 // Minimal value of the characteristic length in Gaussian kernel
-	std::vector<double> lower_bound(NoVar);
-	std::vector<double> hyperparameters(NoVar);
-	for (int i = 0, iparam = 0; i < NKernel; i++)
+	static std::vector<double> lower_bound(NoVar, std::numeric_limits<double>::lowest());
+	static std::vector<double> upper_bound(NoVar, std::numeric_limits<double>::max());
+	static std::vector<double> hyperparameters(NoVar);
+	while (hyperparameters.size() > NoVar)
 	{
-		lower_bound[iparam] = MagnitudeMin;
-		hyperparameters[iparam] = 1.0;
-		iparam++;
-		switch (TypesOfKernels[i])
+		hyperparameters.pop_back();
+	}
+	while (hyperparameters.size() < NoVar)
+	{
+		hyperparameters.push_back(0);
+	}
+	if (FirstRun == true)
+	{
+		for (int i = 0, iparam = 0; i < NKernel; i++)
 		{
-		case shogun::EKernelType::K_DIAG:
-			break;
-		case shogun::EKernelType::K_GAUSSIANARD:
-			for (int j = 0; j < PhaseDim; j++)
+			switch (TypesOfKernels[i])
 			{
-				lower_bound[iparam] = CharLenMin;
-				hyperparameters[iparam] = 1.0;
+			case shogun::EKernelType::K_DIAG:
+				lower_bound[iparam] = DiagMagMin;
+				upper_bound[iparam] = DiagMagMax;
+				hyperparameters[iparam] = DiagMagMin;
 				iparam++;
-				for (int i = j + 1; i < PhaseDim; i++)
+				break;
+			case shogun::EKernelType::K_GAUSSIANARD:
+				lower_bound[iparam] = GaussMagMin;
+				upper_bound[iparam] = GaussMagMax;
+				hyperparameters[iparam] = GaussMagMax;
+				iparam++;
+				for (int j = 0; j < PhaseDim; j++)
 				{
-					lower_bound[iparam] = std::numeric_limits<double>::lowest();
-					hyperparameters[iparam] = 0.0;
+					lower_bound[iparam] = CharLenMin;
+					if (j == 0)
+					{
+						upper_bound[iparam] = xSize;
+					}
+					else
+					{
+						upper_bound[iparam] = pSize;
+					}
+					hyperparameters[iparam] = 1.0;
 					iparam++;
+					for (int i = j + 1; i < PhaseDim; i++)
+					{
+						hyperparameters[iparam] = 0.0;
+						iparam++;
+					}
 				}
+				break;
+			default:
+				std::cerr << "UNKNOWN KERNEL!\n";
+				break;
 			}
-			break;
-		default:
-			std::cerr << "UNKNOWN KERNEL!\n";
-			break;
 		}
 	}
 	minimizer.set_lower_bounds(lower_bound);
+	minimizer.set_upper_bounds(upper_bound);
 	// set stop criteria
 	static const double AbsTol = 1e-10; // tolerance in minimization
 	minimizer.set_xtol_abs(AbsTol);
-	static const int NumIter = 1000; // the maximum number of iteration
-	minimizer.set_maxeval(NumIter);
 	// set initial step size
 	static const double InitStepSize = 0.5; // initial step size
 	minimizer.set_initial_step(InitStepSize);
+	// set local minimizer
+	nlopt::opt local_minimizer(ALGO, NoVar);
+	local_minimizer.set_xtol_abs(AbsTol);
+	minimizer.set_local_optimizer(local_minimizer);
 
 	// optimize
 	std::clog << "\t\tBegin Optimization" << std::endl;
+	double final_value = 0.0;
 	try
 	{
-		double final_value = 0.0;
 		nlopt::result result = minimizer.optimize(hyperparameters, final_value);
 		std::clog << "\t\t";
 		switch (result)
@@ -402,15 +471,15 @@ static std::vector<double> optimize(const TrainingSet& Training)
 			std::clog << "Maximum cpu time reached";
 			break;
 		}
-		std::clog << "\n\t\tBest Combination is\n";
-		print_kernel(std::clog, TypesOfKernels, hyperparameters, 3);
-		std::clog << "\t\t\t\t" << final_value << std::endl;
-		hyperparameters.push_back(final_value);
 	}
 	catch (const std::exception& e)
 	{
 		std::cerr << "\t\tNLOPT optimization failed for " << e.what() << '\n';
 	}
+	std::clog << "\n\t\tBest Combination is\n";
+	std::vector<double> grad;
+	final_value = negative_log_marginal_likelihood(hyperparameters, grad, const_cast<TrainingSet*>(&Training));
+	hyperparameters.push_back(final_value);
 
 	return hyperparameters;
 }
@@ -438,7 +507,7 @@ static Eigen::MatrixXd predict_phase(
 {
 	const Eigen::MatrixXd& TrainingFeature = std::get<0>(Training);
 	const KernelTypeList& TypesOfKernels = std::get<2>(Training);
-	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, TypesOfKernels, Hyperparameters);
+	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, TypesOfKernels, Hyperparameters, true);
 	const Eigen::VectorXd& TrainingLabel = std::get<1>(Training);
 	const Eigen::VectorXd& Coe = KernelMatrix.llt().solve(TrainingLabel);
 	const int nx = x.size(), np = p.size();
@@ -496,8 +565,19 @@ FittingResult fit(const Eigen::MatrixXd& data, const Eigen::VectorXd& x, const E
 			// set the kernel to use
 			const KernelTypeList TypesOfKernels = { shogun::EKernelType::K_DIAG, shogun::EKernelType::K_GAUSSIANARD };
 			const TrainingSet& Training = std::make_tuple(training_feature, training_label, TypesOfKernels);
-			// optimize
-			const std::vector<double>& Hyperparameters = optimize(Training);
+			// optimize. Derivative-free algorithm first, then derivative method
+			optimize(
+				Training,
+				x[nx - 1] - x[0],
+				p[nx - 1] - p[0],
+				nlopt::algorithm::LN_NELDERMEAD,
+				true);
+			const std::vector<double>& Hyperparameters
+				= optimize(
+					Training,
+					x[nx - 1] - x[0],
+					p[nx - 1] - p[0],
+					nlopt::algorithm::LD_TNEWTON_PRECOND_RESTART);
 
 			// predict
 			const Eigen::MatrixXd& PredictPhase = predict_phase(Training, x, p, Hyperparameters);
