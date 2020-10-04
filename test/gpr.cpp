@@ -36,8 +36,7 @@ static bool is_very_small(const Eigen::MatrixXd& data)
 /// @param[in] x The coordinates of x grids
 /// @param[in] p The coordinates of p grids
 /// @return A set containing the pointer to the coordinate table (first[i][0]=xi, first[i][1]=pi)
-///
-/// This function check if the values in the input matrix are all small or not.
+/// @details This function check if the values in the input matrix are all small or not.
 /// If all very small, then select points randomly without weight.
 /// Otherwise, select based on the weights at the point by MC procedure.
 static PointSet choose_point(const Eigen::MatrixXd& data, const Eigen::VectorXd& x, const Eigen::VectorXd& p)
@@ -134,8 +133,7 @@ static shogun::SGMatrix<double> generate_shogun_matrix(const Eigen::MatrixXd& ma
 /// @param[in] Hyperparameters The hyperparameters of all kernels (magnitude and other)
 /// @param[in] IsTraining Whether the features are all training set or not
 /// @return The kernel matrix
-///
-/// This function calculates the kernel matrix with noise using the shogun library,
+/// @details This function calculates the kernel matrix with noise using the shogun library,
 ///
 /// \f[
 /// k(\mathbf{x}_1,\mathbf{x}_2)=\sigma_f^2\mathrm{exp}\left(-\frac{(\mathbf{x}_1-\mathbf{x}_2)^\top M (\mathbf{x}_1-\mathbf{x}_2)}{2}\right)+\sigma_n^2\delta(\mathbf{x}_1-\mathbf{x}_2)
@@ -207,8 +205,7 @@ static Eigen::MatrixXd get_kernel_matrix(
 /// @param[in] TypeOfKernel The vector containing type of all kernels that will be used
 /// @param[in] Hyperparameters The hyperparameters of all kernels (magnitude and other)
 /// @return A vector of matrices being the derivative of kernel matrix over hyperparameters, in the same order as Hyperparameters
-///
-/// This function calculate the derivative of kernel matrix over each hyperparameter,
+/// @details This function calculate the derivative of kernel matrix over each hyperparameter,
 /// and each gives a matrix,  so that the overall result is a vector of matrices.
 ///
 /// For general kernels, the derivative over the square root of its weight gives
@@ -228,7 +225,6 @@ static MatrixVector kernel_derivative_over_hyperparameters(
 	for (int i = 0, iparam = 0; i < NKernel; i++)
 	{
 		const double weight = Hyperparameters[iparam++];
-		std::shared_ptr<shogun::CKernel> kernel_ptr;
 		switch (TypesOfKernels[i])
 		{
 		case shogun::EKernelType::K_DIAG:
@@ -268,7 +264,7 @@ static MatrixVector kernel_derivative_over_hyperparameters(
 					}
 					else
 					{
-						result.push_back(weight * weight  * Deriv);
+						result.push_back(weight * weight * Deriv);
 					}
 					index++;
 				}
@@ -288,8 +284,7 @@ static MatrixVector kernel_derivative_over_hyperparameters(
 /// @param[out] grad The gradient of each hyperparameter
 /// @param[in] params The pointer to a training set, including feature and label
 /// @return The negative marginal likelihood
-///
-/// The formula of negative marginal likelihood is
+/// @details The formula of negative marginal likelihood is
 ///
 /// \f[
 /// -\mathrm{ln}{p(\mathbf{y}|X,\mathbf{\theta})}=\frac{1}{2}\mathbf{y}^\top K_y^{-1}\mathbf{y}+\frac{1}{2}\mathbf{ln}|K_y|+\frac{n}{2}\mathbf{ln}2\pi
@@ -353,8 +348,7 @@ static double negative_log_marginal_likelihood(const std::vector<double>& x, std
 /// @param[in] ALGO The optimization algorithm, which is the nlopt::algorithm enum type
 /// @param[in] FirstRun Given if it is the first time doing optimization; if not, do not set hyperparameters and bounds
 /// @return The vector containing all hyperparameters, and the last element is the final function value
-///
-/// This function using the NLOPT to optimize the hyperparameters and return them.
+/// @details This function using the NLOPT to optimize the hyperparameters and return them.
 /// Currently the optimization method is Nelder-Mead Simplex algorithm.
 static std::vector<double> optimize(
 	const TrainingSet& Training,
@@ -382,10 +376,6 @@ static std::vector<double> optimize(
 	while (hyperparameters.size() > NoVar)
 	{
 		hyperparameters.pop_back();
-	}
-	while (hyperparameters.size() < NoVar)
-	{
-		hyperparameters.push_back(0);
 	}
 	if (FirstRun == true)
 	{
@@ -491,8 +481,7 @@ static std::vector<double> optimize(
 /// @param[in] p The coordinates of p grids
 /// @param[in] Hyperparameters Optimized hyperparameters used in kernel
 /// @return Predicted Labels of test set
-///
-/// This function follows the formula
+/// @details This function follows the formula
 ///
 /// \f[
 /// E[p(\mathbf{f}_*|X_*,X,\mathbf{y})]=K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}\mathbf{y}
@@ -511,7 +500,7 @@ static Eigen::MatrixXd predict_phase(
 	const Eigen::VectorXd& TrainingLabel = std::get<1>(Training);
 	const Eigen::VectorXd& Coe = KernelMatrix.llt().solve(TrainingLabel);
 	const int nx = x.size(), np = p.size();
-	Eigen::VectorXd coord(2);
+	Eigen::VectorXd coord(PhaseDim);
 	Eigen::MatrixXd result(nx, np);
 	for (int i = 0; i < nx; i++)
 	{
