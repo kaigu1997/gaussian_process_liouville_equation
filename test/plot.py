@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
-from matplotlib import animation
+from matplotlib.animation import FuncAnimation
 from matplotlib.ticker import MaxNLocator
 from scipy import stats
 
@@ -49,13 +49,14 @@ for i in range(NUMPES):
 			plt.plot(t, np.log10(data[i][j][0]), label=r'$\Re(\rho_{%d%d})$' % (i, j))
 		else:
 			plt.plot(t, np.log10(data[i][j][0]), label=r'$\Im(\rho_{%d%d})$' % (i, j))
-plt.xlim((t[0],t[LEN_T-1]))
+plt.xlim((t[0], t[LEN_T-1]))
 plt.title('log10 Mean Square Error')
 plt.xlabel('t/a.u.')
 plt.ylabel('lg(MSE)')
 plt.legend(loc = 'best')
 plt.savefig('mse.png')
 plt.clf()
+
 # plt -ln(likelihood)
 for i in range(NUMPES):
 	for j in range(NUMPES):
@@ -65,13 +66,14 @@ for i in range(NUMPES):
 			plt.plot(t, data[i][j][1], label=r'$\Re(\rho_{%d%d})$' % (i, j))
 		else:
 			plt.plot(t, data[i][j][1], label=r'$\Im(\rho_{%d%d})$' % (i, j))
-plt.xlim((t[0],t[LEN_T-1]))
+plt.xlim((t[0], t[LEN_T-1]))
 plt.title('Negative Log Marginal Likelihood')
 plt.xlabel('t/a.u.')
 plt.ylabel('-ln(likelihood)')
 plt.legend(loc = 'best')
 plt.savefig('marg_ll.png')
 plt.clf()
+
 # plot their relationship
 xsctt, ysctt = [], []
 for i in range(NUMPES):
@@ -103,7 +105,7 @@ plt.clf()
 
 # pick the desired colormap, sensible levels, and define a normalization
 # instance which takes data values and translates those into levels.
-xmax = [[0.2, 0.1], [0.1, 0.05]]
+xmax = [[0.4, 0.1], [0.1, 0.05]]
 levels = []
 for i in range(NUMPES):
 	levels.append([])
@@ -112,7 +114,9 @@ for i in range(NUMPES):
 cmap = plt.get_cmap('seismic') # the kind of color: red-white-blue
 
 # initialize the plot
-fig, axs = plt.subplots(nrows=NUMPES, ncols=NUMPES*2, figsize=(40,10))
+FIGSIZE = 5
+NROW, NCOL = NUMPES, NUMPES * 2
+fig, axs = plt.subplots(nrows=NROW, ncols=NCOL, figsize=(NROW*FIGSIZE,NCOL*FIGSIZE))
 
 # set time text
 time_template = 'time = %da.u.'
@@ -125,23 +129,23 @@ def init():
 		cfs.append([])
 		for j in range(NUMPES*2):
 			axs[i][j].clear()
+			# set title
+			title = ''
+			if j % 2 == 0:
+				title += 'Actual'
+			else:
+				title += 'Simualted'
+			title += ' '
+			if i == j // 2:
+				title += r'$\rho_{%d%d}$' % (i, j//2)
+			elif i < j // 2:
+				title += r'$\Re(\rho_{%d%d})$' % (i, j//2)
+			else:
+				title += r'$\Im(\rho_{%d%d})$' % (j//2, i)
+			axs[i][j].set_title(title)
+			# set other things
 			axs[i][j].set_xlabel('x')
 			axs[i][j].set_ylabel('p')
-			if i == j // 2:
-				if j % 2 == 0:
-					axs[i][j].set_title(r'Actual $\rho_{%d%d}$' % (i, j // 2))
-				else:
-					axs[i][j].set_title(r'Simulated $\rho_{%d%d}$' % (i, j // 2))
-			elif i < j // 2:
-				if j % 2 == 0:
-					axs[i][j].set_title(r'Actual $\Re(\rho_{%d%d})$' % (i, j // 2))
-				else:
-					axs[i][j].set_title(r'Simulated $\Re(\rho_{%d%d})$' % (i, j // 2))
-			else:
-				if j % 2 == 0:
-					axs[i][j].set_title(r'Actual $\Im(\rho_{%d%d})$' % (j // 2, i))
-				else:
-					axs[i][j].set_title(r'Simulated $\Im(\rho_{%d%d})$' % (j // 2, i))
 			cfs[i].append(axs[i][j].contourf(xv, pv, np.zeros((LEN_X,LEN_P)), levels=levels[i][j//2], cmap=cmap))
 			fig.colorbar(cfs[i][j], extend='both', ax=axs[i][j])
 			cfs[i][j].set_clim(-xmax[i][j//2], xmax[i][j//2])
@@ -156,7 +160,7 @@ def ani(i):
 	sim = open('sim.txt', 'r')
 	choose = open('choose.txt', 'r')
 	# old data
-	for j in range(i - 1):
+	for j in range(i-1):
 		for k in range(NUMPES*NUMPES):
 			origin.readline() # actual rho
 			sim.readline() # simulated rho
@@ -187,8 +191,8 @@ def ani(i):
 		for k in range(NUMPES):
 			rho_orig[k][k][j] = rho_orig[k][k][2*j]
 			for l in range(k+1,NUMPES):
-				rho_orig[k][l][j] = (rho_orig[k][l][2*j]+rho_orig[l][k][2*j])/2.0
-				rho_orig[l][k][j] = (rho_orig[k][l][2*j+1]-rho_orig[l][k][2*j+1])/2.0
+				rho_orig[k][l][j] = (rho_orig[k][l][2*j]+rho_orig[l][k][2*j]) / 2.0
+				rho_orig[l][k][j] = (rho_orig[k][l][2*j+1]-rho_orig[l][k][2*j+1]) / 2.0
 	for j in range(NUMPES):
 		for k in range(NUMPES):
 			rho_orig[j][k] = rho_orig[j][k][:LENGTH].reshape(LEN_P,LEN_X).T
@@ -206,7 +210,7 @@ def ani(i):
 	return fig, axs,
 
 # make the animation
-ani = animation.FuncAnimation(fig, ani, LEN_T, init, interval=10000//(t[1]-t[0]), repeat=False, blit=False)
+ani = FuncAnimation(fig, ani, LEN_T, init, interval=10000//(t[1]-t[0]), repeat=False, blit=False)
 # show
 ani.save('phase.gif','imagemagick')
 # plt.show()
