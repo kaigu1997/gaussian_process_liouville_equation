@@ -49,12 +49,21 @@
 const int NPoint = 200;		  ///< The size of training set
 const int Dim = 1;			  ///< The dimension of the system, half the dimension of the phase space
 const int PhaseDim = Dim * 2; ///< The dimension of the phase space, twice the dimension of the system
+const int NumPES = 2;		  ///< The number of potential energy surfaces
 
 /// Vector containing the type of all kernels
 using KernelTypeList = std::vector<shogun::EKernelType>;
 /// The set containing the index (instead of coordinate) of the selected points
 using PointSet = std::set<std::pair<int, int>>;
+/// The vector containing hyperparameters (or similarly: bounds, gradient, etc)
+using ParameterVector = std::vector<double>;
+/// The matrix used in quantum system (e.g. H, rho) with double values
+using QuantumMatrixD = Eigen::Matrix<double, NumPES, NumPES>;
+/// The matrix used in quantum system (e.g. H, rho) with complex values
+using QuantumMatrixC = Eigen::Matrix<std::complex<double>, NumPES, NumPES>;
+/// The matrix of matrix, used for PWTDM or Hamiltonian, etc
+using SuperMatrix = Eigen::Matrix<QuantumMatrixD, Eigen::Dynamic, Eigen::Dynamic>;
 /// The result of fitting: the fitted matrix, the selected points, and the -log(marginal likelihood)
-using FittingResult = std::tuple<Eigen::MatrixXd, PointSet, double>;
+using FittingResult = std::tuple<SuperMatrix, PointSet, double>;
 
 #endif // !STDAFX_H

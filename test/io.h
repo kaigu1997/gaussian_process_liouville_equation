@@ -7,10 +7,23 @@
 
 #include "stdafx.h"
 
+/// @brief Give a string of n repeated tabs
+/// @param[in] IndentLevel The number of tabs
+/// @return The string with given number of tabs
+std::string indent(const int IndentLevel);
+
+
 /// @brief Read the coordinate (of x, p and t) from a file
 /// @param[in] filename The name of the input file
 /// @return The vector containing the data
 Eigen::VectorXd read_coord(const std::string& filename);
+
+/// @brief Read the whole PWTDM from a input stream
+/// @param[inout] in The input stream
+/// @param[in] NRows The number of rows of each matrix
+/// @param[in] NCols The number of cols of each matrix
+/// @return The whole PWTDM (of a certain moment)
+SuperMatrix read_density(std::istream& in, const int NRows, const int NCols);
 
 /// @brief Output the chosen point to an output stream
 /// @param[inout] out The output stream
