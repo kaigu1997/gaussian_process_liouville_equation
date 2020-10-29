@@ -63,7 +63,7 @@ using QuantumMatrixD = Eigen::Matrix<double, NumPES, NumPES>;
 using QuantumMatrixC = Eigen::Matrix<std::complex<double>, NumPES, NumPES>;
 /// The matrix of matrix, used for PWTDM or Hamiltonian, etc
 using SuperMatrix = Eigen::Matrix<QuantumMatrixD, Eigen::Dynamic, Eigen::Dynamic>;
-/// The result of fitting: the fitted matrix, the selected points, and the -log(marginal likelihood)
-using FittingResult = std::tuple<SuperMatrix, PointSet, double>;
+/// The result of fitting: the fitted matrix, the selected points, and the hyperparameters with -log(marginal likelihood)
+using FittingResult = std::tuple<SuperMatrix, PointSet, ParameterVector>;
 
 #endif // !STDAFX_H

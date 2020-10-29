@@ -52,10 +52,20 @@ int main()
 			}
 		}
 		sim << '\n';
-		log << ' ' << std::get<2>(result) << std::endl;
 
 		print_point(choose, std::get<1>(result), x, p);
-		choose << '\n';
+		
+		const ParameterVector& HyperparameterWithMargll = std::get<2>(result);
+		const int NoParam = HyperparameterWithMargll.size() - 1;
+		// output -ln(marginal likelihood)
+		log << ' ' << HyperparameterWithMargll[NoParam];
+		// output hyperparameters
+		for(int i = 0; i < NoParam; i++)
+		{
+			log << ' ' << HyperparameterWithMargll[i];
+		}
+		log << std::endl;
+
 	}
 	phase.close();
 	sim.close();

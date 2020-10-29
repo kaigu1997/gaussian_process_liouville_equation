@@ -26,44 +26,6 @@ SuperMatrix read_density(std::istream& in, const int NRows, const int NCols)
 {
 	SuperMatrix result(NRows, NCols);
 	double tmp;
-	/*
-		double tmp;
-		Eigen::MatrixXd rho0(nx, np), rho1(nx, np), rho_re(nx, np), rho_im(nx, np);
-		// rho00
-		for (int i = 0; i < nx; i++)
-		{
-			for (int j = 0; j < np; j++)
-			{
-				phase >> rho0(i, j) >> tmp;
-			}
-		}
-		// rho01 and rho10
-		for (int i = 0; i < nx; i++)
-		{
-			for (int j = 0; j < np; j++)
-			{
-				phase >> rho_re(i, j) >> rho_im(i, j);
-			}
-		}
-		for (int i = 0; i < nx; i++)
-		{
-			for (int j = 0; j < np; j++)
-			{
-				phase >> tmp;
-				rho_re(i, j) = (rho_re(i, j) + tmp) / 2.0;
-				phase >> tmp;
-				rho_im(i, j) = (rho_im(i, j) - tmp) / 2.0;
-			}
-		}
-		// rho11
-		for (int i = 0; i < nx; i++)
-		{
-			for (int j = 0; j < np; j++)
-			{
-				phase >> rho1(i, j) >> tmp;
-			}
-		}
-	*/
 	// read input
 	for (int i = 0; i < NumPES; i++)
 	{

@@ -45,7 +45,7 @@ static SmallJudgeResult is_very_small(const SuperMatrix& data)
 /// @brief Calculate the weight at a given point
 /// @param[in] data The PWTDM at the given point
 /// @return The weight at the given (RowIndex, ColIndex) point
-static double weight_function(const Eigen::MatrixXd& data)
+static double weight_function(const QuantumMatrixD& data)
 {
 	// construct the PWTDM at the given point
 	assert(data.rows() == NumPES && data.cols() == NumPES);
@@ -111,6 +111,36 @@ static PointSet choose_point(const SuperMatrix& data)
 	}
 */
 	return result;
+}
+
+static TrainingSet generate_sub_trainingset(const TrainingSet& Training)
+{
+	// the number of points that will be selected in this function
+	static const int SubNPoint = 50;
+	// the parameter from training set
+	const Eigen::MatrixXd& FullTrainingFeature = std::get<0>(Training);
+	const VectorMatrix& FullTrainingLabel = std::get<1>(Training);
+	const int GivenNPoint = FullTrainingLabel.size();
+	assert(SubNPoint < GivenNPoint);
+	// choose the points with the largest weight calculated from the weight function
+	std::vector<double> weight(FullTrainingLabel.size());
+	for (int i = 0; i < GivenNPoint; i++)
+	{
+		weight[i] = weight_function(FullTrainingLabel[i]);
+	}
+	Eigen::MatrixXd sub_training_feature(2, SubNPoint);
+	VectorMatrix sub_training_label(SubNPoint);
+	for (int i = 0; i < SubNPoint; i++)
+	{
+		std::ptrdiff_t IndexOfMax = std::max_element(weight.cbegin(), weight.cend()) - weight.cbegin();
+		for (int j = 0; j < PhaseDim; j++)
+		{
+			sub_training_feature(j, i) = FullTrainingFeature(j, IndexOfMax);
+		}
+		sub_training_label[0] = FullTrainingLabel[0];
+		weight[IndexOfMax] = 0;
+	}
+	return make_tuple(sub_training_feature, sub_training_label, std::get<2>(Training), std::get<3>(Training));
 }
 
 /// @brief Calculate the overall number of hyperparameters the optimization will use
@@ -689,7 +719,8 @@ FittingResult fit(const SuperMatrix& data, const Eigen::VectorXd& x, const Eigen
 	// the number of MC chosen
 	static const int NRound = 1; // 0;
 	const int nx = x.size(), np = p.size(), n = data(0, 0).size();
-	double minMSE = DBL_MAX, neg_log_marg_ll = 0;
+	double minMSE = DBL_MAX;
+	ParameterVector hyperparam_with_margll;
 	PointSet finally_chosen;
 	SuperMatrix finally_predict;
 	for (int i = 0; i < NRound; i++)
@@ -700,6 +731,14 @@ FittingResult fit(const SuperMatrix& data, const Eigen::VectorXd& x, const Eigen
 		// select the points
 		Eigen::MatrixXd training_feature(2, NPoint);
 		VectorMatrix training_label(NPoint);
+		for (PointSet::iterator iter = chosen.begin(); iter != chosen.end(); ++iter)
+		{
+			const std::ptrdiff_t Index = std::distance(chosen.begin(), iter);
+			training_feature(0, Index) = x[iter->first];
+			training_feature(1, Index) = p[iter->second];
+			training_label[Index] = data(iter->first, iter->second);
+		}
+		/*
 		for (int i = 0, itrain = 0; i < nx; i++)
 		{
 			for (int j = 0; j < np; j++)
@@ -714,13 +753,20 @@ FittingResult fit(const SuperMatrix& data, const Eigen::VectorXd& x, const Eigen
 				}
 			}
 		}
+		*/
 
 		// set the kernel to use
 		const KernelTypeList TypesOfKernels = { shogun::EKernelType::K_DIAG, shogun::EKernelType::K_GAUSSIANARD };
 		const TrainingSet& Training = std::make_tuple(training_feature, training_label, TypesOfKernels, data);
-		// optimize. Derivative-free algorithm first, then derivative method
-		optimize(Training, x, p, nlopt::algorithm::LN_NELDERMEAD);
-		const std::vector<double>& Hyperparameters = optimize(Training, x, p, nlopt::algorithm::LD_TNEWTON_PRECOND_RESTART);
+		// generate a sub point set for preliminary optimization to prevent from malignant overfitting
+		const TrainingSet& SubTraining = generate_sub_trainingset(Training);
+		// optimize. Derivative-free algorithm first, then derivative method; subset first, then full set
+		static const nlopt::algorithm NonGradient = nlopt::algorithm::LN_NELDERMEAD;
+		static const nlopt::algorithm Gradient = nlopt::algorithm::LD_TNEWTON_PRECOND_RESTART;
+		optimize(SubTraining, x, p, NonGradient);
+		optimize(SubTraining, x, p, Gradient);
+		optimize(Training, x, p, NonGradient);
+		const ParameterVector& Hyperparameters = optimize(Training, x, p, Gradient);
 
 		// predict
 		const SuperMatrix& PredictPhase = predict_phase(Training, x, p, Hyperparameters);
@@ -731,8 +777,8 @@ FittingResult fit(const SuperMatrix& data, const Eigen::VectorXd& x, const Eigen
 			minMSE = this_term_mse;
 			finally_chosen = chosen;
 			finally_predict = PredictPhase;
-			neg_log_marg_ll = Hyperparameters[Hyperparameters.size() - 1];
+			hyperparam_with_margll = Hyperparameters;
 		}
 	}
-	return std::make_tuple(finally_predict, finally_chosen, neg_log_marg_ll);
+	return std::make_tuple(finally_predict, finally_chosen, hyperparam_with_margll);
 }
