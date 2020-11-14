@@ -22,55 +22,63 @@ Eigen::VectorXd read_coord(const std::string& filename)
 	return coord;
 }
 
-SuperMatrix read_density(std::istream& in, const int NRows, const int NCols)
+void read_density(std::istream& in, SuperMatrix& ExactDistribution)
 {
-	SuperMatrix result(NRows, NCols);
+	const int nx = ExactDistribution[0][0].rows(), np = ExactDistribution[0][0].cols();
 	double tmp;
 	// read input
-	for (int i = 0; i < NumPES; i++)
+	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (int j = 0; j < NumPES; j++)
+		for (int jPES = 0; jPES < NumPES; jPES++)
 		{
-			for (int k = 0; k < NRows; k++)
+			if (iPES == jPES)
 			{
-				for (int l = 0; l < NCols; l++)
+				// diagonal elements
+				for (int iGrid = 0; iGrid < nx; iGrid++)
 				{
-					if (i == j)
+					for (int jGrid = 0; jGrid < np; jGrid++)
 					{
-						// diagonal elements
-						in >> result(k, l)(i, j) >> tmp;
+						in >> ExactDistribution[iPES][jPES](iGrid, jGrid) >> tmp;
 					}
-					else if (i < j)
+				}
+			}
+			else if (iPES < jPES)
+			{
+				// read the real and imaginary part in; real the upper, imag the lower
+				for (int iGrid = 0; iGrid < nx; iGrid++)
+				{
+					for (int jGrid = 0; jGrid < np; jGrid++)
 					{
-						// read the real and imaginary part in; real the upper, imag the lower
-						in >> result(k, l)(i, j) >> result(k, l)(j, i);
+						in >> ExactDistribution[iPES][jPES](iGrid, jGrid) >> ExactDistribution[jPES][iPES](iGrid, jGrid);
 					}
-					else
+				}
+			}
+			else
+			{
+				for (int iGrid = 0; iGrid < nx; iGrid++)
+				{
+					for (int jGrid = 0; jGrid < np; jGrid++)
 					{
 						// its transpose has been read, so do average
 						in >> tmp;
-						result(k, l)(i, j) = (result(k, l)(i, j) + tmp) / 2.0;
+						ExactDistribution[iPES][jPES](iGrid, jGrid) = (ExactDistribution[iPES][jPES](iGrid, jGrid) + tmp) / 2.0;
 						in >> tmp;
-						result(k, l)(j, i) = (result(k, l)(j, i) + tmp) / 2.0;
+						ExactDistribution[jPES][iPES](iGrid, jGrid) = (ExactDistribution[jPES][iPES](iGrid, jGrid) + tmp) / 2.0;
 					}
 				}
 			}
 		}
 	}
-	return result;
-	
 }
 
-void print_point(
-	std::ostream& out,
-	const std::set<std::pair<int, int>>& point,
-	const Eigen::VectorXd& x,
-	const Eigen::VectorXd& p)
+void print_point(std::ostream& out, const Eigen::MatrixXd& TrainingFeatures)
 {
-	std::set<std::pair<int, int>>::const_iterator iter = point.cbegin();
-	for (int i = 0; i < NPoint; i++, ++iter)
+	for (int i = 0; i < NPoint; i++)
 	{
-		out << ' ' << x(iter->first) << ' ' << p(iter->second);
+		for (int j = 0; j < PhaseDim; j++)
+		{
+			out << ' ' << TrainingFeatures(j, i);
+		}
 	}
 	out << '\n';
 }

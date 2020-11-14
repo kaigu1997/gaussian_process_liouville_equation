@@ -7,6 +7,7 @@ from matplotlib.ticker import MaxNLocator
 
 NUMPES = 2 # number of potential energy surfaces
 FIGSIZE = 10 # length of one figure
+NOPARAM = 1 + 1 + NUMPES * (NUMPES + 1) // 2 # number of hyperparameters: noise, and gaussian ARD
 
 # read input grid and time
 def read_input():
@@ -57,16 +58,18 @@ for i in range(NUMPES):
 data = np.array(read_log()).T
 
 # plot MSE and -ln(likelihood)
-mse = data[:NUMPES*NUMPES][:].reshape(NUMPES, NUMPES, LEN_T)
+mse_old = data[:NUMPES*NUMPES][:].reshape(NUMPES, NUMPES, LEN_T)
+mse_new = data[NUMPES*NUMPES*(1+NOPARAM)+1+2:NUMPES*NUMPES*(1+NOPARAM+1)+1+2][:].reshape(NUMPES, NUMPES, LEN_T)
 # plot mse
 fig, ax1 = plt.subplots()
 for i in range(NUMPES):
 	for j in range(NUMPES):
-		ax1.semilogy(t, mse[i][j], label=element_name[i][j])
+		ax1.semilogy(t, mse_old[i][j], label=element_name[i][j])
+		ax1.semilogy(t, mse_new[i][j], label='constrained'+element_name[i][j])
 ax1.tick_params('y', colors='red')
 ax1.set_ylabel('lg(MSE)', color='red')
 # plt -ln(likelihood)
-log_marg_ll = data[NUMPES*NUMPES][:]
+log_marg_ll = data[NUMPES*NUMPES]
 ax2 = ax1.twinx()
 ax2._get_lines.prop_cycler = ax1._get_lines.prop_cycler
 ax2.plot(t, log_marg_ll, label='-log(marg_ll)')
@@ -82,8 +85,35 @@ ax1.legend(lines1 + lines2, labels1 + labels2, loc='best')
 fig.savefig('mse_and_marg_ll.png')
 plt.clf()
 
+# plot normalization and energy conservation
+norm_old = data[NUMPES*NUMPES*(1+NOPARAM)+1]
+energy_old = data[NUMPES*NUMPES*(1+NOPARAM)+1+1]
+norm_new = data[NUMPES*NUMPES*(1+NOPARAM+1)+1+2]
+energy_new = data[NUMPES*NUMPES*(1+NOPARAM+1)+1+2+1]
+fig, ax1 = plt.subplots()
+# plot norm
+ax1.plot(t, norm_old, label="Norm")
+ax1.plot(t, norm_new, label="Constrained Norm")
+ax1.tick_params('y', colors='red')
+ax1.set_ylabel('Norm', color='red')
+# plot energy
+ax2 = ax1.twinx()
+ax2._get_lines.prop_cycler = ax1._get_lines.prop_cycler
+ax2.plot(t, energy_old, label="Energy")
+ax2.plot(t, energy_new, label="Constrained Energy")
+ax2.tick_params('y', colors='blue')
+ax2.set_ylabel('E/a.u.', color='blue')
+# set axis
+ax1.set_xlim((t[0], t[LEN_T-1]))
+ax1.set_xlabel('t/a.u.')
+ax1.set_title('Normalization and Energy Conservation')
+lines1, labels1 = ax1.get_legend_handles_labels()
+lines2, labels2 = ax2.get_legend_handles_labels()
+ax1.legend(lines1 + lines2, labels1 + labels2, loc='best')
+fig.savefig('norm_and_energy.png')
+plt.clf()
+
  # plot hyperparameters
-NOPARAM = 1 + 1 + NUMPES * (NUMPES + 1) // 2 # number of hyperparameters: noise, and gaussian ARD
 hyperparameters = data[NUMPES*NUMPES+1:][:].reshape(NUMPES, NUMPES, NOPARAM, LEN_T)
 fig, ax1 = plt.subplots(nrows=NUMPES, ncols=NUMPES, figsize=(NUMPES*FIGSIZE*2, NUMPES*FIGSIZE))
 for i in range(NUMPES):
