@@ -1,13 +1,13 @@
 CXX := icpc
 WARNINGFLAGS := -Wall -Wextra
 CXXFLAGS := ${WARNINGFLAGS} -mkl -std=c++14 -fast -fopenmp -pch
-LDFLAGS := ${WARNINGFLAGS} -mkl -std=c++14 -ipo -Ofast -xHost -Wl,-fuse-ld=gold -fopenmp
+LDFLAGS := ${WARNINGFLAGS} -mkl -std=c++17 -ipo -Ofast -xHost -Wl,-fuse-ld=gold -fopenmp
 LDLIBS := -lpthread -lnlopt -lshogun
 Objects := io.o gpr.o main.o
 PCH := stdafx.h
 
 .PHONY: all
-all: gp_test 
+all: gp_test con_gp_test
 
 gp_test: ${Objects}
 	${CXX} ${Objects} ${LDFLAGS} -o gp_test ${LDLIBS}
@@ -17,6 +17,9 @@ gpr.o: gpr.cpp gpr.h io.h ${PCH}
 	${CXX} -c gpr.cpp ${CXXFLAGS} -o gpr.o
 io.o: io.cpp io.h ${PCH}
 	${CXX} -c io.cpp ${CXXFLAGS} -o io.o
+
+con_gp_test: continue_test.cpp
+	${CXX} continue_test.cpp ${LDFLAGS} -o con_gp_test ${LDLIBS}
 
 .PHONY: clean
 clean:
