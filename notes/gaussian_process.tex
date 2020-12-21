@@ -263,7 +263,7 @@
                 \begin{equation}
                     k_{\mathrm{SE}}(r)=\exp(-\frac{r^2}{2l^2})
                 \end{equation}
-                其中$l$被称为特征长度尺度。由上文可得一维的SE过程的零级上交次数的期望值为$(2\pi l)^{-1}$。由于该函数无限可微，因此具有该协方差函数的高斯过程具有无穷阶均方导数，并因此非常平滑。其对应的谱密度为$S(s)=(2\pi l^2)^{\frac{D}{2}}\exp(-2\pi^2l^2s^2)$。该函数可能是机器学习领域使用最广泛的核函数。由于$[k(r)]^t$对于所有$t>0$都是一个可用的核函数，故而其被称为无限可分的。\par
+                其中$l$称为特征长度尺度。由上文可得一维的SE过程的零级上交次数的期望值为$(2\pi l)^{-1}$。由于该函数无限可微，因此具有该协方差函数的高斯过程具有无穷阶均方导数，并因此非常平滑。其对应的谱密度为$S(s)=(2\pi l^2)^{\frac{D}{2}}\exp(-2\pi^2l^2s^2)$。该函数可能是机器学习领域使用最广泛的核函数。由于$[k(r)]^t$对于所有$t>0$都是一个可用的核函数，故而其被称为无限可分的。\par
                 \textbf{马特恩协方差函数}：
                 \begin{equation}
                     k_{\mathrm{Matern}}(r)=\frac{2^{1-\nu}}{\Gamma(\nu)}\qty(\frac{\sqrt{2\nu}r}{l})^{\nu}K_\nu\qty(\frac{\sqrt{2\nu}r}{l})
@@ -374,7 +374,7 @@
             \end{equation}
             的函数$\phi$是核$k$在$\mu$测度下具有本征值$\lambda$的本征函数。常见测度为$\mathbb{R}^D$的紧子集$\mathcal{C}$上的勒贝格测度，或者具有某种密度（即$\dd{\mu(\vb{x})}=p(\vb{x})\dd{\vb{x}}$）。本征函数的下标根据本征值大小排序，且本征函数正交归一，一般数目是无限的。\par
             \begin{theorem}[Mercer定理]
-                如果$(\mathcal{X},\mu)$是有限测度空间，核函数$k\in L_\infty(\mathcal{X}^2,\mu^2)$满足映射$T_k:L_2(\mathcal{X},\mu)\rightarrow L_2(\mathcal{X},\mu)$正定（即对任意$f\in L_2(\mathcal{X},\mu)$都有$\int{\dd{\mu(\vb{x})}\dd{\mu(\vb{x}')}f(\vb{x})k(\vb{x},\vb{x}')f(\vb{x}')}\geqslant 0$。如果$\phi_i\in L_2(\mathcal{X},\mu)$是$T_k$归一化的本征值为$\lambda_i>0$的本征函数，则
+                如果$(\mathcal{X},\mu)$是有限测度空间，核函数$k\in L_\infty(\mathcal{X}^2,\mu^2)$满足映射$T_k:L_2(\mathcal{X},\mu)\rightarrow L_2(\mathcal{X},\mu)$正定（即$\forall f\in L_2(\mathcal{X},\mu)$都有$\int{\dd{\mu(\vb{x})}\dd{\mu(\vb{x}')}f(\vb{x})k(\vb{x},\vb{x}')f(\vb{x}')}\geqslant 0$。如果$\phi_i\in L_2(\mathcal{X},\mu)$是$T_k$归一化的本征值为$\lambda_i>0$的本征函数，则
                 \begin{enumerate}[label=\arabic*)]
                     \item $\qty{\lambda_i}_{i=1}^{\infty}$数项级数绝对收敛
                     \item \begin{equation}
@@ -531,33 +531,85 @@
                 这里将负对数验证密度作为损失函数，但还可以设想使用其他损失函数，如常用的平方误差损失函数。但是，此损失函数只是预测平均值的函数，而忽略了验证集方差。此外，由于均值预测与协方差的大小无关（即，将信号和噪声的协方差乘以任意正常数不会改变均值预测结果），因此基于平方误差（或仅取决于均值预测的任何其他）损失函数的LOO-CV会导致有一个自由度是不确定的，而显然完整的预测分布确实取决于协方差函数的尺度。此外，基于平方误差损失的导数计算具有与负对数验证密度损失相似的计算复杂度。总之，将基于平方误差损失的LOO-CV用于超参数选择似乎没有吸引力。\par
                 将LOO-CV方法的伪似然与前文的的边际似然进行比较，他们的计算量基本一致，于是在什么情况下某种方法可能更可取是一个有趣的问题。这个问题还没有进行太多的经验研究。但是要注意边际似然在给定模型假设的情况下给出了观测概率，而LOO-CV则不管是否有任何假设的条件下给出了预测概率的对数的估计，所以交叉验证在对抗模型的推测失误上可能是更鲁棒的。
     \section{应用——混合量子经典刘维尔方程(MQCLE)}
-        \subsection{守恒}
+        \subsection{期望值与守恒}
 			高斯过程的预测应当符合物理实际，例如布居和能量应当是守恒量，而这则会体现在对超参数的限制上。\par
 			在以下考虑中，核函数取平方指数(SE)型，即
 			\begin{equation}
-				k(\vb{x},\vb{x}')=\sigma_f^2\exp[-\sum_{i=1}^d{\frac{(x_i-x'_i)^2}{2\sigma_{x_i}^2}}]+\sigma_n^2\delta(\vb{x}-\vb{x}')
+				k(\vb{x}_1,\vb{x}_2)=\sigma_f^2\exp[-\frac{1}{2}\vb{x}_{12}^\top\Lambda\Lambda^\top\Delta\vb{x}_{12}]+\sigma_n^2\delta(\vb{x}_1-\vb{x}_2)
 			\end{equation}
-			其中$d$是变量的维度。在MQCLE中$d=2$，因此上式也可以写作
-			\begin{equation}
-				k(x,p,x',p')=\sigma_f^2\exp[-\frac{(x-x')^2}{2\sigma_x^2}-\frac{(p-p')^2}{2\sigma_p^2}]+\sigma_n^2\delta(x-x')\delta(p-p')
-			\end{equation}\par
-			对于布居守恒，考虑有若干势能面（编号从$0$到$m$），每个势能面上有其各自的超参数$\sigma_{fi}$，$\sigma_{xi}$，$\sigma_{pi}$和$\sigma_{ni}$，也有若干采样点$(x_{i0}, p_{i0})$，$(x_{i1},p_{i1})$，……，$(x_{in},p_{in})$，共计$n+1$个，且已知$\rho_{ii}(x_{ij},p_{ij})=f_{ij}$。\par
-			于是，根据高斯过程，$\forall x,p$，
+            其中$\vb{x}_{12}=\vb{x}_1-\vb{x}_2$，$\vb{x}=(\vb{r};\vb{p})$，$D$是变量的维度（编号从$0$到$D-1$），而$\Lambda$是$D\times D$的下三角矩阵。上式展开后可以写作
+            \begin{equation}
+                k(\vb{x}_1,\vb{x}_2)=\sigma_f^2\exp[-\frac{1}{2}\sum_{i=0}^{D-1}{\qty(\sum_{j=i}^{D-1}{\qty(\vb{x}_{12})_j}\Lambda_{ij})^2}]+\sigma_n^2\delta(\vb{x}_1-\vb{x}_2)
+            \end{equation}\par
+            考虑有$M$个势能面（编号从$0$到$M-1$），每个势能面上（及两两之间的相干的实部与虚部）有其各自的超参数$\sigma_{f}^{\alpha\beta}$，$\Lambda^{\alpha\beta}$和$\sigma_{n}^{\alpha\beta}$（其中$\alpha<\beta$为实部，反之为虚部）。注意这里$\forall \alpha<\beta$都有$\rho^{\alpha\beta}=\Re{P^{\alpha\beta}}=\Re{P^{\beta\alpha}}$和$\rho^{\beta\alpha}=\Im{P^{\alpha\beta}}=-\Im{P^{\beta\alpha}}$，其中$P$代表真实的相空间分布（即非对角元为复数的相空间分布矩阵函数），而$\rho$则完全是实变矩阵函数，但两者的自由度一致。\par
+            此外密度矩阵每个矩阵元还有若干采样点$\vb{x}_0^{\alpha\beta}$，$\vb{x}_1^{\alpha\beta}$，……，$\vb{x}_{N-1}^{\alpha\beta}$，共计$N$个，且已知$\rho^{\alpha\beta}(\vb{x}_i^{\alpha\beta})=y_i^{\alpha\beta}$。此处上标标记势能面，下标标记采样点，相空间坐标则用矢量表示。\par
+			于是，根据高斯过程，$\forall \vb{x}$，
 			\begin{align}
-				\ev{\rho_{ii}(x,p)}=&\mqty(k_i(x,p,x_{i0},p_{i0}) & k_i(x,p,x_{i1},p_{i1}) & \dots & k_i(x,p,x_{in},p_{in})) \nonumber \\
-				&\times\mqty(k_i(x_{i0},p_{i0},x_{i0},p_{i0}) & k_i(x_{i0},p_{i0},x_{i1},p_{i1}) & \dots & k_i(x_{i0},p_{i0},x_{in},p_{in}) \\
-				k_i(x_{i1},p_{i1},x_{i0},p_{i0}) & k_i(x_{i1},p_{i1},x_{i1},p_{i1}) & \dots & k_i(x_{i1},p_{i1},x_{in},p_{in}) \\
-				\vdots & \vdots & \ddots & \vdots \\
-				k_i(x_{in},p_{in},x_{i0},p_{i0}) & k_i(x_{in},p_{in},x_{i1},p_{i1}) & \dots & k_i(x_{in},p_{in},x_{in},p_{in}))^{-1}\mqty(f_{i0} \\ f_{i1} \\ \vdots \\ f_{in})
-			\end{align}
-			第二行的部分不含有变量，因此对$x$和$p$的积分可以直接作用于第一行的矢量，可得
+                \ev{\rho^{\alpha\beta}(\vb{x})}=&\mqty(k^{\alpha\beta}(\vb{x},\vb{x}_{0}^{\alpha\beta}) & k^{\alpha\beta}(\vb{x},\vb{x}_{1}^{\alpha\beta}) & \dots & k^{\alpha\beta}(\vb{x},\vb{x}_{n-1}^{\alpha\beta})) \nonumber \\
+                &\times\mqty(k^{\alpha\beta}(\vb{x}_0^{\alpha\beta},\vb{x}_0^{\alpha\beta}) & k^{\alpha\beta}(\vb{x}_0^{\alpha\beta},\vb{x}_1^{\alpha\beta}) & \dots & k^{\alpha\beta}(\vb{x}_0^{\alpha\beta},\vb{x}_{N-1}^{\alpha\beta}) \\
+                k^{\alpha\beta}(\vb{x}_1^{\alpha\beta},\vb{x}_0^{\alpha\beta}) & k^{\alpha\beta}(\vb{x}_1^{\alpha\beta},\vb{x}_1^{\alpha\beta}) & \dots & k^{\alpha\beta}(\vb{x}_1^{\alpha\beta},\vb{x}_{N-1}^{\alpha\beta}) \\
+                \vdots & \vdots & \ddots & \vdots \\
+                k^{\alpha\beta}(\vb{x}_{N-1}^{\alpha\beta},\vb{x}_0^{\alpha\beta}) & k^{\alpha\beta}(\vb{x}_{N-1}^{\alpha\beta},\vb{x}_1^{\alpha\beta}) & \dots & k^{\alpha\beta}(\vb{x}_{N-1}^{\alpha\beta},\vb{x}_{N-1}^{\alpha\beta}))^{-1}\mqty(y^{\alpha\beta}_0 \\ y^{\alpha\beta}_1 \\ \vdots \\ y^{\alpha\beta}_{n-1})
+            \end{align}
+            第二行的部分不含有变量，因此对$\vb{x}$的积分可以直接作用于第一行的行矢量。\par
+            考虑零到二阶力学量。零阶（即布居）有
 			\begin{align}
-				\ev{\rho_{ii}}=&\int\limits_{\mathbb{R}^2}{\dd{\Gamma}\ev{\rho_{ii}(x,p)}} \\
-				=&\mqty(\int\limits_{\mathbb{R}^2}{\dd{\Gamma}k_i(x,p,x_{i0},p_{i0})} & \int\limits_{\mathbb{R}^2}{\dd{\Gamma}k_i(x,p,x_{i1},p_{i1})} & \dots & \int\limits_{\mathbb{R}^2}{\dd{\Gamma}k_i(x,p,x_{in},p_{in})})K_i^{-1}\vb{f}_i \\
-				=&(2\pi\sigma_{xi}\sigma_{pi}\sigma_{fi}^2+\sigma_{ni}^2)\mqty(1 & 1 & \dots & 1)K_i^{-1}\vb{f}_i
-			\end{align}
-			其中$\dd{\Gamma}=\dd{x}\dd{p}$是相空间面元。于是，归一化可以写为
+                &\int\limits_{\mathbb{R}^D}{\dd{\vb{x}}k^{\alpha\beta}(\vb{x},\vb{x}_i^{\alpha\beta})} \nonumber \\
+                =&\int\limits_{\mathbb{R}^D}{\dd{\vb{x}}\qty[(\sigma_f^{\alpha\beta})^2\exp[-\frac{1}{2}(\vb{x}-\vb{x}_i^{\alpha\beta})^\top\Lambda^{\alpha\beta}\qty(\Lambda^{\alpha\beta})^\top(\vb{x}-\vb{x}_i^{\alpha\beta})]+\qty(\sigma_n^{\alpha\beta})^2\delta(\vb{x}-\vb{x}_i^{\alpha\beta})]} \\
+                =&(\sigma_f^{\alpha\beta})^2\int\limits_{\mathbb{R}^D}{\dd{\vb{x}}\exp(-\frac{1}{2}\vb{x}^\top\qty(\Lambda^{\alpha\beta})\qty(\Lambda^{\alpha\beta})^\top\vb{x})}+\qty(\sigma_n^{\alpha\beta})^2 \\
+                =&(\sigma_f^{\alpha\beta})^2\int\limits_{\mathbb{R}^D}{\dd{\vb{u}}\abs{\qty(\Lambda^{\alpha\beta})^\top}^{-1}\exp(-\frac{1}{2}\vb{u}^\top\vb{u})}+\qty(\sigma_n^{\alpha\beta})^2 \\
+                =&(2\pi)^{\frac{D}{2}}(\sigma_f^{\alpha\beta})^2\abs{\Lambda^{\alpha\beta}}^{-1}+\qty(\sigma_n^{\alpha\beta})^2
+            \end{align}
+			其中$\dd{\vb{x}}=\prod_{i=0}^{D-1}{\dd{x_i}}$是相空间体积元。于是有
 			\begin{equation}
-				1=\sum_{i=0}^m{\ev{\rho_{ii}}}=\mqty(1 & 1 & \dots & 1)\sum_{i=0}^m{(2\pi\sigma_{xi}\sigma_{pi}\sigma_{fi}^2+\sigma_{ni}^2)K_i^{-1}\vb{f}_i}
-			\end{equation}
+				1=\sum_{\alpha=0}^{M-1}{\ev{\rho^{\alpha\alpha}}}=\mqty(1 & 1 & \dots & 1)\sum_{\alpha=0}^{M-1}{\qty[(2\pi)^{\frac{D}{2}}(\sigma_f^{\alpha\alpha})^2\abs{\Lambda^{\alpha\alpha}}^{-1}+\qty(\sigma_n^{\alpha\alpha})^2]\qty(K^{\alpha\alpha})^{-1}\vb{y}^{\alpha\alpha}}
+            \end{equation}\par
+            对于一阶力学量$\vb{x}$，
+            \begin{align}
+                &\int\limits_{\mathbb{R}^D}{\dd{\vb{x}}\vb{x}k^{\alpha\beta}(\vb{x},\vb{x}_i^{\alpha\beta})} \nonumber \\
+                =&\int\limits_{\mathbb{R}^D}{\dd{\vb{x}}\vb{x}\qty[(\sigma_f^{\alpha\beta})^2\exp[-\frac{1}{2}(\vb{x}-\vb{x}_i^{\alpha\beta})^\top\Lambda^{\alpha\beta}\qty(\Lambda^{\alpha\beta})^\top(\vb{x}-\vb{x}_i^{\alpha\beta})]+\qty(\sigma_n^{\alpha\beta})^2\delta(\vb{x}-\vb{x}_i^{\alpha\beta})]} \\
+                =&(\sigma_f^{\alpha\beta})^2\int\limits_{\mathbb{R}^D}{\dd{\vb{u}}\abs{\qty(\Lambda^{\alpha\beta})^\top}^{-1}\qty(\qty[\qty(\Lambda^{\alpha\beta})^\top]^{-1}\vb{u}+\vb{x}_i^{\alpha\beta})\exp(-\frac{1}{2}\vb{u}^\top\vb{u})}+\qty(\sigma_n^{\alpha\beta})^2\vb{x}_i \\
+                =&\qty[(2\pi)^{\frac{D}{2}}(\sigma_f^{\alpha\beta})^2\abs{\Lambda^{\alpha\beta}}^{-1}+\qty(\sigma_n^{\alpha\beta})^2]\vb{x}_i^{\alpha\beta}
+            \end{align}
+            所以
+            \begin{equation}
+                \ev{\vb{x}}=\sum_{\alpha=0}^{M-1}{\ev{\vb{x}\rho^{\alpha\alpha}}}=\sum_{\alpha=0}^{M-1}{\qty[(2\pi)^{\frac{D}{2}}(\sigma_f^{\alpha\alpha})^2\abs{\Lambda^{\alpha\alpha}}^{-1}+\qty(\sigma_n^{\alpha\alpha})^2]\mqty(\vb{x}_0^{\alpha\alpha} & \vb{x}_1^{\alpha\alpha} & \dots & \vb{x}_n^{\alpha\alpha})\qty(K^{\alpha\alpha})^{-1}\vb{y}^{\alpha\alpha}}
+            \end{equation}\par
+            对于二阶力学量$\vb{x}\vb{x}^\top$，
+            \begin{align}
+                &\int\limits_{\mathbb{R}^D}{\dd{\vb{x}}\vb{x}\vb{x}^\top k^{\alpha\beta}(\vb{x},\vb{x}_i^{\alpha\beta})} \nonumber \\
+                =&\int\limits_{\mathbb{R}^D}{\dd{\vb{x}}\vb{x}\vb{x}^\top\qty[(\sigma_f^{\alpha\beta})^2\exp[-\frac{1}{2}(\vb{x}-\vb{x}_i^{\alpha\beta})^\top\Lambda^{\alpha\beta}\qty(\Lambda^{\alpha\beta})^\top(\vb{x}-\vb{x}_i^{\alpha\beta})]+\qty(\sigma_n^{\alpha\beta})^2\delta(\vb{x}-\vb{x}_i)]} \\
+                =&\int\limits_{\mathbb{R}^D}{\dd{\vb{u}}\abs{\qty(\Lambda^{\alpha\beta})^\top}^{-1}\qty(\qty[\qty(\Lambda^{\alpha\beta})^\top]^{-1}\vb{u}+\vb{x}_i^{\alpha\beta})\qty(\vb{u}^\top\qty(\Lambda^{\alpha\beta})^{-1}+(\vb{x}_i^{\alpha\beta})^\top)(\sigma_f^{\alpha\beta})^2\exp(-\frac{\vb{u}^\top\vb{u}}{2})} \nonumber \\
+                &+\qty(\sigma_n^{\alpha\beta})^2\vb{x}_i^{\alpha\beta}(\vb{x}_i^{\alpha\beta})^\top \\
+                =&(\sigma_f^{\alpha\beta})^2\abs{\Lambda^{\alpha\beta}}^{-1}\qty(\qty[\qty(\Lambda^{\alpha\beta})^\top]^{-1}(2\pi)^{\frac{D}{2}}I\qty(\Lambda^{\alpha\beta})^{-1}+0I+0I+(2\pi)^{\frac{D}{2}}\vb{x}_i^{\alpha\beta}(\vb{x}_i^{\alpha\beta})^\top) \nonumber \\
+                &+\qty(\sigma_n^{\alpha\beta})^2\vb{x}_i^{\alpha\beta}(\vb{x}_i^{\alpha\beta})^\top \\
+                =&\qty[(2\pi)^{\frac{D}{2}}(\sigma_f^{\alpha\beta})^2\abs{\Lambda^{\alpha\beta}}^{-1}+\qty(\sigma_n^{\alpha\beta})^2]\vb{x}_i^{\alpha\beta}(\vb{x}_i^{\alpha\beta})^\top+(2\pi)^{\frac{D}{2}}(\sigma_f^{\alpha\beta})^2\abs{\Lambda^{\alpha\beta}}^{-1}\qty[\Lambda^{\alpha\beta}\qty(\Lambda^{\alpha\beta})^\top]^{-1}
+            \end{align}
+            所以
+            \begin{align}
+                \ev{\vb{x}\vb{x}^\top}=&\sum_{\alpha=0}^{M-1}{\ev{\vb{x}\vb{x}^\top\rho^{\alpha\alpha}}} \\
+                =&\sum_{\alpha=0}^{M-1}{(2\pi)^{\frac{D}{2}}(\sigma_f^{\alpha\alpha})^2\abs{\Lambda^{\alpha\alpha}}^{-1}\mqty(\vb{x}_0^{\alpha\alpha}(\vb{x}_0^{\alpha\alpha})^\top & \vb{x}_1^{\alpha\alpha}(\vb{x}_1^{\alpha\alpha})^\top & \dots & \vb{x}_n^{\alpha\alpha}(\vb{x}_n^{\alpha\alpha})^\top)\qty(K^{\alpha\alpha})^{-1}\vb{y}^{\alpha\alpha}} \nonumber \\
+                &+\sum_{\alpha=0}^{M-1}{\qty(\sigma_n^{\alpha\alpha})^2\mqty(\vb{x}_0^{\alpha\alpha}(\vb{x}_0^{\alpha\alpha})^\top & \vb{x}_1^{\alpha\alpha}(\vb{x}_1^{\alpha\alpha})^\top & \dots & \vb{x}_n^{\alpha\alpha}(\vb{x}_n^{\alpha\alpha})^\top)\qty(K^{\alpha\alpha})^{-1}\vb{y}^{\alpha\alpha}} \nonumber \\
+                &+\sum_{\alpha=0}^{M-1}{(2\pi)^{\frac{D}{2}}(\sigma_f^{\alpha\alpha})^2\abs{\Lambda^{\alpha\alpha}}^{-1}\qty[\Lambda^{\alpha\alpha}\qty(\Lambda^{\alpha\alpha})^\top]^{-1}\mqty(1 & 1 & \dots & 1)\qty(K^{\alpha\alpha})^{-1}\vb{y}^{\alpha\alpha}}
+            \end{align}\par
+            如果噪声只添加给训练集，则删除上述式内的$\sigma_n$即可，这是由于训练集该项存在于逆矩阵中，而显式写出来的都来自于测试集。如果没有交叉项（$\Lambda=\mathrm{diag}(l_0^{-1},l_1^{-1},\dots,l_{D-1}^{-1})$），则相应将式中的$\Lambda$用对角矩阵替换即可。例如，对于无噪声无交叉项的预测，
+			\begin{align}
+                &\int\limits_{\mathbb{R}^D}{\dd{\vb{x}}k^{\alpha\beta}(\vb{x},\vb{x}_i^{\alpha\beta})}=\int\limits_{\mathbb{R}^D}{\dd{\vb{x}}(\sigma_f^{\alpha\beta})^2\exp[-\frac{1}{2}\sum_{j=0}^{D-1}{\qty(\frac{x_j-(x_i)_j^{\alpha\beta}}{l_j})^2}]}=(2\pi)^{\frac{D}{2}}(\sigma_f^{\alpha\beta})^2\prod_{j=0}^{D-1}\abs{l_j} \\
+                &\int\limits_{\mathbb{R}^D}{\dd{\vb{x}}\vb{x}k^{\alpha\beta}(\vb{x},\vb{x}_i^{\alpha\beta})}=(2\pi)^{\frac{D}{2}}(\sigma_f^{\alpha\beta})^2\prod_{j=0}^{D-1}\abs{l_j}\vb{x}_i^{\alpha\beta} \\
+                &\int\limits_{\mathbb{R}^D}{\dd{\vb{x}}\vb{x}\vb{x}^\top k^{\alpha\beta}(\vb{x},\vb{x}_i^{\alpha\beta})}=(2\pi)^{\frac{D}{2}}(\sigma_f^{\alpha\beta})^2\prod_{j=0}^{D-1}\abs{l_j}\qty[\vb{x}_i^{\alpha\beta}(\vb{x}_i^{\alpha\beta})^\top+\mathrm{diag}(l_0^2,l_1^2,\dots,l_{D-1}^2)] \\
+            \end{align}\par
+            此外还有矩阵的纯度，
+            \begin{align}
+                \Tr{\rho^2}(\vb{x})=&\sum_{\alpha=0}^{M-1}{\qty(\rho^2)^{\alpha\alpha}(\vb{x})}=\sum_{\alpha=0}^{M-1}{\qty(\qty[\rho^{\alpha\alpha}(\vb{x})]^2+\sum_{\substack{\beta=0\\\beta\neq\alpha}}^{M-1}{\qty(\qty[\rho^{\alpha\beta}(\vb{x})]^2+\qty[\rho^{\beta\alpha}(\vb{x})]^2)})} \\
+                =&2\sum_{\alpha,\beta=0}^{M-1}{\qty[\rho^{\alpha\beta}(\vb{x})]^2}-\sum_{\alpha=0}^{M-1}{\qty[\rho^{\alpha\alpha}(\vb{x})]^2}
+            \end{align}
+            为了对上式做积分，考虑到$\rho^{\alpha\beta}(\vb{x})$在任意点$\vb{x}$均满足高斯过程，
+            \begin{align}
+                \ev{\qty(\rho^{\alpha\beta})^2(\vb{x})}=&\mathrm{Var}(\rho^{\alpha\beta}(\vb{x}))+\ev{\rho^{\alpha\beta}(\vb{x})}^2 \\
+                =&(\sigma_f^{\alpha\beta})^2+(\sigma_n^{\alpha\beta})^2 \nonumber \\
+                &-\mqty(k^{\alpha\beta}(\vb{x},\vb{x}_{0}) & k^{\alpha\beta}(\vb{x},\vb{x}_{1}) & \dots & k^{\alpha\beta}(\vb{x},\vb{x}_{N-1}))(K^{\alpha\beta})^{-1}\mqty(k^{\alpha\beta}(\vb{x}_0,\vb{x}) \\ k^{\alpha\beta}(\vb{x}_1,\vb{x}) \\ \vdots \\ k^{\alpha\beta}(\vb{x}_{N-1},\vb{x})) \nonumber \\
+                &+(\vb{y}^{\alpha\beta})^\top(K^{\alpha\beta})^{-1}\mqty(k^{\alpha\beta}(\vb{x},\vb{x}_{0}) \\ k^{\alpha\beta}(\vb{x},\vb{x}_{1}) \\ \vdots \\ k^{\alpha\beta}(\vb{x},\vb{x}_{N-1})) \nonumber \\
+                &\times\mqty(k^{\alpha\beta}(\vb{x},\vb{x}_{0}) & k^{\alpha\beta}(\vb{x},\vb{x}_{1}) & \dots & k^{\alpha\beta}(\vb{x},\vb{x}_{N-1}))(K^{\alpha\beta})^{-1}\vb{y}^{\alpha\beta}
+            \end{align}
+            上式由于常数项的存在无法正常积分。\par
 \end{document}
