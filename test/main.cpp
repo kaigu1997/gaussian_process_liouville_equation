@@ -46,7 +46,7 @@ int main()
 	}
 	read_density(phase, Density);
 	// initial energy
-	const double InitialEnergy = calculate_energy_from_grid(Density, x, p);
+	const double InitialEnergy = calculate_potential_energy_from_grid(Density, x, p).trace() + calculate_kinetic_energy_from_grid(Density, x, p).trace();
 	// the bounds and initial values for hyperparameters, which is fixed
 	const std::vector<ParameterVector>& Initials = set_initial_value(TypesOfKernels, Density, x, p);
 	const ParameterVector& LowerBound = Initials[0];
@@ -63,12 +63,14 @@ int main()
 		{
 			read_density(phase, Density);
 		}
-		// generate training set
-		const FullTrainingSet& Training = generate_training_set(Density, x, p);
-		const Eigen::MatrixXd& TrainingFeatures = Training.first;
-		const VectorMatrix& TrainingLabels = Training.second;
+
 		// check if some elements are 0 everywhere
 		const QuantumMatrixBool& IsSmall = is_very_small_everywhere(Density);
+		// generate training set
+		const FullTrainingSet& Training = generate_training_set(Density, IsSmall, x, p);
+		const SuperMatrix& TrainingFeatures = Training.first;
+		VectorMatrix TrainingLabels = Training.second;
+
 		// optimize hyperparameters. Derivative-free algorithm first, then derivative method; subset first, then full set
 		const ParameterVector& NonGradientOptimized
 			= optimize(
@@ -91,7 +93,8 @@ int main()
 				UpperBound,
 				NonGradientOptimized);
 		std::copy(FinalHyperparameters.cbegin(), FinalHyperparameters.cend() - 1, OldHyperparameters.begin());
-		// fit on the grids
+
+		// fit on the grids, and calculate corresponding MSE, population and energy
 		predict_phase(
 			PhaseFitting,
 			TrainingFeatures,
@@ -101,28 +104,15 @@ int main()
 			x,
 			p,
 			FinalHyperparameters);
-		// output: selected points, phase space distribution, MSE, hyperparameters, -log(likelihood), ...
-		print_point(choose, TrainingFeatures);
-		log << t[ti];
-		// output MSE without conservation constraints
 		const QuantumMatrixDouble& MSEWithoutConstraints = mean_squared_error(Density, PhaseFitting);
-		for (int i = 0; i < NumPES; i++)
-		{
-			for (int j = 0; j < NumPES; j++)
-			{
-				log << ' ' << MSEWithoutConstraints(i, j);
-			}
-		}
-		// output -ln(marginal likelihood)
-		const int NoParam = FinalHyperparameters.size() - 1;
-		log << ' ' << FinalHyperparameters[NoParam];
-		// output hyperparameters
-		for (int i = 0; i < NoParam; i++)
-		{
-			log << ' ' << FinalHyperparameters[i];
-		}
-		// calculate normalization and energy
-		log << ' ' << calculate_population_from_grid(PhaseFitting, dx, dp) << ' ' << calculate_energy_from_grid(PhaseFitting, x, p);
+		const QuantumVectorDouble& PopulationWithoutConstraintsFromGrid = calculate_population_from_grid(PhaseFitting, dx, dp);
+		const QuantumVectorDouble& PopulationWithoutConstraintsFromParam = calculate_population_from_gpr(TrainingFeatures, TrainingLabels, TypesOfKernels, IsSmall, FinalHyperparameters);
+		const QuantumVectorDouble& PotentialWithoutConstraintsFromGrid = calculate_potential_energy_from_grid(PhaseFitting, x, p);
+		const QuantumVectorDouble& PotentialWithoutConstraintsFromParam = calculate_potential_energy_from_gpr(TrainingFeatures, TrainingLabels, TypesOfKernels, IsSmall, FinalHyperparameters);
+		const QuantumVectorDouble& KineticsWithoutConstraintsFromGrid = calculate_kinetic_energy_from_grid(PhaseFitting, x, p);
+		const QuantumVectorDouble& KineticsWithoutConstraintsFromParam = calculate_kinetic_energy_from_gpr(TrainingFeatures, TrainingLabels, TypesOfKernels, IsSmall, FinalHyperparameters);
+
+		// make the system obey the constraints (modify on density and labels), and calculate corresponding MSE, population and energy
 		obey_conservation(
 			PhaseFitting,
 			TrainingFeatures,
@@ -133,8 +123,26 @@ int main()
 			x,
 			p,
 			FinalHyperparameters);
-		// calculate MSE for the one with constraints
 		const QuantumMatrixDouble& MSE = mean_squared_error(Density, PhaseFitting);
+		const QuantumVectorDouble& PopulationFromGrid = calculate_population_from_grid(PhaseFitting, dx, dp);
+		const QuantumVectorDouble& PopulationFromParam = calculate_population_from_gpr(TrainingFeatures, TrainingLabels, TypesOfKernels, IsSmall, FinalHyperparameters);
+		const QuantumVectorDouble& PotentialFromGrid = calculate_potential_energy_from_grid(PhaseFitting, x, p);
+		const QuantumVectorDouble& PotentialFromParam = calculate_potential_energy_from_gpr(TrainingFeatures, TrainingLabels, TypesOfKernels, IsSmall, FinalHyperparameters);
+		const QuantumVectorDouble& KineticsFromGrid = calculate_kinetic_energy_from_grid(PhaseFitting, x, p);
+		const QuantumVectorDouble& KineticsFromParam = calculate_kinetic_energy_from_gpr(TrainingFeatures, TrainingLabels, TypesOfKernels, IsSmall, FinalHyperparameters);
+
+		// output: selected points, phase space distribution, MSE, hyperparameters, -log(likelihood), ...
+		print_point(choose, TrainingFeatures);
+		log << t[ti];
+		// output -ln(marginal likelihood)
+		const int NoParam = FinalHyperparameters.size() - 1;
+		log << ' ' << FinalHyperparameters[NoParam];
+		// output hyperparameters
+		for (int i = 0; i < NoParam; i++)
+		{
+			log << ' ' << FinalHyperparameters[i];
+		}
+		// output MSEs with fitted phase space distribution
 		for (int iPES = 0; iPES < NumPES; iPES++)
 		{
 			for (int jPES = 0; jPES < NumPES; jPES++)
@@ -147,12 +155,28 @@ int main()
 					}
 				}
 				sim << '\n';
-				log << ' ' << MSE(iPES, jPES);
+				log << ' ' << MSEWithoutConstraints(iPES, jPES) << ' ' << MSE(iPES, jPES);
 			}
 		}
 		sim << '\n';
-		// calculate normalization and energy for the one with constraints
-		log << ' ' << calculate_population_from_grid(PhaseFitting, dx, dp) << ' ' << calculate_energy_from_grid(PhaseFitting, x, p) << std::endl;
+		// output population and energy
+		const QuantumVectorDouble& ExactPopulation = calculate_population_from_grid(Density, dx, dp);
+		const QuantumVectorDouble& ExactPotential = calculate_potential_energy_from_grid(Density, x, p);
+		const QuantumVectorDouble& ExactKinetics = calculate_kinetic_energy_from_grid(Density, x, p);
+		for (int i = 0; i < NumPES; i++)
+		{
+			// population->potential->kinetics
+			log << ' ' << ExactPopulation[i]
+				<< ' ' << PopulationWithoutConstraintsFromGrid[i] << ' ' << PopulationWithoutConstraintsFromParam[i]
+				<< ' ' << PopulationFromGrid[i] << ' ' << PopulationFromParam[i]
+				<< ' ' << ExactPotential[i]
+				<< ' ' << PotentialWithoutConstraintsFromGrid[i] << ' ' << PotentialWithoutConstraintsFromParam[i]
+				<< ' ' << PotentialFromGrid[i] << ' ' << PotentialFromParam[i]
+				<< ' ' << ExactKinetics[i]
+				<< ' ' << KineticsWithoutConstraintsFromGrid[i] << ' ' << KineticsWithoutConstraintsFromParam[i]
+				<< ' ' << KineticsFromGrid[i] << ' ' << KineticsFromParam[i];
+		}
+		log << std::endl;
 	}
 	phase.close();
 	sim.close();

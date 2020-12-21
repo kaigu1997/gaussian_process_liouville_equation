@@ -12,7 +12,6 @@
 /// @return The string with given number of tabs
 std::string indent(const int IndentLevel);
 
-
 /// @brief Read the coordinate (of x, p and t) from a file
 /// @param[in] filename The name of the input file
 /// @return The vector containing the data
@@ -26,7 +25,7 @@ void read_density(std::istream& in, SuperMatrix& ExactDistribution);
 /// @brief Output the chosen point to an output stream
 /// @param[inout] out The output stream
 /// @param[in] TrainingFeatures The features of the training set
-void print_point(std::ostream& out, const Eigen::MatrixXd& TrainingFeatures);
+void print_point(std::ostream& out, const SuperMatrix& TrainingFeatures);
 
 /// @brief Output the information (mainly hyperparameters) of the kernel
 /// @param[inout] out The output stream

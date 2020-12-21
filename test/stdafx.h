@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <exception>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -29,9 +30,10 @@
 #include <utility>
 #include <vector>
 
+#include <boost/numeric/odeint.hpp>
 #ifndef EIGEN_USE_MKL_ALL
 #define EIGEN_USE_MKL_ALL
-#endif
+#endif // !EIGEN_USE_MKL_ALL
 #include <Eigen/Eigen>
 #undef EIGEN_USE_MKL_ALL
 #include <nlopt.hpp>
@@ -60,6 +62,8 @@ using KernelTypeList = std::vector<shogun::EKernelType>;
 using QuantumMatrixBool = Eigen::Matrix<bool, NumPES, NumPES>;
 /// The matrix used in quantum system (e.g. H, rho) with double values
 using QuantumMatrixDouble = Eigen::Matrix<double, NumPES, NumPES>;
+/// The matrix used in quantum system (e.g. H, rho) with double values
+using QuantumVectorDouble = Eigen::Matrix<double, NumPES, 1>;
 /// The matrix of matrix, used for PWTDM or Hamiltonian, etc
 using SuperMatrix = std::array<std::array<Eigen::MatrixXd, NumPES>, NumPES>;
 /// The set containing the index (instead of coordinate) of the selected points
@@ -67,7 +71,7 @@ using PointSet = std::set<std::pair<int, int>>;
 /// All the labels, or the PWTDM at the given point
 using VectorMatrix = std::array<std::array<Eigen::VectorXd, NumPES>, NumPES>;
 /// Whole training set, containing the label of all elements and whether each element is small
-using FullTrainingSet = std::pair<Eigen::MatrixXd, VectorMatrix>;
+using FullTrainingSet = std::pair<SuperMatrix, VectorMatrix>;
 /// The vector containing hyperparameters (or similarly: bounds, gradient, etc)
 using ParameterVector = std::vector<double>;
 

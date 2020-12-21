@@ -5,6 +5,8 @@
 
 #include "io.h"
 
+/// A vector containing weights and pointers to kernels
+using KernelList = std::vector<std::pair<double, std::shared_ptr<shogun::CKernel>>>;
 /// Training set of one element of phase space distribution, with the kernel to use
 using ElementTrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
 /// An array of Eigen matrices, used for the derivatives of the kernel matrix
@@ -37,27 +39,43 @@ static QuantumMatrixDouble adiabatic_potential(const double x)
 	return solver.eigenvalues().asDiagonal();
 }
 
-double calculate_energy_from_grid(const SuperMatrix& AdiabaticDistribution, const Eigen::VectorXd& x, const Eigen::VectorXd& p)
+QuantumVectorDouble calculate_population_from_grid(const SuperMatrix& PhaseSpaceDistribution, const double dx, const double dp)
+{
+	QuantumVectorDouble result;
+	for (int i = 0; i < NumPES; i++)
+	{
+		result[i] = PhaseSpaceDistribution[i][i].sum();
+	}
+	return result * dx * dp;
+}
+
+QuantumVectorDouble calculate_potential_energy_from_grid(const SuperMatrix& AdiabaticDistribution, const Eigen::VectorXd& x, const Eigen::VectorXd& p)
 {
 	const int nx = x.size(), np = p.size();
 	const double dx = (x[nx - 1] - x[0]) / nx, dp = (p[np - 1] - p[0]) / np;
-	double result = 0.0;
-	// add potential energy
+	QuantumVectorDouble result = QuantumVectorDouble::Zero();
 	for (int i = 0; i < nx; i++)
 	{
 		const QuantumMatrixDouble& AdiabaticPotential = adiabatic_potential(x[i]);
 		for (int j = 0; j < NumPES; j++)
 		{
-			result += AdiabaticDistribution[j][j].row(i).sum() * AdiabaticPotential(j, j);
+			result[j] += AdiabaticDistribution[j][j].row(i).sum() * AdiabaticPotential(j, j);
 		}
 	}
-	// add kinetic energy
+	return result * dx * dp;
+}
+
+QuantumVectorDouble calculate_kinetic_energy_from_grid(const SuperMatrix& AdiabaticDistribution, const Eigen::VectorXd& x, const Eigen::VectorXd& p)
+{
+	const int nx = x.size(), np = p.size();
+	const double dx = (x[nx - 1] - x[0]) / nx, dp = (p[np - 1] - p[0]) / np;
+	QuantumVectorDouble result = QuantumVectorDouble::Zero();
 	for (int i = 0; i < np; i++)
 	{
 		const double KineticEnergy = p[i] * p[i] / 2.0 / Mass;
 		for (int j = 0; j < NumPES; j++)
 		{
-			result += AdiabaticDistribution[j][j].col(i).sum() * KineticEnergy;
+			result[j] += AdiabaticDistribution[j][j].col(i).sum() * KineticEnergy;
 		}
 	}
 	return result * dx * dp;
@@ -76,10 +94,13 @@ static int number_of_overall_hyperparameters(const KernelTypeList& TypesOfKernel
 		switch (TypesOfKernels[i])
 		{
 		case shogun::EKernelType::K_DIAG:
-			sum += 0; // no extra hyperparameter for diagonal kernel
-			break;
+			break; // no extra hyperparameter for diagonal kernel
 		case shogun::EKernelType::K_GAUSSIANARD:
+#ifndef NOCROSS
 			sum += PhaseDim * (PhaseDim + 1) / 2; // extra hyperparameter from relevance and characteristic lengths
+#else
+			sum += PhaseDim;
+#endif
 			break;
 		default:
 			std::cerr << "UNKNOWN KERNEL!\n";
@@ -152,10 +173,12 @@ std::vector<ParameterVector> set_initial_value(
 						hyperparameters[iparam + i * NoVar] = 1.0 / sigma_p;
 					}
 					iparam++;
+#ifndef NOCROSS
 					for (int k = l + 1; k < PhaseDim; k++)
 					{
 						iparam++;
 					}
+#endif
 				}
 				break;
 			default:
@@ -169,116 +192,6 @@ std::vector<ParameterVector> set_initial_value(
 	result.push_back(upper_bound);
 	result.push_back(hyperparameters);
 	return result;
-}
-
-/// @brief Calculate the weight at a given point
-/// @param[in] data The PWTDM at the given point
-/// @return The weight at the given (RowIndex, ColIndex) point
-static double weight_function(const QuantumMatrixDouble& data)
-{
-	// construct the PWTDM at the given point
-	assert(data.rows() == NumPES && data.cols() == NumPES);
-	double result = 0.0;
-	for (int i = 0; i < NumPES; i++)
-	{
-		result += std::abs(data(i, i));
-		for (int j = 0; j < i; j++)
-		{
-			result += std::abs(std::complex<double>(data(j, i), data(i, j)));
-		}
-	}
-	// sum up the absolute value of the lower-triangular.
-	return result;
-}
-
-/// @brief Choose npoint points based on their weight using MC. If the point has already chosen, redo
-/// @param[in] data The gridded whole PWTDM
-/// @return A set containing the pointer to the coordinate table (x[first]=xi, p[second]=pi)
-/// @details This function check if the values in the input matrix are all small or not.
-/// If all very small, then select points randomly without weight.
-/// Otherwise, select based on the weights at the point by MC procedure.
-static PointSet choose_point(const SuperMatrix& data)
-{
-	static std::mt19937_64 generator(std::chrono::system_clock::now().time_since_epoch().count()); // random number generator, 64 bits Mersenne twister engine
-	PointSet result;
-	const int nx = data[0][0].rows(), np = data[0][0].cols(), n = data[0][0].size();
-	// construct the weight matrix
-	Eigen::MatrixXd weight_matrix(nx, np);
-	for (int iGrid = 0; iGrid < nx; iGrid++)
-	{
-		for (int jGrid = 0; jGrid < np; jGrid++)
-		{
-			QuantumMatrixDouble DensityOnGrid;
-			for (int iPES = 0; iPES < NumPES; iPES++)
-			{
-				for (int jPES = 0; jPES < NumPES; jPES++)
-				{
-					DensityOnGrid(iPES, jPES) = data[iPES][jPES](iGrid, jGrid);
-				}
-			}
-			weight_matrix(iGrid, jGrid) = weight_function(DensityOnGrid);
-		}
-	}
-	const double weight = std::accumulate(weight_matrix.data(), weight_matrix.data() + n, 0.0);
-	std::uniform_real_distribution<double> urd(0.0, weight);
-	while (result.size() < NPoint)
-	{
-		double acc_weight = urd(generator);
-		for (int j = 0; j < nx; j++)
-		{
-			for (int k = 0; k < np; k++)
-			{
-				acc_weight -= weight_matrix(j, k);
-				if (acc_weight < 0)
-				{
-					result.insert(std::make_pair(j, k));
-					goto next;
-				}
-			}
-		}
-	next:;
-	}
-	/*
-	while (result.size() < NPoint)
-	{
-		int idx_x, idx_p;
-		weight_matrix.maxCoeff(&idx_x, &idx_p);
-		weight_matrix(idx_x, idx_p) = 0;
-		result.insert(std::make_pair(idx_x, idx_p));
-	}
-*/
-	return result;
-}
-
-FullTrainingSet generate_training_set(
-	const SuperMatrix& data,
-	const Eigen::VectorXd& x,
-	const Eigen::VectorXd& p)
-{
-	const PointSet& chosen = choose_point(data);
-	Eigen::MatrixXd training_feature(PhaseDim, chosen.size());
-	VectorMatrix training_label;
-	for (int i = 0; i < NumPES; i++)
-	{
-		for (int j = 0; j < NumPES; j++)
-		{
-			training_label[i][j].resize(chosen.size());
-		}
-	}
-	int Index = 0;
-	for (PointSet::iterator iter = chosen.begin(); iter != chosen.end(); ++iter, Index++)
-	{
-		training_feature(0, Index) = x[iter->first];
-		training_feature(1, Index) = p[iter->second];
-		for (int i = 0; i < NumPES; i++)
-		{
-			for (int j = 0; j < NumPES; j++)
-			{
-				training_label[i][j][Index] = data[i][j](iter->first, iter->second);
-			}
-		}
-	}
-	return std::make_pair(training_feature, training_label);
 }
 
 QuantumMatrixBool is_very_small_everywhere(const SuperMatrix& data)
@@ -296,10 +209,138 @@ QuantumMatrixBool is_very_small_everywhere(const SuperMatrix& data)
 	return result;
 }
 
+/// @details This function choose points independently for each element based on whether they are small.
+/// If all very small, then select points randomly without weight.
+/// Otherwise, select based on the weights at the point by MC procedure.
+FullTrainingSet generate_training_set(
+	const SuperMatrix& data,
+	const QuantumMatrixBool& IsSmall,
+	const Eigen::VectorXd& x,
+	const Eigen::VectorXd& p)
+{
+	static std::mt19937_64 generator(std::chrono::system_clock::now().time_since_epoch().count()); // random number generator, 64 bits Mersenne twister engine
+	const int nx = data[0][0].rows(), np = data[0][0].cols(), n = data[0][0].size();
+	PointSet chosen;
+	SuperMatrix training_feature;
+	VectorMatrix training_label;
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		for (int jPES = 0; jPES < NumPES; jPES++)
+		{
+			chosen.clear();
+			// chose the point
+			if (IsSmall(iPES, jPES) == true)
+			{
+				// all very small, select points randomly
+				std::uniform_int_distribution<int> x_dis(0, nx - 1), p_dis(0, np - 1);
+				while (chosen.size() < NPoint)
+				{
+					chosen.insert(std::make_pair(x_dis(generator), p_dis(generator)));
+				}
+			}
+			else
+			{
+				// not small. weighted choose from the absolute value on the grid
+				auto abs_sum = [](double a, double b) -> double {
+					return std::abs(a) + std::abs(b);
+				};
+				const double weight = std::accumulate(data[iPES][jPES].data(), data[iPES][jPES].data() + n, 0.0, abs_sum);
+				std::uniform_real_distribution<double> urd(0.0, weight);
+				while (chosen.size() < NPoint)
+				{
+					double acc_weight = urd(generator);
+					for (int iGrid = 0; iGrid < nx; iGrid++)
+					{
+						for (int jGrid = 0; jGrid < np; jGrid++)
+						{
+							acc_weight -= std::abs(data[iPES][jPES](iGrid, jGrid));
+							if (acc_weight < 0)
+							{
+								chosen.insert(std::make_pair(iGrid, jGrid));
+								goto next;
+							}
+						}
+					}
+				next:;
+				}
+				/*
+				Eigen::MatrixXd weight_matrix = data[iPES][jPES].array().abs();
+				while (chosen.size() < NPoint)
+				{
+					int idx_x, idx_p;
+					weight_matrix.maxCoeff(&idx_x, &idx_p);
+					weight_matrix(idx_x, idx_p) = 0;
+					chosen.insert(std::make_pair(idx_x, idx_p));
+				}
+				*/
+			}
+
+			// the get the labels & features
+			training_label[iPES][jPES].resize(NPoint);
+			training_feature[iPES][jPES].resize(PhaseDim, NPoint);
+			int Index = 0;
+			for (PointSet::iterator iter = chosen.begin(); iter != chosen.end(); ++iter, Index++)
+			{
+				training_feature[iPES][jPES](0, Index) = x[iter->first];
+				training_feature[iPES][jPES](1, Index) = p[iter->second];
+				training_label[iPES][jPES][Index] = data[iPES][jPES](iter->first, iter->second);
+			}
+		}
+	}
+	return std::make_pair(training_feature, training_label);
+}
+
+/// @brief Construct kernels from hyperparameters and their types
+/// @param[in] TypeOfKernel The vector containing type of all kernels that will be used
+/// @param[in] Hyperparameters The hyperparameters of all kernels (magnitude and other)
+/// @return A vector of all kernels, with parameters set, but without any feature
+static KernelList generate_kernels(const KernelTypeList& TypesOfKernels, const ParameterVector& Hyperparameters)
+{
+	const int NKernel = TypesOfKernels.size();
+	KernelList result;
+	for (int iKernel = 0, iParam = 0; iKernel < NKernel; iKernel++)
+	{
+		const double weight = Hyperparameters[iParam++];
+		switch (TypesOfKernels[iKernel])
+		{
+		case shogun::EKernelType::K_DIAG:
+			result.push_back(std::make_pair(weight, std::make_shared<shogun::CDiagKernel>()));
+			break;
+		case shogun::EKernelType::K_GAUSSIANARD:
+		{
+			std::shared_ptr<shogun::CGaussianARDKernel> gauss_ard_kernel_ptr = std::make_shared<shogun::CGaussianARDKernel>();
+			Eigen::MatrixXd characteristic = Eigen::MatrixXd::Zero(PhaseDim, PhaseDim);
+#ifndef NOCROSS
+			// rowwise parameters
+			for (int k = 0; k < PhaseDim; k++)
+			{
+				for (int j = k; j < PhaseDim; j++)
+				{
+					characteristic(j, k) = Hyperparameters[iParam++];
+				}
+			}
+#else
+			for (int j = 0; j < PhaseDim; j++)
+			{
+				characteristic(j, j) = Hyperparameters[iParam++];
+			}
+#endif
+			gauss_ard_kernel_ptr->set_matrix_weights(characteristic);
+			result.push_back(std::make_pair(weight, gauss_ard_kernel_ptr));
+			break;
+		}
+		default:
+			std::cerr << "UNKNOWN KERNEL!\n";
+			break;
+		}
+	}
+	return result;
+}
+
 /// @brief Deep copy of Eigen matrix to shogun matrix
 /// @param[in] mat Eigen matrix
 /// @return shogun matrix of same content
-static shogun::SGMatrix<double> generate_shogun_matrix(const Eigen::MatrixXd& mat)
+static inline shogun::SGMatrix<double> generate_shogun_matrix(const Eigen::MatrixXd& mat)
 {
 	shogun::SGMatrix<double> result(mat.rows(), mat.cols());
 	std::copy(mat.data(), mat.data() + mat.size(), result.data());
@@ -309,8 +350,7 @@ static shogun::SGMatrix<double> generate_shogun_matrix(const Eigen::MatrixXd& ma
 /// @brief Calculate the kernel matrix, \f$ K(X_1,X_2) \f$
 /// @param[in] LeftFeature The feature on the left, \f$ X_1 \f$
 /// @param[in] RightFeature The feature on the right, \f$ X_2 \f$
-/// @param[in] TypeOfKernel The vector containing type of all kernels that will be used
-/// @param[in] Hyperparameters The hyperparameters of all kernels (magnitude and other)
+/// @param[inout] Kernels The vector containing all kernels that will be used, with parameters set and features not set
 /// @param[in] IsTraining Whether the features are all training set or not
 /// @return The kernel matrix
 /// @details This function calculates the kernel matrix with noise using the shogun library,
@@ -328,62 +368,36 @@ static shogun::SGMatrix<double> generate_shogun_matrix(const Eigen::MatrixXd& ma
 static Eigen::MatrixXd get_kernel_matrix(
 	const Eigen::MatrixXd& LeftFeature,
 	const Eigen::MatrixXd& RightFeature,
-	const KernelTypeList& TypesOfKernels,
-	const ParameterVector& Hyperparameters,
+	KernelList& Kernels,
 	const bool IsTraining = false)
 {
 	assert(LeftFeature.rows() == PhaseDim && RightFeature.rows() == PhaseDim);
-	assert(Hyperparameters.size() == number_of_overall_hyperparameters(TypesOfKernels));
 	// construct the feature
 	shogun::Some<shogun::CDenseFeatures<double>> left_feature = shogun::some<shogun::CDenseFeatures<double>>(generate_shogun_matrix(LeftFeature));
 	shogun::Some<shogun::CDenseFeatures<double>> right_feature = shogun::some<shogun::CDenseFeatures<double>>(generate_shogun_matrix(RightFeature));
-	const int NKernel = TypesOfKernels.size();
+	const int NKernel = Kernels.size();
 	Eigen::MatrixXd result = Eigen::MatrixXd::Zero(LeftFeature.cols(), RightFeature.cols());
-	for (int i = 0, iparam = 0; i < NKernel; i++)
+	for (int i = 0; i < NKernel; i++)
 	{
-		const double weight = Hyperparameters[iparam++];
-		std::shared_ptr<shogun::CKernel> kernel_ptr;
-		switch (TypesOfKernels[i])
+		const double weight = Kernels[i].first;
+		std::shared_ptr<shogun::CKernel>& kernel_ptr = Kernels[i].second;
+		if (IsTraining == false && kernel_ptr->get_kernel_type() == shogun::EKernelType::K_DIAG)
 		{
-		case shogun::EKernelType::K_DIAG:
-			if (IsTraining == true)
-			{
-				kernel_ptr = std::make_shared<shogun::CDiagKernel>();
-			}
-			else
-			{
-				kernel_ptr = std::make_shared<shogun::CConstKernel>(0.0);
-			}
-			break;
-		case shogun::EKernelType::K_GAUSSIANARD:
+			// in case when it is not training feature, the diagonal kernel (working as noise) is not needed
+			continue;
+		}
+		else
 		{
-			Eigen::MatrixXd characteristic = Eigen::MatrixXd::Zero(PhaseDim, PhaseDim);
-			for (int k = 0; k < PhaseDim; k++)
-			{
-				for (int j = k; j < PhaseDim; j++)
-				{
-					characteristic(j, k) = Hyperparameters[iparam++];
-				}
-			}
-			std::shared_ptr<shogun::CGaussianARDKernel> gauss_ard_kernel_ptr = std::make_shared<shogun::CGaussianARDKernel>();
-			gauss_ard_kernel_ptr->set_matrix_weights(characteristic);
-			kernel_ptr = gauss_ard_kernel_ptr;
-			break;
+			kernel_ptr->init(left_feature, right_feature);
+			result += weight * weight * Eigen::Map<Eigen::MatrixXd>(kernel_ptr->get_kernel_matrix());
 		}
-		default:
-			std::cerr << "UNKNOWN KERNEL!\n";
-			break;
-		}
-		kernel_ptr->init(left_feature, right_feature);
-		result += weight * weight * static_cast<shogun::SGMatrix<double>::EigenMatrixXtMap>(kernel_ptr->get_kernel_matrix());
 	}
 	return result;
 }
 
 /// @brief Calculate the derivative of kernel matrix over hyperparameters
 /// @param[in] Feature The left and right feature of the kernel
-/// @param[in] TypeOfKernel The vector containing type of all kernels that will be used
-/// @param[in] Hyperparameters The hyperparameters of all kernels (magnitude and other)
+/// @param[inout] Kernels The vector containing all kernels that will be used, with parameters set and features not set
 /// @return A vector of matrices being the derivative of kernel matrix over hyperparameters, in the same order as Hyperparameters
 /// @details This function calculate the derivative of kernel matrix over each hyperparameter,
 /// and each gives a matrix,  so that the overall result is a vector of matrices.
@@ -391,56 +405,44 @@ static Eigen::MatrixXd get_kernel_matrix(
 /// For general kernels, the derivative over the square root of its weight gives
 /// the square root times the kernel without any weight. For special cases
 /// (like the Gaussian kernel) the derivative are calculated correspondingly.
-static MatrixVector kernel_derivative_over_hyperparameters(
-	const Eigen::MatrixXd& Feature,
-	const KernelTypeList& TypesOfKernels,
-	const ParameterVector& Hyperparameters)
+static MatrixVector kernel_derivative_over_hyperparameters(const Eigen::MatrixXd& Feature, KernelList& Kernels)
 {
 	assert(Feature.rows() == PhaseDim);
-	assert(Hyperparameters.size() == number_of_overall_hyperparameters(TypesOfKernels));
 	// construct the feature
 	shogun::Some<shogun::CDenseFeatures<double>> feature = shogun::some<shogun::CDenseFeatures<double>>(generate_shogun_matrix(Feature));
-	const int NKernel = TypesOfKernels.size();
+	const int NKernel = Kernels.size();
 	MatrixVector result;
-	for (int i = 0, iparam = 0; i < NKernel; i++)
+	for (int i = 0; i < NKernel; i++)
 	{
-		const double weight = Hyperparameters[iparam++];
-		switch (TypesOfKernels[i])
+		const double weight = Kernels[i].first;
+		std::shared_ptr<shogun::CKernel>& kernel_ptr = Kernels[i].second;
+		switch (kernel_ptr->get_kernel_type())
 		{
 		case shogun::EKernelType::K_DIAG:
 		{
-			std::shared_ptr<shogun::CDiagKernel> diag_kernel_ptr = std::make_shared<shogun::CDiagKernel>();
-			diag_kernel_ptr->init(feature, feature);
+			kernel_ptr->init(feature, feature);
 			// calculate derivative over weight
-			result.push_back(weight * shogun::SGMatrix<double>::EigenMatrixXtMap(diag_kernel_ptr->get_kernel_matrix()));
+			result.push_back(weight * Eigen::Map<Eigen::MatrixXd>(kernel_ptr->get_kernel_matrix()));
 			break;
 		}
 		case shogun::EKernelType::K_GAUSSIANARD:
 		{
-			Eigen::MatrixXd characteristic = Eigen::MatrixXd::Zero(PhaseDim, PhaseDim);
-			for (int k = 0; k < PhaseDim; k++)
-			{
-				for (int j = k; j < PhaseDim; j++)
-				{
-					characteristic(j, k) = Hyperparameters[iparam++];
-				}
-			}
-			std::shared_ptr<shogun::CGaussianARDKernel> gauss_ard_kernel_ptr = std::make_shared<shogun::CGaussianARDKernel>();
-			gauss_ard_kernel_ptr->set_matrix_weights(characteristic);
-			gauss_ard_kernel_ptr->init(feature, feature);
+			kernel_ptr->init(feature, feature);
 			// calculate derivative over weight
-			result.push_back(weight * shogun::SGMatrix<double>::EigenMatrixXtMap(gauss_ard_kernel_ptr->get_kernel_matrix()));
+			result.push_back(weight * Eigen::Map<Eigen::MatrixXd>(kernel_ptr->get_kernel_matrix()));
 			// calculate derivative over the characteristic matrix elements
 			const std::shared_ptr<shogun::TSGDataType> tsgdt_ptr = std::make_shared<shogun::TSGDataType>(shogun::EContainerType::CT_SGMATRIX, shogun::EStructType::ST_NONE, shogun::EPrimitiveType::PT_FLOAT64);
 			const std::shared_ptr<shogun::TParameter> tp_ptr = std::make_shared<shogun::TParameter>(tsgdt_ptr.get(), nullptr, "log_weights", nullptr);
+			const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::CGaussianARDKernel>(kernel_ptr)->get_weights();
+#ifndef NOCROSS
 			for (int k = 0, index = 0; k < PhaseDim; k++)
 			{
 				for (int j = k; j < PhaseDim; j++)
 				{
-					const Eigen::Map<Eigen::MatrixXd>& Deriv = gauss_ard_kernel_ptr->get_parameter_gradient(tp_ptr.get(), index);
+					const Eigen::Map<Eigen::MatrixXd>& Deriv = kernel_ptr->get_parameter_gradient(tp_ptr.get(), index);
 					if (j == k)
 					{
-						result.push_back(weight * weight / characteristic(j, k) * Deriv);
+						result.push_back(weight * weight / Characteristic(j, k) * Deriv);
 					}
 					else
 					{
@@ -449,6 +451,13 @@ static MatrixVector kernel_derivative_over_hyperparameters(
 					index++;
 				}
 			}
+#else
+			for (int j = 0; j < PhaseDim; j++)
+			{
+				const Eigen::Map<Eigen::MatrixXd>& Deriv = kernel_ptr->get_parameter_gradient(tp_ptr.get(), j);
+				result.push_back(weight * weight / Characteristic(j, j) * Deriv);
+			}
+#endif
 			break;
 		}
 		default:
@@ -496,9 +505,9 @@ static double negative_log_marginal_likelihood(const ParameterVector& x, Paramet
 	const Eigen::MatrixXd& TrainingFeature = std::get<0>(Training);
 	const Eigen::VectorXd& TrainingLabel = std::get<1>(Training);
 	const KernelTypeList& TypesOfKernels = std::get<2>(Training);
-	const int NoVar = number_of_overall_hyperparameters(TypesOfKernels);
+	KernelList Kernels = generate_kernels(TypesOfKernels, x);
 	// get kernel and the derivatives of kernel over hyperparameters
-	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, TypesOfKernels, x, true);
+	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, Kernels, true);
 	// calculate
 	Eigen::LLT<Eigen::MatrixXd> DecompOfKernel(KernelMatrix);
 	const Eigen::MatrixXd& L = DecompOfKernel.matrixL();
@@ -511,7 +520,7 @@ static double negative_log_marginal_likelihood(const ParameterVector& x, Paramet
 	if (grad.empty() == false)
 	{
 		// need gradient information, calculated here
-		const MatrixVector& KernelDerivative = kernel_derivative_over_hyperparameters(TrainingFeature, TypesOfKernels, x);
+		const MatrixVector& KernelDerivative = kernel_derivative_over_hyperparameters(TrainingFeature, Kernels);
 		for (int i = 0; i < x.size(); i++)
 		{
 			grad[i] = ((KInv - KInvLbl * KInvLbl.adjoint()) * KernelDerivative[i]).trace() / 2.0;
@@ -525,7 +534,7 @@ static double negative_log_marginal_likelihood(const ParameterVector& x, Paramet
 
 /// @details This function using the NLOPT to optimize the hyperparameters and return them.
 ParameterVector optimize(
-	const Eigen::MatrixXd& TrainingFeatures,
+	const SuperMatrix& TrainingFeatures,
 	const VectorMatrix& TrainingLabels,
 	const KernelTypeList& TypesOfKernels,
 	const QuantumMatrixBool& IsSmall,
@@ -575,8 +584,7 @@ ParameterVector optimize(
 				nlopt::opt minimizer(ALGO, NoVar);
 				// set minimizer function
 				const nlopt::vfunc minimizing_function = negative_log_marginal_likelihood;
-				ElementTrainingSet this_element_training_set
-					= std::make_tuple(TrainingFeatures, TrainingLabels[iPES][jPES], TypesOfKernels);
+				ElementTrainingSet this_element_training_set = std::make_tuple(TrainingFeatures[iPES][jPES], TrainingLabels[iPES][jPES], TypesOfKernels);
 				minimizer.set_min_objective(minimizing_function, &this_element_training_set);
 				// set bounds for noise and characteristic length, as well as for initial values
 				minimizer.set_lower_bounds(ParameterVector(LowerBound.cbegin() + BeginIndex, LowerBound.cbegin() + BeginIndex + NoVar));
@@ -646,7 +654,7 @@ ParameterVector optimize(
 /// Besides, it needs normalization: the trace should be 1 and the energy should conserve.
 void predict_phase(
 	SuperMatrix& PredictedDistribution,
-	const Eigen::MatrixXd& TrainingFeatures,
+	const SuperMatrix& TrainingFeatures,
 	const VectorMatrix& TrainingLabels,
 	const KernelTypeList& TypesOfKernels,
 	const QuantumMatrixBool& IsSmall,
@@ -678,9 +686,11 @@ void predict_phase(
 				const int BeginIndex = (iPES * NumPES + jPES) * NoVar;
 				// get hyperparameter and label for this element of PWTDM
 				const ParameterVector& HyperparameterHere = ParameterVector(Hyperparameters.cbegin() + BeginIndex, Hyperparameters.cbegin() + BeginIndex + NoVar);
+				const Eigen::MatrixXd& TrainingFeatureOfThisElement = TrainingFeatures[iPES][jPES];
 				const Eigen::VectorXd& TrainingLabelOfThisElement = TrainingLabels[iPES][jPES];
-				const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeatures, TrainingFeatures, TypesOfKernels, HyperparameterHere, true);
-				const Eigen::VectorXd& Coe = KernelMatrix.llt().solve(TrainingLabelOfThisElement);
+				KernelList KernelsOfThisElement = generate_kernels(TypesOfKernels, HyperparameterHere);
+				const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeatureOfThisElement, TrainingFeatureOfThisElement, KernelsOfThisElement, true);
+				const Eigen::VectorXd& KInvLbl = KernelMatrix.llt().solve(TrainingLabelOfThisElement);
 				Eigen::VectorXd coord(PhaseDim);
 				for (int iGrid = 0; iGrid < nx; iGrid++)
 				{
@@ -688,7 +698,7 @@ void predict_phase(
 					{
 						coord[0] = x[iGrid];
 						coord[1] = p[jGrid];
-						PredictedDistribution[iPES][jPES](iGrid, jGrid) = (get_kernel_matrix(coord, TrainingFeatures, TypesOfKernels, HyperparameterHere) * Coe).value();
+						PredictedDistribution[iPES][jPES](iGrid, jGrid) = (get_kernel_matrix(coord, TrainingFeatureOfThisElement, KernelsOfThisElement) * KInvLbl).value();
 					}
 				}
 			}
@@ -696,11 +706,6 @@ void predict_phase(
 	}
 }
 
-/// @brief Calculate the normalization factor, or \f$ <\rho_{ii}> \f$
-/// @param[in] TypesOfKernels The vector containing all the kernel type used in optimization
-/// @param[in] Hyperparameters The hyperparameters of the given diagonal element in phase space distribution
-/// @param[in] KInvLbl The inverse of the kernel matrix times the labels
-/// @return \f$ <\rho_{ii}> \f$
 /// @details To calculate \f$ <\rho_{ii}> \f$,
 ///
 /// \f[
@@ -708,50 +713,135 @@ void predict_phase(
 /// \f]
 ///
 /// where the \f$ \Lambda \f$ matrix is the lower-triangular matrix used in Gaussian ARD kernel
-static double normalize_coefficient(const KernelTypeList& TypesOfKernels, const ParameterVector& Hyperparameters, const Eigen::VectorXd& KInvLbl)
+QuantumVectorDouble calculate_population_from_gpr(
+	const SuperMatrix& TrainingFeatures,
+	const VectorMatrix& TrainingLabels,
+	const KernelTypeList& TypesOfKernels,
+	const QuantumMatrixBool& IsSmall,
+	const ParameterVector& Hyperparameters)
 {
 	const int NKernel = TypesOfKernels.size();
-	double coe = 0.0;
-	for (int i = 0, iparam = 0; i < NKernel; i++)
+	const int NoVar = number_of_overall_hyperparameters(TypesOfKernels);
+	QuantumVectorDouble result = QuantumVectorDouble::Zero();
+	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
-		const double weight = Hyperparameters[iparam++];
-		std::shared_ptr<shogun::CKernel> kernel_ptr;
-		switch (TypesOfKernels[i])
+		if (IsSmall(iPES, iPES) == false)
 		{
-		case shogun::EKernelType::K_DIAG:
-			break;
-		case shogun::EKernelType::K_GAUSSIANARD:
-		{
-			Eigen::MatrixXd characteristic = Eigen::MatrixXd::Zero(PhaseDim, PhaseDim);
-			for (int k = 0; k < PhaseDim; k++)
+			const int BeginIndex = (iPES * NumPES + iPES) * NoVar;
+			// get K^{-1}*y
+			const ParameterVector& HyperparameterHere = ParameterVector(Hyperparameters.cbegin() + BeginIndex, Hyperparameters.cbegin() + BeginIndex + NoVar);
+			KernelList KernelsOfThisElement = generate_kernels(TypesOfKernels, HyperparameterHere);
+			const Eigen::MatrixXd& TrainingFeatureOfThisElement = TrainingFeatures[iPES][iPES];
+			const Eigen::VectorXd& TrainingLabelOfThisElement = TrainingLabels[iPES][iPES];
+			const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeatureOfThisElement, TrainingFeatureOfThisElement, KernelsOfThisElement, true);
+			const Eigen::VectorXd& KInvLbl = KernelMatrix.llt().solve(TrainingLabelOfThisElement);
+			// get coefficient, (2*pi)^{D/2}\sigma_f^{ii})^2|\Lambda^{ii}|
+			double coe = 0.0;
+			for (int i = 0; i < NKernel; i++)
 			{
-				for (int j = k; j < PhaseDim; j++)
+				const double weight = KernelsOfThisElement[i].first;
+				std::shared_ptr<shogun::CKernel>& kernel_ptr = KernelsOfThisElement[i].second;
+				switch (kernel_ptr->get_kernel_type())
 				{
-					characteristic(j, k) = Hyperparameters[iparam++];
+				case shogun::EKernelType::K_DIAG:
+					break;
+				case shogun::EKernelType::K_GAUSSIANARD:
+				{
+					const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::CGaussianARDKernel>(kernel_ptr)->get_weights();
+					coe += std::pow(2.0 * pi, Dim) * weight * weight / Characteristic.diagonal().prod();
+					break;
+				}
+				default:
+					std::cerr << "UNKNOWN KERNEL!\n";
+					break;
 				}
 			}
-			coe += std::pow(2.0 * pi, Dim) * weight * weight * characteristic.determinant();
-			break;
-		}
-		default:
-			std::cerr << "UNKNOWN KERNEL!\n";
-			break;
+			result[iPES] = coe * KInvLbl.sum();
 		}
 	}
-	return coe * KInvLbl.sum();
+	return result;
 }
 
-/// @brief Calculate energy of the Gaussian process predicted phase space distribution
-/// @param[in] TrainingFeatures The features of the training set
-/// @param[in] TypesOfKernels The types of all kernels used in Gaussian Process
-/// @param[in] x The coordinates of x grids
-/// @param[in] p The coordinates of p grids
-/// @param[in] Hyperparameters Optimized hyperparameters of this element used in kernel
-/// @param[in] KInvLbl The inverse of the kernel matrix times the labels
-/// @param[in] PredictedDistribution The gridded whole PWTDM
-/// @param[in] PESIndex The index of the diagonal element
-/// @return The total energy of the element, potential energy from grids, and kinetic energy from analytical integration
-/// @details For potential energy, just add the energy of grids all together.
+/// @details Potential energy could be calculated by numerical integration
+QuantumVectorDouble calculate_potential_energy_from_gpr(
+	const SuperMatrix& TrainingFeatures,
+	const VectorMatrix& TrainingLabels,
+	const KernelTypeList& TypesOfKernels,
+	const QuantumMatrixBool& IsSmall,
+	const ParameterVector& Hyperparameters)
+{
+	static const double numerical_integration_initial_stepsize = 1e-2;
+	static const double epsilon = std::exp(-12.5) / std::sqrt(2 * pi); // value below this is 0
+	const int NKernel = TypesOfKernels.size();
+	const int NoVar = number_of_overall_hyperparameters(TypesOfKernels);
+	QuantumVectorDouble result = QuantumVectorDouble::Zero();
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		if (IsSmall(iPES, iPES) == false)
+		{
+			const int BeginIndex = (iPES * NumPES + iPES) * NoVar;
+			// get K^{-1}*y
+			const ParameterVector& HyperparameterHere = ParameterVector(Hyperparameters.cbegin() + BeginIndex, Hyperparameters.cbegin() + BeginIndex + NoVar);
+			KernelList KernelsOfThisElement = generate_kernels(TypesOfKernels, HyperparameterHere);
+			const Eigen::MatrixXd& TrainingFeatureOfThisElement = TrainingFeatures[iPES][iPES];
+			const Eigen::VectorXd& TrainingLabelOfThisElement = TrainingLabels[iPES][iPES];
+			const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeatureOfThisElement, TrainingFeatureOfThisElement, KernelsOfThisElement, true);
+			const Eigen::VectorXd& KInvLbl = KernelMatrix.llt().solve(TrainingLabelOfThisElement);
+			// calculate potential energy
+			boost::numeric::odeint::bulirsch_stoer<double> stepper; // stepper for adaptive step control
+			auto potential_times_population = [&](double x0) -> double {
+				double population_given_x = 0.0;
+				// analytical integration
+				for (int i = 0; i < NKernel; i++)
+				{
+					const double weight = KernelsOfThisElement[i].first;
+					std::shared_ptr<shogun::CKernel> kernel_ptr = KernelsOfThisElement[i].second;
+					if (kernel_ptr->get_kernel_type() == shogun::EKernelType::K_GAUSSIANARD)
+					{
+#ifndef NOCROSS
+						// vec_i=sigma_f^2*sqrt(2*pi/(A01^2+A11^2))exp(-A00^2(x-xi)^2/2-A00^2A01^2(x-xi)^2/2/(A01^2+A11^2))
+						// rho(x)=vec*K^{-1}*y
+						const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::CGaussianARDKernel>(kernel_ptr)->get_weights();
+						const Eigen::MatrixXd Char2 = Characteristic.array().abs2();
+						const Eigen::VectorXd IntegrateOverP = weight * weight * std::sqrt(2.0 * pi / (Char2(0, 1) + Char2(1, 1)))
+															   * (-(x0 - TrainingFeatureOfThisElement.row(0).array()).abs2() * (Char2(0, 0) / 2.0 * (1.0 + Char2(0, 1) / (Char2(0, 1) + Char2(1, 1))))).exp();
+#else
+						// vec_i=sigma_f^2*sqrt(2*pi)*lp*exp(-(x-xi)^2/2/lx^2)
+						// rho(x)=vec*K^{-1}*y
+						const Eigen::VectorXd Characteristic = Eigen::Map<Eigen::MatrixXd>(std::dynamic_pointer_cast<shogun::CGaussianARDKernel>(kernel_ptr)->get_weights()).diagonal().array();
+						const Eigen::VectorXd IntegrateOverP = weight * weight * std::sqrt(2.0 * pi) / Characteristic[1] * (-(x0 - TrainingFeatureOfThisElement.row(0).array()).abs2() * (Characteristic[0] * Characteristic[0] / 2.0)).exp();
+#endif
+						population_given_x = IntegrateOverP.dot(KInvLbl);
+						break;
+					}
+				}
+				return adiabatic_potential(x0)(iPES, iPES) * population_given_x;
+			};
+
+			// int_R{f(x)dx}=int_0^1{dt[f((1-t)/t)+f((t-1)/t)]t^2} by x=(1-t)/t
+			boost::numeric::odeint::integrate_adaptive(
+				stepper,
+				[&](const double& /*f*/, double& fx, double t) -> void {
+					if (std::abs(t) < epsilon)
+					{
+						fx = 0.0;
+					}
+					else
+					{
+						const double x = (1.0 - t) / t;
+						fx = (potential_times_population(x) + potential_times_population(-x)) / (t * t);
+					}
+				},
+				result[iPES],
+				0.0,
+				1.0,
+				numerical_integration_initial_stepsize);
+		}
+	}
+	return result;
+}
+
+/// @details For potential energy, calculate from integration.
 /// For kinetic energy, the integral could be done analytically:
 ///
 /// \f{eqnarray*}{
@@ -761,68 +851,70 @@ static double normalize_coefficient(const KernelTypeList& TypesOfKernels, const 
 ///
 /// where the \f$ \Lambda \f$ matrix is the lower-triangular matrix used in Gaussian ARD kernel,
 /// and the p in row vector is the momentum of the training set.
-static double energy_on_pes_from_gpr(
-	const Eigen::MatrixXd& TrainingFeatures,
+QuantumVectorDouble calculate_kinetic_energy_from_gpr(
+	const SuperMatrix& TrainingFeatures,
+	const VectorMatrix& TrainingLabels,
 	const KernelTypeList& TypesOfKernels,
-	const Eigen::VectorXd& x,
-	const Eigen::VectorXd& p,
-	const ParameterVector& Hyperparameters,
-	const Eigen::VectorXd& KInvLbl,
-	const SuperMatrix& PredictedDistribution,
-	const int PESIndex)
+	const QuantumMatrixBool& IsSmall,
+	const ParameterVector& Hyperparameters)
 {
-	double result = 0.0;
-	// first, calculate the potential energy
-	const int nx = x.size(), np = p.size();
-	const double dx = (x[nx - 1] - x[0]) / nx, dp = (p[np - 1] - p[0]) / np;
-	for (int i = 0; i < nx; i++)
-	{
-		result += PredictedDistribution[PESIndex][PESIndex].row(i).sum() * adiabatic_potential(x[i])(PESIndex, PESIndex);
-	}
-	result *= dx * dp;
-	// then, calculate the kinetic energy
 	const int NKernel = TypesOfKernels.size();
-	Eigen::VectorXd row_vector(TrainingFeatures.cols());
-	for (int i = 0; i < TrainingFeatures.cols(); i++)
+	const int NoVar = number_of_overall_hyperparameters(TypesOfKernels);
+	QuantumVectorDouble result = QuantumVectorDouble::Zero();
+	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
-		row_vector[i] = TrainingFeatures(1, i) * TrainingFeatures(1, i);
-	}
-	double coe = 0.0;
-	for (int i = 0, iparam = 0; i < NKernel; i++)
-	{
-		const double weight = Hyperparameters[iparam++];
-		std::shared_ptr<shogun::CKernel> kernel_ptr;
-		switch (TypesOfKernels[i])
+		if (IsSmall(iPES, iPES) == false)
 		{
-		case shogun::EKernelType::K_DIAG:
-			break;
-		case shogun::EKernelType::K_GAUSSIANARD:
-		{
-			Eigen::MatrixXd characteristic = Eigen::MatrixXd::Zero(PhaseDim, PhaseDim);
-			for (int k = 0; k < PhaseDim; k++)
+			const int BeginIndex = (iPES * NumPES + iPES) * NoVar;
+			// get K^{-1}*y
+			const ParameterVector& HyperparameterHere = ParameterVector(Hyperparameters.cbegin() + BeginIndex, Hyperparameters.cbegin() + BeginIndex + NoVar);
+			KernelList KernelsOfThisElement = generate_kernels(TypesOfKernels, HyperparameterHere);
+			const Eigen::MatrixXd& TrainingFeatureOfThisElement = TrainingFeatures[iPES][iPES];
+			const Eigen::VectorXd& TrainingLabelOfThisElement = TrainingLabels[iPES][iPES];
+			const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeatureOfThisElement, TrainingFeatureOfThisElement, KernelsOfThisElement, true);
+			const Eigen::VectorXd& KInvLbl = KernelMatrix.llt().solve(TrainingLabelOfThisElement);
+
+			// calculate kinetic energy
+			Eigen::VectorXd row_vector(TrainingFeatures[iPES][iPES].cols());
+			for (int iTrain = 0; iTrain < TrainingFeatures[iPES][iPES].cols(); iTrain++)
 			{
-				for (int j = k; j < PhaseDim; j++)
+				row_vector[iTrain] = TrainingFeatures[iPES][iPES](1, iTrain) * TrainingFeatures[iPES][iPES](1, iTrain);
+			}
+			double coe = 0.0;
+			for (int i = 0; i < NKernel; i++)
+			{
+				const double weight = KernelsOfThisElement[i].first;
+				std::shared_ptr<shogun::CKernel>& kernel_ptr = KernelsOfThisElement[i].second;
+				switch (kernel_ptr->get_kernel_type())
 				{
-					characteristic(j, k) = Hyperparameters[iparam++];
+				case shogun::EKernelType::K_DIAG:
+					break;
+				case shogun::EKernelType::K_GAUSSIANARD:
+				{
+					const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::CGaussianARDKernel>(kernel_ptr)->get_weights();
+					coe += std::pow(2.0 * pi, Dim) * weight * weight / Characteristic.diagonal().prod();
+#ifndef NOCROSS
+					row_vector.array() += Characteristic.transpose().triangularView<Eigen::Upper>().solve(Characteristic.triangularView<Eigen::Lower>().solve(Eigen::MatrixXd::Identity(PhaseDim, PhaseDim)))(1, 1);
+#else
+					row_vector.array() += std::pow(Characteristic(1, 1), -2);
+#endif
+					break;
+				}
+				default:
+					std::cerr << "UNKNOWN KERNEL!\n";
+					break;
 				}
 			}
-			coe += std::pow(2.0 * pi, Dim) * weight * weight * characteristic.determinant();
-			row_vector.array() += characteristic.transpose().fullPivLu().solve(characteristic.fullPivLu().solve(Eigen::MatrixXd::Identity(PhaseDim, PhaseDim)))(1, 1);
-			break;
-		}
-		default:
-			std::cerr << "UNKNOWN KERNEL!\n";
-			break;
+			result[iPES] += coe * row_vector.dot(KInvLbl) / 2.0 / Mass;
 		}
 	}
-	result += coe * row_vector.dot(KInvLbl) / 2.0 / Mass;
 	return result;
 }
 
 void obey_conservation(
 	SuperMatrix& PredictedDistribution,
-	const Eigen::MatrixXd& TrainingFeatures,
-	const VectorMatrix& TrainingLabels,
+	const SuperMatrix& TrainingFeatures,
+	VectorMatrix& TrainingLabels,
 	const KernelTypeList& TypesOfKernels,
 	const QuantumMatrixBool& IsSmall,
 	const double InitialTotalEnergy,
@@ -834,37 +926,33 @@ void obey_conservation(
 	const int nx = x.size(), np = p.size();
 	// what are the non-zero diagonal elements
 	std::vector<int> NonZeroDiagonalElements;
-	std::vector<Eigen::VectorXd, Eigen::aligned_allocator<Eigen::VectorXd>> KInvLbls;
 	for (int i = 0; i < NumPES; i++)
 	{
 		if (IsSmall(i, i) == false)
 		{
 			NonZeroDiagonalElements.push_back(i);
-			// the position where the component of this element in hyperparameter/bounds begins
-			const int BeginIndex = (i * NumPES + i) * NoVar;
-			// get hyperparameter and label for this element of PWTDM
-			const ParameterVector& HyperparameterHere = ParameterVector(Hyperparameters.cbegin() + BeginIndex * NoVar, Hyperparameters.cbegin() + BeginIndex + NoVar);
-			const Eigen::VectorXd& TrainingLabelOfThisElement = TrainingLabels[i][i];
-			const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeatures, TrainingFeatures, TypesOfKernels, HyperparameterHere, true);
-			const Eigen::VectorXd& Coe = KernelMatrix.llt().solve(TrainingLabelOfThisElement);
-			KInvLbls.push_back(Coe);
 		}
 	}
+
+	const QuantumVectorDouble& Population = calculate_population_from_gpr(TrainingFeatures, TrainingLabels, TypesOfKernels, IsSmall, Hyperparameters);
+	const QuantumVectorDouble& Energy = calculate_potential_energy_from_gpr(TrainingFeatures, TrainingLabels, TypesOfKernels, IsSmall, Hyperparameters) + calculate_kinetic_energy_from_gpr(TrainingFeatures, TrainingLabels, TypesOfKernels, IsSmall, Hyperparameters);
 
 	// normalize
 	if (NonZeroDiagonalElements.size() == 1)
 	{
 		// if there is only one, only do normalization, without energy conservation
 		const int PESIndex = NonZeroDiagonalElements[0];
-		const int BeginIndex = (PESIndex * NumPES + PESIndex) * NoVar;
-		const ParameterVector& HyperparameterHere = ParameterVector(Hyperparameters.cbegin() + BeginIndex, Hyperparameters.cbegin() + BeginIndex + NoVar);
-		const double NormalizationFactor = normalize_coefficient(TypesOfKernels, HyperparameterHere, KInvLbls[0]);
+		const double NormalizationFactor = 1.0 / Population[PESIndex];
 		for (int iGrid = 0; iGrid < nx; iGrid++)
 		{
 			for (int jGrid = 0; jGrid < np; jGrid++)
 			{
-				PredictedDistribution[PESIndex][PESIndex](iGrid, jGrid) /= NormalizationFactor;
+				PredictedDistribution[PESIndex][PESIndex](iGrid, jGrid) *= NormalizationFactor;
 			}
+		}
+		for (int iPoint = 0; iPoint < TrainingLabels[PESIndex][PESIndex].size(); iPoint++)
+		{
+			TrainingLabels[PESIndex][PESIndex][iPoint] *= NormalizationFactor;
 		}
 	}
 	else
@@ -873,51 +961,32 @@ void obey_conservation(
 		// more than 1, first half using an altogether coefficient,
 		// the vector to be solved
 		Eigen::Vector2d Conservations;
+		// row 0: population conservation; row 1: energy conservation
 		Conservations << 1.0, InitialTotalEnergy;
 		Eigen::Matrix2d Coefficients = Eigen::Matrix2d::Zero();
 		for (int i = 0; i < NoNonZeroDiagonalElements; i++)
 		{
 			const int PESIndex = NonZeroDiagonalElements[i];
-			const int BeginIndex = (PESIndex * NumPES + PESIndex) * NoVar;
-			const ParameterVector& HyperparameterHere = ParameterVector(Hyperparameters.cbegin() + BeginIndex, Hyperparameters.cbegin() + BeginIndex + NoVar);
-			if (i < NoNonZeroDiagonalElements / 2)
-			{
-				// first half, add to column 0
-				Coefficients(0, 0) += normalize_coefficient(TypesOfKernels, HyperparameterHere, KInvLbls[i]);
-				Coefficients(1, 0) += energy_on_pes_from_gpr(TrainingFeatures, TypesOfKernels, x, p, HyperparameterHere, KInvLbls[i], PredictedDistribution, PESIndex);
-			}
-			else
-			{
-				// last half, add to column 1
-				Coefficients(0, 1) += normalize_coefficient(TypesOfKernels, HyperparameterHere, KInvLbls[i]);
-				Coefficients(1, 1) += energy_on_pes_from_gpr(TrainingFeatures, TypesOfKernels, x, p, HyperparameterHere, KInvLbls[i], PredictedDistribution, PESIndex);
-			}
+			// first half, add to column 0; last half, add to column 1
+			Coefficients(0, i < NoNonZeroDiagonalElements / 2 ? 0 : 1) += Population[PESIndex];
+			Coefficients(1, i < NoNonZeroDiagonalElements / 2 ? 0 : 1) += Energy[PESIndex];
 		}
 		const Eigen::Vector2d& ConservationFactor = Coefficients.fullPivLu().solve(Conservations);
 		for (int i = 0; i < NoNonZeroDiagonalElements; i++)
 		{
 			const int PESIndex = NonZeroDiagonalElements[i];
-			if (i < NoNonZeroDiagonalElements / 2)
+			// first half, using factor[0]
+			// last half, using factor[1]
+			for (int iGrid = 0; iGrid < nx; iGrid++)
 			{
-				// first half, using factor[0]
-				for (int iGrid = 0; iGrid < nx; iGrid++)
+				for (int jGrid = 0; jGrid < np; jGrid++)
 				{
-					for (int jGrid = 0; jGrid < np; jGrid++)
-					{
-						PredictedDistribution[PESIndex][PESIndex](iGrid, jGrid) *= ConservationFactor[0];
-					}
+					PredictedDistribution[PESIndex][PESIndex](iGrid, jGrid) *= ConservationFactor[i < NoNonZeroDiagonalElements / 2 ? 0 : 1];
 				}
 			}
-			else
+			for (int iPoint = 0; iPoint < TrainingLabels[PESIndex][PESIndex].size(); iPoint++)
 			{
-				// last half, using factor[1]
-				for (int iGrid = 0; iGrid < nx; iGrid++)
-				{
-					for (int jGrid = 0; jGrid < np; jGrid++)
-					{
-						PredictedDistribution[PESIndex][PESIndex](iGrid, jGrid) *= ConservationFactor[1];
-					}
-				}
+				TrainingLabels[PESIndex][PESIndex][iPoint] *= ConservationFactor[i < NoNonZeroDiagonalElements / 2 ? 0 : 1];
 			}
 		}
 	}
@@ -934,14 +1003,4 @@ QuantumMatrixDouble mean_squared_error(const SuperMatrix& lhs, const SuperMatrix
 		}
 	}
 	return result;
-}
-
-double calculate_population_from_grid(const SuperMatrix& PhaseSpaceDistribution, const double dx, const double dp)
-{
-	double result = 0.0;
-	for (int i = 0; i < NumPES; i++)
-	{
-		result += PhaseSpaceDistribution[i][i].sum();
-	}
-	return result * dx * dp;
 }

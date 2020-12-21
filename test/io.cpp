@@ -71,13 +71,21 @@ void read_density(std::istream& in, SuperMatrix& ExactDistribution)
 	}
 }
 
-void print_point(std::ostream& out, const Eigen::MatrixXd& TrainingFeatures)
+void print_point(std::ostream& out, const SuperMatrix& TrainingFeatures)
 {
-	for (int i = 0; i < NPoint; i++)
+	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (int j = 0; j < PhaseDim; j++)
+		for (int jPES = 0; jPES < NumPES; jPES++)
 		{
-			out << ' ' << TrainingFeatures(j, i);
+			const Eigen::MatrixXd& TrainingFeatureOfThisElement = TrainingFeatures[iPES][jPES];
+			for (int iPoint = 0; iPoint < NPoint; iPoint++)
+			{
+				for (int iDim = 0; iDim < PhaseDim; iDim++)
+				{
+					out << ' ' << TrainingFeatureOfThisElement(iDim, iPoint);
+				}
+			}
+			out << '\n';
 		}
 	}
 	out << '\n';
@@ -107,6 +115,7 @@ void print_kernel(
 				{
 					out << ", ";
 				}
+#ifndef NOCROSS
 				out << '[';
 				for (int k = 0; k < PhaseDim; k++)
 				{
@@ -124,6 +133,9 @@ void print_kernel(
 					}
 				}
 				out << ']';
+#else
+				out << Hyperparameters[iparam++];
+#endif
 			}
 			out << "]\n";
 			break;

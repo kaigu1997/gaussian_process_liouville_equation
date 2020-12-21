@@ -1,3 +1,4 @@
+from matplotlib import colors
 import numpy as np
 import matplotlib
 matplotlib.use('TkAgg')
@@ -57,76 +58,31 @@ for i in range(NUMPES):
 			element_name[i].append(r'$\Im(\rho_{%d%d})$' % (j, i))
 data = np.array(read_log()).T
 
-# plot MSE and -ln(likelihood)
-mse_old = data[:NUMPES*NUMPES][:].reshape(NUMPES, NUMPES, LEN_T)
-mse_new = data[NUMPES*NUMPES*(1+NOPARAM)+1+2:NUMPES*NUMPES*(1+NOPARAM+1)+1+2][:].reshape(NUMPES, NUMPES, LEN_T)
-# plot mse
-fig, ax1 = plt.subplots()
-for i in range(NUMPES):
-	for j in range(NUMPES):
-		ax1.semilogy(t, mse_old[i][j], label=element_name[i][j])
-		ax1.semilogy(t, mse_new[i][j], label='constrained'+element_name[i][j])
-ax1.tick_params('y', colors='red')
-ax1.set_ylabel('lg(MSE)', color='red')
-# plt -ln(likelihood)
-log_marg_ll = data[NUMPES*NUMPES]
-ax2 = ax1.twinx()
-ax2._get_lines.prop_cycler = ax1._get_lines.prop_cycler
-ax2.plot(t, log_marg_ll, label='-log(marg_ll)')
-ax2.tick_params('y', colors='blue')
-ax2.set_ylabel('-ln(likelihood)', color='blue')
-# set axis
-ax1.set_xlim((t[0], t[LEN_T-1]))
-ax1.set_xlabel('t/a.u.')
-ax1.set_title('log10 Mean Square Error and Negative Log Marginal Likelihood')
-lines1, labels1 = ax1.get_legend_handles_labels()
-lines2, labels2 = ax2.get_legend_handles_labels()
-ax1.legend(lines1 + lines2, labels1 + labels2, loc='best')
-fig.savefig('mse_and_marg_ll.png')
+# plot -ln(likelihood)
+index = 0
+plt.plot(t, data[index], label='-log(marg_ll)')
+plt.xlabel('t/a.u.')
+plt.xlim((t[0], t[LEN_T-1]))
+plt.ylabel('-ln(likelihood)')
+plt.title('Negative Log Marginal Likelihood')
+plt.savefig('marg_ll.png')
 plt.clf()
-
-# plot normalization and energy conservation
-norm_old = data[NUMPES*NUMPES*(1+NOPARAM)+1]
-energy_old = data[NUMPES*NUMPES*(1+NOPARAM)+1+1]
-norm_new = data[NUMPES*NUMPES*(1+NOPARAM+1)+1+2]
-energy_new = data[NUMPES*NUMPES*(1+NOPARAM+1)+1+2+1]
-fig, ax1 = plt.subplots()
-# plot norm
-ax1.plot(t, norm_old, label="Norm")
-ax1.plot(t, norm_new, label="Constrained Norm")
-ax1.tick_params('y', colors='red')
-ax1.set_ylabel('Norm', color='red')
-# plot energy
-ax2 = ax1.twinx()
-ax2._get_lines.prop_cycler = ax1._get_lines.prop_cycler
-ax2.plot(t, energy_old, label="Energy")
-ax2.plot(t, energy_new, label="Constrained Energy")
-ax2.tick_params('y', colors='blue')
-ax2.set_ylabel('E/a.u.', color='blue')
-# set axis
-ax1.set_xlim((t[0], t[LEN_T-1]))
-ax1.set_xlabel('t/a.u.')
-ax1.set_title('Normalization and Energy Conservation')
-lines1, labels1 = ax1.get_legend_handles_labels()
-lines2, labels2 = ax2.get_legend_handles_labels()
-ax1.legend(lines1 + lines2, labels1 + labels2, loc='best')
-fig.savefig('norm_and_energy.png')
-plt.clf()
+index += 1
 
  # plot hyperparameters
-hyperparameters = data[NUMPES*NUMPES+1:][:].reshape(NUMPES, NUMPES, NOPARAM, LEN_T)
-fig, ax1 = plt.subplots(nrows=NUMPES, ncols=NUMPES, figsize=(NUMPES*FIGSIZE*2, NUMPES*FIGSIZE))
+hyperparameters = data[index:index+NUMPES*NUMPES*NOPARAM].reshape(NUMPES, NUMPES, NOPARAM, LEN_T)
 for i in range(NUMPES):
 	for j in range(NUMPES):
-		ax1[i][j].semilogy(t, hyperparameters[i][j][0], label='Diagonal Weight')
-		ax1[i][j].semilogy(t, hyperparameters[i][j][1], label='Gaussian Weight')
+		fig, ax1 = plt.subplots()
+		ax1.semilogy(t, hyperparameters[i][j][0], label='Diagonal Weight')
+		ax1.semilogy(t, hyperparameters[i][j][1], label='Gaussian Weight')
 		idx = 2;
-		ax2 = ax1[i][j].twinx() # for characteristic length
-		ax3 = ax1[i][j].twinx() # for cross-terms
+		ax2 = ax1.twinx() # for characteristic length
+		ax3 = ax1.twinx() # for cross-terms
 		ax3.spines["right"].set_position(("axes", 1.2))
 		make_patch_spines_invisible(ax3)
 		ax3.spines["right"].set_visible(True)
-		prop_cycler = ax1[i][j]._get_lines.prop_cycler
+		prop_cycler = ax1._get_lines.prop_cycler
 		for k in range(NUMPES):
 			for l in range(k, NUMPES):
 				if (k == l):
@@ -138,21 +94,74 @@ for i in range(NUMPES):
 					ax3.plot(t, hyperparameters[i][j][idx], label='Gaussian Relevance between %d and %d' % (k, l))
 					prop_cycler = ax3._get_lines.prop_cycler
 				idx += 1
-		ax1[i][j].set_xlim((t[0], t[LEN_T-1]))
-		ax1[i][j].set_xlabel('t/a.u.')
-		ax1[i][j].tick_params('y', colors='red')
-		ax1[i][j].set_ylabel('Weights')
+		ax1.set_xlim((t[0], t[LEN_T-1]))
+		ax1.set_xlabel('t/a.u.')
+		ax1.tick_params('y', colors='red')
+		ax1.set_ylabel('Weights', color='red')
 		ax2.tick_params('y', colors='blue')
-		ax2.set_ylabel('Characteristic Lengths')
+		ax2.set_ylabel('Characteristic Lengths', color='blue')
 		ax3.tick_params('y', colors='green')
-		ax3.set_ylabel('Cross Term')
-		ax1[i][j].set_title('Hyperparameters of ' + element_name[i][j])
-		lines1, labels1 = ax1[i][j].get_legend_handles_labels()
+		ax3.set_ylabel('Cross Term', color='green')
+		ax1.set_title('Hyperparameters of ' + element_name[i][j])
+		lines1, labels1 = ax1.get_legend_handles_labels()
 		lines2, labels2 = ax2.get_legend_handles_labels()
 		lines3, labels3 = ax3.get_legend_handles_labels()
-		ax1[i][j].legend(lines1 + lines2 + lines3, labels1 + labels2 + labels3, loc='best')
-fig.savefig('param.png')
+		ax1.legend(lines1 + lines2 + lines3, labels1 + labels2 + labels3, loc='best')
+		fig.savefig('rho%d%d'%(i,j)+'_param.png', bbox_inches='tight')
+		plt.clf()
+index += NUMPES * NUMPES * NOPARAM
+
+# plot MSE
+mse = data[index:index+NUMPES*NUMPES*2].reshape(NUMPES, NUMPES, 2, LEN_T)
+for i in range(NUMPES):
+	for j in range(NUMPES):
+		plt.semilogy(t, mse[i][j][0], label=element_name[i][j])
+		plt.semilogy(t, mse[i][j][1], label='Constrained '+element_name[i][j])
+plt.xlim((t[0], t[LEN_T-1]))
+plt.xlabel('t/a.u.')
+plt.ylabel('lg(MSE)')
+plt.title('Mean Square Error')
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+plt.savefig('mse.png', bbox_inches='tight')
 plt.clf()
+index += NUMPES * NUMPES * 2
+
+# plot normalization and energy conservation
+norm_and_energy = data[index:].reshape(NUMPES, 3, 5, LEN_T)
+norm_and_energy_sum_over_pes=norm_and_energy.sum(axis=0)
+second_dim_name = ['Norm', 'Potential Energy', 'Kinetic Energy']
+second_dim_file_name = ['norm', 'potential', 'kinetic']
+third_dim_name = ['Exact Solution', 'Grid without Constraint', 'Params without Constraint', 'Grid', 'Params']
+third_dim_file_name = ['exact', 'grid_no_constraint', 'params_no_constraint', 'grid', 'params']
+# plot norm, potential energy and kinetic energy
+for i in range(3):
+	for j in range(5):
+		for k in range(NUMPES):
+			plt.plot(t, norm_and_energy[k][i][j], label=element_name[k][k]+' '+second_dim_name[i]+' of '+third_dim_name[j])
+		plt.plot(t, norm_and_energy_sum_over_pes[i][j], label='Total '+second_dim_name[i]+' of '+third_dim_name[j])
+		plt.xlim((t[0], t[LEN_T-1]))
+		plt.xlabel('t/a.u.')
+		if i == 0:
+			plt.ylim((0.0, 1.0))
+			plt.ylabel(second_dim_name[i])
+		else:
+			plt.ylabel(second_dim_name[i]+'/a.u.')
+		plt.title(second_dim_name[i])
+		plt.legend()
+		plt.savefig(second_dim_file_name[i]+'_'+third_dim_file_name[j]+'.png')
+		plt.clf()
+# plot total energy
+for j in range(5):
+	for k in range(NUMPES):
+		plt.plot(t, norm_and_energy[k][1][j]+norm_and_energy[k][2][j], label=element_name[k][k]+' Total Energy of '+third_dim_name[j])
+	plt.plot(t, norm_and_energy_sum_over_pes[1][j]+norm_and_energy_sum_over_pes[2][j], label='Total Energy of '+third_dim_name[j])
+	plt.xlim((t[0], t[LEN_T-1]))
+	plt.xlabel('t/a.u.')
+	plt.ylabel('Total Energy/a.u.')
+	plt.title('Total Energy')
+	plt.legend()
+	plt.savefig('total'+'_'+third_dim_file_name[j]+'.png')
+	plt.clf()
 
 # pick the desired colormap, sensible levels, and define a normalization
 # instance which takes data values and translates those into levels.
