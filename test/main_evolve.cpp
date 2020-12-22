@@ -12,7 +12,6 @@ int main()
 {
 	std::clog << std::setprecision(std::numeric_limits<double>::digits10 + 1);
 	std::clog.sync_with_stdio(true);
-	shogun::init_shogun_with_defaults();
 
 	// read input
 	Eigen::VectorXd x = read_coord("x.txt");
@@ -181,6 +180,5 @@ int main()
 	phase.close();
 	sim.close();
 	log.close();
-	shogun::exit_shogun();
 	return 0;
 }

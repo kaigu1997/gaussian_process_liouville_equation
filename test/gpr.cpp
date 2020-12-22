@@ -6,7 +6,7 @@
 #include "io.h"
 
 /// A vector containing weights and pointers to kernels
-using KernelList = std::vector<std::pair<double, std::shared_ptr<shogun::CKernel>>>;
+using KernelList = std::vector<std::pair<double, std::shared_ptr<shogun::Kernel>>>;
 /// Training set of one element of phase space distribution, with the kernel to use
 using ElementTrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
 /// An array of Eigen matrices, used for the derivatives of the kernel matrix
@@ -304,11 +304,11 @@ static KernelList generate_kernels(const KernelTypeList& TypesOfKernels, const P
 		switch (TypesOfKernels[iKernel])
 		{
 		case shogun::EKernelType::K_DIAG:
-			result.push_back(std::make_pair(weight, std::make_shared<shogun::CDiagKernel>()));
+			result.push_back(std::make_pair(weight, std::make_shared<shogun::DiagKernel>()));
 			break;
 		case shogun::EKernelType::K_GAUSSIANARD:
 		{
-			std::shared_ptr<shogun::CGaussianARDKernel> gauss_ard_kernel_ptr = std::make_shared<shogun::CGaussianARDKernel>();
+			std::shared_ptr<shogun::GaussianARDKernel> gauss_ard_kernel_ptr = std::make_shared<shogun::GaussianARDKernel>();
 			Eigen::MatrixXd characteristic = Eigen::MatrixXd::Zero(PhaseDim, PhaseDim);
 #ifndef NOCROSS
 			// rowwise parameters
@@ -373,14 +373,14 @@ static Eigen::MatrixXd get_kernel_matrix(
 {
 	assert(LeftFeature.rows() == PhaseDim && RightFeature.rows() == PhaseDim);
 	// construct the feature
-	shogun::Some<shogun::CDenseFeatures<double>> left_feature = shogun::some<shogun::CDenseFeatures<double>>(generate_shogun_matrix(LeftFeature));
-	shogun::Some<shogun::CDenseFeatures<double>> right_feature = shogun::some<shogun::CDenseFeatures<double>>(generate_shogun_matrix(RightFeature));
+	std::shared_ptr<shogun::DenseFeatures<double>> left_feature = std::make_shared<shogun::DenseFeatures<double>>(generate_shogun_matrix(LeftFeature));
+	std::shared_ptr<shogun::DenseFeatures<double>> right_feature = std::make_shared<shogun::DenseFeatures<double>>(generate_shogun_matrix(RightFeature));
 	const int NKernel = Kernels.size();
 	Eigen::MatrixXd result = Eigen::MatrixXd::Zero(LeftFeature.cols(), RightFeature.cols());
 	for (int i = 0; i < NKernel; i++)
 	{
 		const double weight = Kernels[i].first;
-		std::shared_ptr<shogun::CKernel>& kernel_ptr = Kernels[i].second;
+		std::shared_ptr<shogun::Kernel>& kernel_ptr = Kernels[i].second;
 		if (IsTraining == false && kernel_ptr->get_kernel_type() == shogun::EKernelType::K_DIAG)
 		{
 			// in case when it is not training feature, the diagonal kernel (working as noise) is not needed
@@ -409,13 +409,13 @@ static MatrixVector kernel_derivative_over_hyperparameters(const Eigen::MatrixXd
 {
 	assert(Feature.rows() == PhaseDim);
 	// construct the feature
-	shogun::Some<shogun::CDenseFeatures<double>> feature = shogun::some<shogun::CDenseFeatures<double>>(generate_shogun_matrix(Feature));
+	std::shared_ptr<shogun::DenseFeatures<double>> feature = std::make_shared<shogun::DenseFeatures<double>>(generate_shogun_matrix(Feature));
 	const int NKernel = Kernels.size();
 	MatrixVector result;
 	for (int i = 0; i < NKernel; i++)
 	{
 		const double weight = Kernels[i].first;
-		std::shared_ptr<shogun::CKernel>& kernel_ptr = Kernels[i].second;
+		std::shared_ptr<shogun::Kernel>& kernel_ptr = Kernels[i].second;
 		switch (kernel_ptr->get_kernel_type())
 		{
 		case shogun::EKernelType::K_DIAG:
@@ -431,15 +431,14 @@ static MatrixVector kernel_derivative_over_hyperparameters(const Eigen::MatrixXd
 			// calculate derivative over weight
 			result.push_back(weight * Eigen::Map<Eigen::MatrixXd>(kernel_ptr->get_kernel_matrix()));
 			// calculate derivative over the characteristic matrix elements
-			const std::shared_ptr<shogun::TSGDataType> tsgdt_ptr = std::make_shared<shogun::TSGDataType>(shogun::EContainerType::CT_SGMATRIX, shogun::EStructType::ST_NONE, shogun::EPrimitiveType::PT_FLOAT64);
-			const std::shared_ptr<shogun::TParameter> tp_ptr = std::make_shared<shogun::TParameter>(tsgdt_ptr.get(), nullptr, "log_weights", nullptr);
-			const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::CGaussianARDKernel>(kernel_ptr)->get_weights();
+			const std::pair<std::string, std::shared_ptr<shogun::AnyParameter>> Param = std::make_pair("log_weights", std::make_shared<shogun::AnyParameter>());
+			const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel_ptr)->get_weights();
 #ifndef NOCROSS
 			for (int k = 0, index = 0; k < PhaseDim; k++)
 			{
 				for (int j = k; j < PhaseDim; j++)
 				{
-					const Eigen::Map<Eigen::MatrixXd>& Deriv = kernel_ptr->get_parameter_gradient(tp_ptr.get(), index);
+					const Eigen::Map<Eigen::MatrixXd>& Deriv = kernel_ptr->get_parameter_gradient(Param, index);
 					if (j == k)
 					{
 						result.push_back(weight * weight / Characteristic(j, k) * Deriv);
@@ -454,7 +453,7 @@ static MatrixVector kernel_derivative_over_hyperparameters(const Eigen::MatrixXd
 #else
 			for (int j = 0; j < PhaseDim; j++)
 			{
-				const Eigen::Map<Eigen::MatrixXd>& Deriv = kernel_ptr->get_parameter_gradient(tp_ptr.get(), j);
+				const Eigen::Map<Eigen::MatrixXd>& Deriv = kernel_ptr->get_parameter_gradient(Param, j);
 				result.push_back(weight * weight / Characteristic(j, j) * Deriv);
 			}
 #endif
@@ -740,14 +739,14 @@ QuantumVectorDouble calculate_population_from_gpr(
 			for (int i = 0; i < NKernel; i++)
 			{
 				const double weight = KernelsOfThisElement[i].first;
-				std::shared_ptr<shogun::CKernel>& kernel_ptr = KernelsOfThisElement[i].second;
+				std::shared_ptr<shogun::Kernel>& kernel_ptr = KernelsOfThisElement[i].second;
 				switch (kernel_ptr->get_kernel_type())
 				{
 				case shogun::EKernelType::K_DIAG:
 					break;
 				case shogun::EKernelType::K_GAUSSIANARD:
 				{
-					const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::CGaussianARDKernel>(kernel_ptr)->get_weights();
+					const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel_ptr)->get_weights();
 					coe += std::pow(2.0 * pi, Dim) * weight * weight / Characteristic.diagonal().prod();
 					break;
 				}
@@ -795,20 +794,20 @@ QuantumVectorDouble calculate_potential_energy_from_gpr(
 				for (int i = 0; i < NKernel; i++)
 				{
 					const double weight = KernelsOfThisElement[i].first;
-					std::shared_ptr<shogun::CKernel> kernel_ptr = KernelsOfThisElement[i].second;
+					std::shared_ptr<shogun::Kernel> kernel_ptr = KernelsOfThisElement[i].second;
 					if (kernel_ptr->get_kernel_type() == shogun::EKernelType::K_GAUSSIANARD)
 					{
 #ifndef NOCROSS
 						// vec_i=sigma_f^2*sqrt(2*pi/(A01^2+A11^2))exp(-A00^2(x-xi)^2/2-A00^2A01^2(x-xi)^2/2/(A01^2+A11^2))
 						// rho(x)=vec*K^{-1}*y
-						const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::CGaussianARDKernel>(kernel_ptr)->get_weights();
+						const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel_ptr)->get_weights();
 						const Eigen::MatrixXd Char2 = Characteristic.array().abs2();
 						const Eigen::VectorXd IntegrateOverP = weight * weight * std::sqrt(2.0 * pi / (Char2(0, 1) + Char2(1, 1)))
 															   * (-(x0 - TrainingFeatureOfThisElement.row(0).array()).abs2() * (Char2(0, 0) / 2.0 * (1.0 + Char2(0, 1) / (Char2(0, 1) + Char2(1, 1))))).exp();
 #else
 						// vec_i=sigma_f^2*sqrt(2*pi)*lp*exp(-(x-xi)^2/2/lx^2)
 						// rho(x)=vec*K^{-1}*y
-						const Eigen::VectorXd Characteristic = Eigen::Map<Eigen::MatrixXd>(std::dynamic_pointer_cast<shogun::CGaussianARDKernel>(kernel_ptr)->get_weights()).diagonal().array();
+						const Eigen::VectorXd Characteristic = Eigen::Map<Eigen::MatrixXd>(std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel_ptr)->get_weights()).diagonal().array();
 						const Eigen::VectorXd IntegrateOverP = weight * weight * std::sqrt(2.0 * pi) / Characteristic[1] * (-(x0 - TrainingFeatureOfThisElement.row(0).array()).abs2() * (Characteristic[0] * Characteristic[0] / 2.0)).exp();
 #endif
 						population_given_x = IntegrateOverP.dot(KInvLbl);
@@ -884,14 +883,14 @@ QuantumVectorDouble calculate_kinetic_energy_from_gpr(
 			for (int i = 0; i < NKernel; i++)
 			{
 				const double weight = KernelsOfThisElement[i].first;
-				std::shared_ptr<shogun::CKernel>& kernel_ptr = KernelsOfThisElement[i].second;
+				std::shared_ptr<shogun::Kernel>& kernel_ptr = KernelsOfThisElement[i].second;
 				switch (kernel_ptr->get_kernel_type())
 				{
 				case shogun::EKernelType::K_DIAG:
 					break;
 				case shogun::EKernelType::K_GAUSSIANARD:
 				{
-					const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::CGaussianARDKernel>(kernel_ptr)->get_weights();
+					const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel_ptr)->get_weights();
 					coe += std::pow(2.0 * pi, Dim) * weight * weight / Characteristic.diagonal().prod();
 #ifndef NOCROSS
 					row_vector.array() += Characteristic.transpose().triangularView<Eigen::Upper>().solve(Characteristic.triangularView<Eigen::Lower>().solve(Eigen::MatrixXd::Identity(PhaseDim, PhaseDim)))(1, 1);

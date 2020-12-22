@@ -37,17 +37,12 @@
 #include <Eigen/Eigen>
 #undef EIGEN_USE_MKL_ALL
 #include <nlopt.hpp>
-#pragma warning(push, 0)
-#pragma warning(disable : 3346 654)
-#include <shogun/base/init.h>
-#include <shogun/base/some.h>
 #include <shogun/features/DenseFeatures.h>
 #include <shogun/kernel/ConstKernel.h>
 #include <shogun/kernel/DiagKernel.h>
 #include <shogun/kernel/GaussianARDKernel.h>
 #include <shogun/lib/SGMatrix.h>
 #include <shogun/lib/SGVector.h>
-#pragma warning(pop)
 
 const int NPoint = 200;		  ///< The size of training set
 const int Dim = 1;			  ///< The dimension of the system, half the dimension of the phase space
