@@ -30,13 +30,14 @@ private:
 	// static constant variables
 	static const double DiagMagMin, DiagMagMax, GaussMagMin, GaussMagMax, AbsoluteTolerance, InitialStepSize;
 	// local variables
-	const KernelTypeList TypesOfKernels;					  ///< The types of the kernels to use
-	const int NumHyperparameters;							  ///< The number of hyperparameters to use, derived from the kernel types
-	const int NumPoint;										  ///< The number of points selected for hyperparameter optimization
-	Optimizer NLOptMinimizers;								  ///< The vector containing all NLOPT optimizers, one gradient and one non-grad for each element
-	std::array<ParameterVector, NumElement> Hyperparameters;  ///< The hyperparameters for all elements of density matrix
-	mutable std::array<KernelList, NumElement> Kernels;		  ///< The kernels with hyperparameters set for all elements of density matrix
-	mutable std::array<Eigen::VectorXd, NumElement> KInvLbls; ///< The inverse of kernel matrix of training features times the training labels
+	const KernelTypeList TypesOfKernels;					   ///< The types of the kernels to use
+	const int NumHyperparameters;							   ///< The number of hyperparameters to use, derived from the kernel types
+	const int NumPoint;										   ///< The number of points selected for hyperparameter optimization
+	Optimizer NLOptMinimizers;								   ///< The vector containing all NLOPT optimizers, one gradient and one non-grad for each element
+	std::array<ParameterVector, NumElements> Hyperparameters;  ///< The hyperparameters for all elements of density matrix
+	std::array<Eigen::MatrixXd, NumElements> TrainingFeatures; ///< The training features (phase space coordinates) of each density matrix element
+	mutable std::array<KernelList, NumElements> Kernels;	   ///< The kernels with hyperparameters set for all elements of density matrix
+	std::array<Eigen::VectorXd, NumElements> KInvLbls;		   ///< The inverse of kernel matrix of training features times the training labels
 
 public:
 	/// @brief Constructor. Initial hyperparameters, kernels and optimization algorithms needed
@@ -54,20 +55,33 @@ public:
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
 	/// @return The total negative log marginal likelihood of all elements of density matrix
 	double optimize(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall);
-	/// @brief To predict one of the element of the density matrix at the given phase space point
+	/// @brief To predict one of the elements of the density matrix at the given phase space point
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
 	/// @param[in] x Position of classical degree of freedom
 	/// @param[in] p Momentum of classical degree of freedom
+	/// @param[in] ElementIndex The index of the density matrix element
 	/// @return The element of the density matrix at the given point
-	QuantumComplexMatrix predict(
+	double predict_element(
 		const QuantumBoolMatrix& IsSmall,
 		const ClassicalDoubleVector& x,
-		const ClassicalDoubleVector& p) const;
+		const ClassicalDoubleVector& p,
+		const int ElementIndex) const;
+	/// @brief To predict one of the elements of the density matrix at the given phase space points
+	/// @param[in] IsSmall The matrix that saves whether each element is small or not
+	/// @param[in] x Positions of classical degree of freedom
+	/// @param[in] p Momenta of classical degree of freedom
+	/// @param[in] ElementIndex The index of the density matrix element
+	/// @return The element of the density matrix at the given points
+	Eigen::VectorXd predict_elements(
+		const QuantumBoolMatrix& IsSmall,
+		const ClassicalVectors& x,
+		const ClassicalVectors& p,
+		const int ElementIndex) const;
 	/// @brief To print the grids of a certain element of density matrix
 	/// @param[in] PhaseGrids All the grids required to calculate in phase space
 	/// @param[in] ElementIndex The index of the density matrix element
 	/// @return A 1-by-N matrix, N is the number of required grids
-	Eigen::MatrixXd print_element(const Eigen::MatrixXd& PhaseGrids, const int ElementIndex) const;
+	Eigen::VectorXd print_element(const QuantumBoolMatrix& IsSmall, const Eigen::MatrixXd& PhaseGrids, const int ElementIndex) const;
 	/// @brief To calculate the averages (population, <x>, <p>, <V>, <T>) from hyperparameters
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
 	/// @param[in] PESIndex The index of the potential energy surface, corresponding to (PESIndex, PESIndex) in density matrix

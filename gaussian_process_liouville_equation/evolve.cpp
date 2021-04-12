@@ -5,262 +5,312 @@
 
 #include "evolve.h"
 
+#include "mc.h"
 #include "pes.h"
 
-/// @brief Calculate the \f$\hat{V}'\f$ operator/matrix
+static const double CouplingCriterion = 0.01; ///< Criteria of whether have coupling or not
+
+/// @brief To judge if current point have large coupling in case of 2-level system
 /// @param[in] x Position of classical degree of freedom
 /// @param[in] p Momentum of classical degree of freedom
 /// @param[in] mass Mass of classical degree of freedom
-/// @return The \f$\hat{V}'\f$ operator/matrix
-/// @details This function calculated
-///
-/// \f[
-/// \hat{V}'(\vec{R},\vec{P})=\hat{V}_W(\vec{R})-\mathrm{i}\hbar\vec{v}\cdot\vec{D}(\vec{R})
-/// \f]
-///
-/// under the adiabatic basis. Here, \f$ v_i=\frac{P_i}{m_i} \f$,
-/// \f$\hat{V}_W\f$ is the PWT quantum subsystem potential operator/matrix,
-/// \f$\vec{D}\f$ is the non-adiabatic coupling under adiabatic basis.
-static QuantumComplexMatrix get_potential_prime(
+/// @return Whether have coupling in any of the directions
+static bool is_coupling(
 	const ClassicalDoubleVector& x,
 	const ClassicalDoubleVector& p,
 	const ClassicalDoubleVector& mass)
 {
-	using namespace std::literals::complex_literals; // for using 1.0i
+	const ClassicalDoubleVector nac_01 = tensor_slice(adiabatic_coupling(x), 0, 1), f_01 = tensor_slice(adiabatic_force(x), 0, 1);
+	return nac_01.dot((p.array() / mass.array()).matrix()) > CouplingCriterion || f_01.norm() > CouplingCriterion;
+}
+
+/// @brief To judge if current point have large coupling in case of >2 level system
+/// @param[in] x Position of classical degree of freedom
+/// @return The coupling of each direction
+static ClassicalBoolVector is_coupling(const ClassicalDoubleVector& x)
+{
+	ClassicalBoolVector result = ClassicalBoolVector::Zero();
 	const Tensor3d& NAC = adiabatic_coupling(x);
-	QuantumComplexMatrix result = adiabatic_potential(x).asDiagonal();
-	for (int i = 0; i < Dim; i++)
+	for (int iDim = 0; iDim < Dim; iDim++)
 	{
-		result -= hbar * p[i] / mass[i] * NAC[i] * 1.0i;
+		result[iDim] = (NAC[iDim].array().abs().sum() > CouplingCriterion);
 	}
-	// keep it self-adjoint
-	make_self_adjoint(result);
 	return result;
 }
 
-/// @details For quantum Liouville operator,
-///
-/// \f[
-/// -\mathrm{i}\hat{\mathcal{L}}^Q\hat{\rho}_W
-/// =-\frac{i}{\hbar}\left[\hat{V}_W(\vec{R})-\mathrm{i}\hbar\vec{v}\cdot\vec{D}(\vec{R}),\hat{\rho}_W\right]
-/// \f]
-///
-/// If denote
-///
-/// \f[
-/// \hat{V}'(\vec{R},\vec{P})=\hat{V}_W(\vec{R})-\mathrm{i}\hbar\vec{v}\cdot\vec{D}(\vec{R})
-/// \f]
-///
-/// then
-///
-/// \f[
-/// \mathrm{e}^{-\mathrm{i}\hat{\mathcal{L}}^Q\mathrm{d}t}\hat{\rho}_W(\vec{R},\vec{P})
-/// =\mathrm{exp}\left(-\frac{\mathrm{i}\hat{V}'\mathrm{d}t}{\hbar}\right)
-/// \hat{\rho}_W(\vec{R},\vec{P})\mathrm{exp}\left(\frac{\mathrm{i}\hat{V}'\mathrm{d}t}{\hbar}\right)
-/// \f]
-///
-/// If the \f$ C \f$ matrix is used for diagonalize \f$ \hat{V}' \f$,
-/// or \f$ C^{\dagger}\hat{V}'C=\hat{V}'_{\mathrm{diag}} \f$, then
-///
-///
-/// \f[
-/// \mathrm{e}^{-\mathrm{i}\hat{\mathcal{L}}^Q\mathrm{d}t}\hat{\rho}_W(\vec{R},\vec{P})
-/// =C\mathrm{exp}\left(-\frac{\mathrm{i}\hat{V}'_{\mathrm{diag}}\mathrm{d}t}{\hbar}\right)C^{\dagger}
-/// \hat{\rho}_W(\vec{R},\vec{P})
-/// C\mathrm{exp}\left(\frac{\mathrm{i}\hat{V}'_{\mathrm{diag}}\mathrm{d}t}{\hbar}\right)C^{\dagger}
-/// \f]
-///
-/// this gives the evolution of PWTDM under quantum Liouville superoperator.
-///
-/// This function will not change the number of selected phase points and their PWTDMs.
-///
-/// Besides, under Trotter expansion, if this superoperator will be done n times,
-/// the dt in the parameter list will be global dt over n.
-void quantum_liouville(EvolvingDensity& density, const ClassicalDoubleVector& mass, const double dt)
-{
-	using namespace std::literals::complex_literals; // for using 1.0i
-	for (int i = 0; i < density.size(); i++)
-	{
-		// alias names
-		const ClassicalDoubleVector& x = std::get<0>(density[i]);
-		const ClassicalDoubleVector& p = std::get<1>(density[i]);
-		QuantumComplexMatrix& rho = std::get<2>(density[i]);
-		// get V'
-		const QuantumComplexMatrix& v_prime = get_potential_prime(x, p, mass);
-		// diagonalize this self-adjoint matrix
-		Eigen::SelfAdjointEigenSolver<QuantumComplexMatrix> solver(v_prime);
-		const QuantumComplexMatrix& TransformMatrix = solver.eigenvectors();
-		const QuantumDoubleVector& EigenValues = solver.eigenvalues();
-		// rho(t+dt)=C*exp(-iV't/hbar)*C^T*rho*C*exp(iV't/hbar)*C^T
-		// rho is self-adjoint
-		rho = TransformMatrix * (EigenValues * dt / hbar * -1.0i).array().exp().matrix().asDiagonal() * TransformMatrix.adjoint()
-			* rho * TransformMatrix * (EigenValues * dt / hbar * 1.0i).array().exp().matrix().asDiagonal() * TransformMatrix.adjoint();
-		make_self_adjoint(rho);
-	}
-}
-
-/// @details For classical position Liouville superoperator,
-///
-/// \f{eqnarray*}{
-/// &&-\mathrm{i}\hat{\mathcal{L}}^R\hat{\rho}_W=-\vec{v}\frac{\partial\hat{\rho}_W}{\partial\vec{R}} \\
-/// \Rightarrow&&\mathrm{e}^{-\mathrm{i}\hat{\mathcal{L}}^R\mathrm{d}t}\hat{\rho}_W(\vec{R},\vec{P})
-/// =\hat{\rho}_W(\vec{R}+\vec{v}\mathrm{d}t,\vec{P})
-/// \f}
-///
-/// therefore, simple evolve the position following the Newton rule.
-/// In other words, for each direction i, xi_new = xi_old + pi/mi*dt.
-///
-/// This function will not change the number of selected phase points and their PWTDMs.
-///
-/// Besides, under Trotter expansion, if this superoperator will be done n times,
-/// the dt in the parameter list will be global dt over n.
-void classical_position_liouville(EvolvingDensity& density, const ClassicalDoubleVector& mass, const double dt)
-{
-	for (int i = 0; i < density.size(); i++)
-	{
-		// alias names; do not need PWTDM
-		ClassicalDoubleVector& x = std::get<0>(density[i]);
-		const ClassicalDoubleVector& p = std::get<1>(density[i]);
-		x = x.array() + dt * p.array() / mass.array();
-	}
-}
-
-/// @brief Doing the basis transformation for the whole selected PWTDMs
-/// @param[inout] density The selected phase points with their PWTDMs
-/// @param[in] idx_from The index indicating the representation rho in
-/// @param[in] idx_to The index indicating the representation the return value in
-/// @details The indices (to and from) are in the range [0, Dim]. [0, Dim) indicates
-/// it is one of the force basis, and idx == Dim indicates adiabatic basis.
-static void whole_density_basis_transformation(
-	EvolvingDensity& density,
-	const int idx_from,
-	const int idx_to)
-{
-	for (int i = 0; i < density.size(); i++)
-	{
-		const ClassicalDoubleVector& x = std::get<0>(density[i]);
-		QuantumComplexMatrix& rho = std::get<2>(density[i]);
-		rho = basis_transform(rho, x, idx_from, idx_to);
-	}
-}
-
-/// @brief To do the classical momentum Liouville evolution on one direction on one PWTDM
-/// @param[in] psp A phase space point with its PWTDM
-/// @param[in] idx_force The index of the force direction
-/// @param[in] dt The time-step each PWTDM will evolve
-/// @return A vector of phase space points with their PWTDMs which is evolved from the input phase space point
-/// @details This function will separate the PWTDM into at most \f$ \frac{N(N+1)}{2} \f$ ones, where \f$ N \f$
-/// is the number of PES. For each element, the momentum will change \f$ \frac{f_a+f_b}{2}\mathrm{d}t \f$,
-/// where the indices is the index of the element in PWTDM. If some of the elements have the same force,
-/// they will be combined to evolve.
-EvolvingDensity evolve_one_force_on_one_density(
-	const PhaseSpacePoint& psp,
-	const int idx_force,
+/// @brief To evolve the position
+/// @param[in] x Position of classical degree of freedom
+/// @param[in] p Momentum of classical degree of freedom
+/// @param[in] mass Mass of classical degree of freedom
+/// @param[in] dt The time interval of evolution
+/// @return All branches of momentum vectors
+/// @details \f$ x_{i,j} = x_i - \frac{p_{i,j}}{m} dt \f$
+static ClassicalVectors position_evolve(
+	const ClassicalVectors& x,
+	const ClassicalVectors& p,
+	const ClassicalDoubleVector& mass,
 	const double dt)
 {
-	EvolvingDensity result;
-	// alias names
-	const auto& [x, p, rho] = psp;
-	// get eigen forces
-	const QuantumDoubleVector& force = force_basis_force(x, idx_force);
-	// prepare for evolve
-	ClassicalDoubleVector p_new;
-	QuantumComplexMatrix rho_new(NumPES, NumPES);
-	std::map<double, int> used_forces; // for saving forces that have been used with the index when it was used
-	// loop over all lower-triangular elements, in this order: (0,0)->(1,0)->(2,0)->(1,1)->(3,0)->(2,1)->...
-	// first index begin from min(sum, size-1), i.e., on left edge or bottom edge
-	for (int sum = 0; sum <= 2 * (NumPES - 1); sum++)
+	assert(p.size() % x.size() == 0);
+	const int NumBranch = p.size() / x.size();
+	ClassicalVectors result;
+	for (int i = 0; i < x.size(); i++)
 	{
-		for (int i = std::min(sum, NumPES - 1), j = sum - i; i >= j; i--, j++)
+		for (int j = 0; j < NumBranch; j++)
 		{
-			const double f = (force[i] + force[j]) / 2.0;
-			[[maybe_unused]] const auto& [iterator, insert_success] = used_forces.insert(std::make_pair(f, result.size()));
-			if (insert_success == true)
+			result.push_back(x[i].array() - p[i * NumBranch + j].array() / mass.array() * dt);
+		}
+	}
+	return result;
+}
+
+/// @brief To get the diagonal forces under adiabatic basis at given position
+/// @param[in] x Position of classical degree of freedom
+/// @return Bunches of force vectors corresponding to diagonal elements of force matrices of the whole force tensor
+static ClassicalVectors adiabatic_diagonal_forces(const ClassicalDoubleVector& x)
+{
+	const Tensor3d& force = adiabatic_force(x);
+	ClassicalVectors result;
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		result.push_back(tensor_slice(force, iPES, iPES));
+	}
+	return result;
+}
+
+/// @brief To evolve the momentum under the adiabatic diagonal forces
+/// @param[in] x Position of classical degree of freedom
+/// @param[in] p Momentum of classical degree of freedom
+/// @param[in] dt The time interval of evolution
+/// @return All branches of momentum vectors
+/// @details \f$ p_{i,j} = p_i - f_j(x_i) dt \f$, where \f$ f_j = \frac{f_{aa}+f_{bb}}{2} \f$
+static ClassicalVectors momentum_diagonal_evolve(const ClassicalVectors& x, const ClassicalVectors& p, const double dt)
+{
+	assert(x.size() == p.size());
+	ClassicalVectors result;
+	for (int i = 0; i < x.size(); i++)
+	{
+		const ClassicalVectors f = adiabatic_diagonal_forces(x[i]);
+		for (int iPES = 0; iPES < NumPES; iPES++)
+		{
+			for (int jPES = 0; jPES <= iPES; jPES++)
 			{
-				// successfully insert, meaning there is no such force
-				// so the momentum needs evolved, PWTDM not
-				p_new = p;
-				p_new[idx_force] += f * dt;
-				rho_new = QuantumComplexMatrix::Zero(NumPES, NumPES);
-				rho_new(i, j) = rho(i, j);
-				result.push_back(std::make_tuple(x, p_new, rho_new.selfadjointView<Eigen::Lower>()));
-			}
-			else
-			{
-				// unsuccessfully insert, meaning such force exists
-				// so used the already calculated momentum, and update PWTDM
-				const int idx = iterator->second;
-				rho_new = std::get<2>(result[idx]);
-				rho_new(i, j) = rho(i, j);
-				std::get<2>(result[idx]) = rho_new.selfadjointView<Eigen::Lower>();
+				result.push_back(p[i] - (f[iPES] + f[jPES]) / 2.0 * dt);
 			}
 		}
 	}
 	return result;
 }
 
-/// @brief To recursively calculate the momentum splitting of each component, and evolve on one direction
-/// @param[inout] density The selected phase points with their PWTDMs, generally each point will generate more tha one new PWTDMs
-/// @param[in] direction The direction of momentum
-/// @param[in] dt The time-step this superoperator will evolve
-/// @details This function do trotter expansion on all components of momentum.
-/// For example, if there are 3 directions, this functions leads to the order of 3(1/4) 2(1/2) 3(1/4) 1(1) 3(1/4) 2(1/2) 3(1/4)
-/// The value in parentheses is the time interval for that calling.
-void trotter_expansion_for_classical_momentum_liouville_splitting(EvolvingDensity& density, const int direction, const Optimization& optimizer, const double dt)
+/// @brief To calculate sin and cos of \f$ dt(\omega(x_0)+2\omega(x_1)+\omega(x_2))/4 \f$, where \f$ \omega(x) = (E_0(x)-E_1(x))/\hbar \f$
+/// @param[in] x0 First position
+/// @param[in] x1 Second position
+/// @param[in] x2 Third position
+/// @param[in] dt Time interval
+/// @return sin and cos \f$ dt(\omega(x_0)+2\omega(x_1)+\omega(x_2))/4 \f$
+static inline Eigen::Vector2d omega0_of_2_level(
+	const ClassicalDoubleVector& x0,
+	const ClassicalDoubleVector& x1,
+	const ClassicalDoubleVector& x2,
+	const double dt)
 {
-	if (direction != Dim - 1)
-	{
-		// boundary condition for recursion
-		trotter_expansion_for_classical_momentum_liouville_splitting(density, direction + 1, optimizer, dt / 2.0);
-	}
-	// regarding that basis transformation needs adiabatic basis as intermediate, such transformation does not increase much computation
-	whole_density_basis_transformation(density, Representation::Adiabatic, direction);
-	const int InitialSize = density.size(); // there will be extra PWTDMs, so need save original size
-	for (int i = 0; i < InitialSize; i++)
-	{
-		const EvolvingDensity& EvolvedVector = evolve_one_force_on_one_density(density[i], direction, dt);
-		// the return vector should have at least one element (from the original PWTDM)
-		// so update original place with the first element, and insert other at the end
-		density[i] = EvolvedVector[0];
-		density.insert(density.cend(), EvolvedVector.cbegin() + 1, EvolvedVector.cend());
-	}
-	whole_density_basis_transformation(density, direction, Representation::Adiabatic);
-	if (direction != Dim - 1)
-	{
-		// boundary condition for recursion
-		trotter_expansion_for_classical_momentum_liouville_splitting(density, direction + 1, optimizer, dt / 2.0);
-	}
+	const QuantumDoubleVector E0 = adiabatic_potential(x0), E1 = adiabatic_potential(x1), E2 = adiabatic_potential(x2);
+	const double omega = dt * (E0[0] - E0[1] + 2.0 * (E1[0] - E1[1]) + E2[0] - E2[1]) / 4.0 / hbar;
+	Eigen::Vector2d result;
+	result << std::sin(omega), std::cos(omega);
+	return result;
 }
 
-/// @details For classical momentum Liouville superoperator,
-///
-/// \f[
-/// -\mathrm{i}\hat{\mathcal{L}}^P\hat{\rho}_W
-/// =-\frac{1}{2}\left(\hat{\vec{F}}_W\cdot\frac{\partial\hat{\rho}_W}{\partial\vec{P}}
-/// +\frac{\partial\hat{\rho}_W}{\partial\vec{P}}\cdot\hat{\vec{F}}_W\right)
-///	\f]
-///
-/// If the PWTDM is in force basis (where one of the component of \f$ \hat{\vec{F}}_W \f$
-/// is diagonal, or \f$\hat{F}_W^i\f$ is diagonal), then the superoperator evolution would be
-///
-/// \f[
-/// \mathrm{e}^{-\mathrm{i}\hat{\mathcal{L}}^P_i\mathrm{d}t}\hat{\rho}_W(\vec{R},\vec{P})
-/// =\sum_{a,b}{\hat{\rho}_W^{ab}(\vec{R},
-/// P_0,\dots,P_i+\frac{\mathrm{d}t}{2}(f_a+f_b),\dots,P_{N-1}}
-/// \f]
-///
-/// where \f$ f_a=(\hat{F}_W^i)_{aa} \f$ is the a-th eigenvalue of the i-th direction force.
-///
-/// If the force on each direction are non-commutative (except some special model this is
-/// generally true), the Trotter expansion is used in this function as well for each force.
-///
-/// As the summation indicates, this function will increase the number of PWTDMs. However,
-/// if the sum (or average) of 2 eigenvalues equals to another 2, or \f$ f_a+f_b=f_c+f_d \f$,
-/// where \f$ \{a,b\}\neq\{c,d\} \f$, the PWTDM will be combined.
-///
-/// Besides, under the global Trotter expansion, if this superoperator will be done n times,
-/// the dt in the parameter list will be global dt over n.
-void classical_momentum_liouville(EvolvingDensity& density, const Optimization& optimizer, const double dt)
+/// @brief To calculate sin and cos of \f$ \frac{\vec{P}\cdot\vec{d}_{01}}{M}dt \f$
+/// @param[in] x Position of classical degree of freedom
+/// @param[in] p Momentum of classical degree of freedom
+/// @param[in] mass Mass of classical degree of freedom
+/// @param[in] dt Time interval
+/// @return sin and cos \f$ \frac{\vec{P}\cdot\vec{d}_{01}}{M}dt \f$ for each input (x,p) pairs
+static inline Eigen::MatrixXd phi_of_2_level(
+	const ClassicalVectors& x,
+	const ClassicalVectors& p,
+	const ClassicalDoubleVector& mass,
+	const double dt)
 {
-	trotter_expansion_for_classical_momentum_liouville_splitting(density, 0, optimizer, dt);
+	assert(p.size() % x.size() == 0);
+	const int NumBranch = p.size() / x.size();
+	Eigen::MatrixXd result(p.size(), 2);
+	for (int i = 0; i < x.size(); i++)
+	{
+		const ClassicalDoubleVector& d01 = tensor_slice(adiabatic_coupling(x[i]), 0, 1);
+		for (int j = 0; j < NumBranch; j++)
+		{
+			const int Index = i * NumBranch + j;
+			const double phi = dt * (p[Index].array() / mass.array()).matrix().dot(d01);
+			result.row(Index) << std::sin(phi), std::cos(phi);
+		}
+	}
+	return result;
+}
+
+/// @brief To calculate the element of 2-level system
+/// @param[in] phi sin and cos of \f$ dt\phi_{\pm} \f$
+/// @param[in] omega1 sin and cos of \f$ dt\omega_{1,\pm}/2 \f$
+/// @param[in] rho The predicted density matrix element
+/// @param[in] Coe_1 \f$ c_{-1} \f$
+/// @param[in] Coe0 \f$ c_0 \f$
+/// @param[in] Coe1 \f$ c_1 \f$
+/// @return The element
+/// @details The element is given by
+///
+/// \f{eqnarray*}{
+/// &&c_{-1}((1+\sin\phi_-)\rho_{00}+2\cos\phi_-\cos\omega_{1,-}\rho_{01}-2\cos\phi_-\sin\omega_{1,-}\rho_{10}+(1-\sin\phi_-)\rho_{11}) \\
+/// +&&c_0(\cos\phi\rho_{00}-2\sin\phi\cos\omega_1\rho_{01}+2\sin\phi\sin\omega_1\rho_{10}-\cos\phi\rho_{11}) \\
+/// +&&c_1((\sin\phi_+-1)\rho_{00}+2\cos\phi_+\cos\omega_{1,+}\rho_{01}-2\cos\phi_+\sin\omega_{1,+}\rho_{10}-(\sin\phi_++1)\rho_{11})
+/// \f}
+///
+/// where \f$ \rho_{01}=\Re\rho_{10} \f$ and \f$ \rho_{10}=\Im\rho_{10} \f$.
+static inline double calculate_2_level_element(
+	const Eigen::MatrixXd& phi,
+	const Eigen::MatrixXd& omega1,
+	const Eigen::MatrixXd& rho,
+	const double Coe_1,
+	const double Coe0,
+	const double Coe1)
+{
+	return Coe_1 * ((1.0 + phi(0, 0)) * rho(0, 0) + 2.0 * phi(0, 1) * omega1(0, 1) * rho(0, 1) - 2.0 * phi(0, 1) * omega1(0, 0) * rho(0, 2) + (1.0 - phi(0, 0)) * rho(0, 3))
+		+ Coe0 * (phi(1, 1) * rho(1, 0) - 2.0 * phi(1, 0) * omega1(1, 1) * rho(1, 1) + 2.0 * phi(1, 0) * omega1(1, 0) * rho(1, 2) - phi(1, 1) * rho(1, 3))
+		+ Coe1 * ((phi(2, 0) - 1.0) * rho(2, 0) + 2.0 * phi(2, 1) * omega1(2, 1) * rho(2, 1) - 2.0 * phi(2, 1) * omega1(2, 0) * rho(2, 2) - (phi(2, 0) + 1.0) * rho(2, 3));
+}
+
+QuantumComplexMatrix evolve_predict(
+	const ClassicalDoubleVector& x,
+	const ClassicalDoubleVector& p,
+	const ClassicalDoubleVector& mass,
+	const double dt,
+	const QuantumBoolMatrix IsSmall,
+	const Optimization& optimizer)
+{
+	using namespace std::literals::complex_literals;
+	const double dt_2 = dt / 2.0, dt_4 = dt / 4.0;
+	QuantumComplexMatrix result;
+	if (NumPES == 2)
+	{
+		// 2-level system
+		// x_i and p_{i-1} have same number of elements, and p_i is branching
+		if (is_coupling(x, p, mass) == true)
+		{
+			// 17 steps
+			const ClassicalDoubleVector x1 = x.array() - p.array() / mass.array() * dt_4;
+			// index: {00, 10, 11}
+			const ClassicalVectors p1 = momentum_diagonal_evolve({ x1 }, { p }, dt_2);
+			const ClassicalVectors x2 = position_evolve({ x1 }, p1, mass, dt_4);
+			// index: {00, 10, 11}, {-1, 0, 1}
+			const ClassicalVectors p2 = [](const ClassicalVectors& x, const ClassicalVectors& p, const double dt) -> ClassicalVectors
+			{
+				ClassicalVectors result;
+				for (int i = 0; i < x.size(); i++)
+				{
+					const ClassicalDoubleVector f_01 = tensor_slice(adiabatic_force(x[i]), 0, 1);
+					result.push_back(p[i] - f_01 * dt);
+					result.push_back(p[i]);
+					result.push_back(p[i] + f_01 * dt);
+				}
+				return result;
+			}(x2, p1, dt);
+			const ClassicalVectors x3 = position_evolve(x2, p2, mass, dt_4);
+			// index: {00, 10, 11}, {-1, 0, 1}, {00, 10, 11}
+			const ClassicalVectors p3 = momentum_diagonal_evolve(x3, p2, dt_2);
+			const ClassicalVectors x4 = position_evolve(x3, p3, mass, dt_4);
+			// prepare: evolved elements, phi, omega0, omega1
+			const Eigen::MatrixXd rho_predict = [](
+				const ClassicalVectors& x4,
+				const ClassicalVectors& p3,
+				const QuantumBoolMatrix& IsSmall,
+				const Optimization& optimizer) -> Eigen::MatrixXd
+			{
+				const int NBranch = x4.size() / 3.0;
+				Eigen::MatrixXd result(NBranch, NumElements);
+				for (int iPES = 0; iPES < NumPES; iPES++)
+				{
+					for (int jPES = 0; jPES <= iPES; jPES++)
+					{
+						const int ElmIdx = iPES * NumPES + jPES;
+						result.col(ElmIdx) = optimizer.predict_elements(
+							IsSmall,
+							ClassicalVectors(x4.begin() + ElmIdx * NBranch, x4.begin() + (ElmIdx + 1) * NBranch),
+							ClassicalVectors(p3.begin() + ElmIdx * NBranch, p3.begin() + (ElmIdx + 1) * NBranch),
+							ElmIdx);
+						if (iPES != jPES)
+						{
+							const int SymElmIdx = jPES * NumPES + iPES;
+							result.col(SymElmIdx) = optimizer.predict_elements(
+								IsSmall,
+								ClassicalVectors(x4.begin() + ElmIdx * NBranch, x4.begin() + (ElmIdx + 1) * NBranch),
+								ClassicalVectors(p3.begin() + ElmIdx * NBranch, p3.begin() + (ElmIdx + 1) * NBranch),
+								SymElmIdx);
+						}
+					}
+				}
+				return result;
+			}(x4, p3, IsSmall, optimizer);
+			const Eigen::MatrixXd phi = phi_of_2_level(x2, p2, mass, dt);
+			const Eigen::Vector2d omega0 = omega0_of_2_level(x, x1, x2[1], dt_2);
+			const Eigen::MatrixXd omega1 = [](
+				const ClassicalVectors& x2,
+				const ClassicalVectors& x3,
+				const ClassicalVectors& x4,
+				const double dt) -> Eigen::MatrixXd
+			{
+				const int NumBranch1 = x3.size() / x2.size(), NumBranch2 = x4.size() / x3.size();
+				Eigen::MatrixXd result(x3.size(), 2);
+				for (int i = 0; i < x2.size(); i++)
+				{
+					for (int j = 0; j < NumBranch1; j++)
+					{
+						const int Index = i * NumBranch1 + j;
+						result.row(Index) = omega0_of_2_level(x2[i], x3[Index], x4[Index * NumBranch2 + 1], dt);
+					}
+				}
+				return result;
+			}(x2, x3, x4, dt_2);
+			// calculate
+			const int NBranch = 3;
+			result(0, 0) = calculate_2_level_element(
+				phi.block(0, 0, NBranch, phi.cols()),
+				omega1.block(0, 0, NBranch, omega1.cols()),
+				rho_predict.block(0, 0, NBranch, rho_predict.cols()),
+				(1.0 - phi(1, 0)) / 4.0,
+				phi(1, 1) / 2.0,
+				-(phi(1, 0) + 1.0) / 4.0);
+			result(1, 0) = calculate_2_level_element(
+				phi.block(NBranch, 0, NBranch, phi.cols()),
+				omega1.block(NBranch, 0, NBranch, omega1.cols()),
+				rho_predict.block(NBranch, 0, NBranch, rho_predict.cols()),
+				phi(1 + NBranch, 1) / 4.0,
+				phi(1 + NBranch, 0) / 2.0,
+				phi(1 + NBranch, 1) / 4.0) * (omega0[1] + 1.0i * omega0[0])
+				+ (omega1(1 + NBranch, 0) * rho_predict(1 + NBranch, 1) + omega1(1 + NBranch, 1) * rho_predict(1 + NBranch, 0)) * (-omega0[0] + 1.0i * omega0[1]);
+			result(1, 1) = calculate_2_level_element(
+				phi.block(2.0 * NBranch, 0, NBranch, phi.cols()),
+				omega1.block(2.0 * NBranch, 0, NBranch, omega1.cols()),
+				rho_predict.block(2.0 * NBranch, 0, NBranch, rho_predict.cols()),
+				(1.0 + phi(1 + 2.0 * NBranch, 0)) / 4.0,
+				phi(1 + 2.0 * NBranch, 1) / 2.0,
+				-(phi(1 + 2.0 * NBranch, 0) + 1.0) / 4.0);
+		}
+		else
+		{
+			// 7 steps
+			const ClassicalDoubleVector x1 = x.array() - p.array() / mass.array() * dt_2;
+			const ClassicalVectors p1 = momentum_diagonal_evolve({ x1 }, { p }, dt);
+			const ClassicalVectors x2 = position_evolve({ x1 }, p1, mass, dt_2);
+			const Eigen::Vector2d omega = omega0_of_2_level(x, x1, x2[1], dt);
+			const double re = optimizer.predict_element(IsSmall, x2[1], p1[1], 2), im = optimizer.predict_element(IsSmall, x2[1], p1[1], 1);
+			result(0, 0) = optimizer.predict_element(IsSmall, x2[0], p1[0], 0);
+			result(1, 0) = re * (omega[1] + 1.0i * omega[0]) + im * (-omega[0] + 1.0i * omega[1]);
+			result(1, 1) = optimizer.predict_element(IsSmall, x2[2], p1[2], 3);
+		}
+	}
+	else
+	{
+		const ClassicalBoolVector IsCoupling = is_coupling(x);
+	}
+	return result.selfadjointView<Eigen::Lower>();
 }

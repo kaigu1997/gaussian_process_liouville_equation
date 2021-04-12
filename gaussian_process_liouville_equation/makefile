@@ -1,7 +1,7 @@
 CXX := g++
 CXXFLAGS := -std=c++17 -Ofast -march=native -fopenmp
 LDFLAGS := -std=c++17 -Ofast -march=native -Wl,-fuse-ld=gold -fopenmp
-LDLIBS := -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -ltbb -lpthread -lnlopt -lshogun
+LDLIBS := -lshogun -lnlopt -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -ltbb -lpthread
 Objects := io.o pes.o mc.o evolve.o main.o
 PCH := stdafx.h.gch
 
@@ -31,7 +31,7 @@ clean:
 distclean: clean
 	\rm -rf -- *log *out* input *.png *.gif gp_test core.* *.txt
 
-CLANG_FORMAT := /home/j/jmschofi/kaigu/.vscode-server/extensions/ms-vscode.cpptools-1.1.3/LLVM/bin/clang-format
+CLANG_FORMAT := $(shell grep alias\ clang-format= ~/.bash_aliases | awk -F"'" '{print $$2}')
 .PHONY: format
 format:
 	for f in *.c* *.h*; \

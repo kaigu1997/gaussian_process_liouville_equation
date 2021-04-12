@@ -10,7 +10,7 @@
 /// The smart pointer to feature matrix
 using FeaturePointer = std::shared_ptr<shogun::Features>;
 /// The training set for gaussian process passed as parameter to the optimization function. First is feature, second is label, last is the kernels to use
-using TrainingSet = std::tuple<FeaturePointer, Eigen::VectorXd, KernelTypeList>;
+using TrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
 /// An array of Eigen matrices, used for the derivatives of the kernel matrix
 using MatrixVector = std::vector<Eigen::MatrixXd, Eigen::aligned_allocator<Eigen::MatrixXd>>;
 
@@ -41,7 +41,7 @@ QuantumBoolMatrix is_very_small(const EvolvingDensity& density)
 	// value below this are regarded as 0
 	static const double epsilon = 1e-2;
 	QuantumBoolMatrix result;
-	for (int iElement = 0; iElement < NumElement; iElement++)
+	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		result(iElement / NumPES, iElement % NumPES) = std::all_of(std::execution::par_unseq, density.begin(), density.end(), [=](const PhaseSpacePoint& psp) -> bool { return get_density_matrix_element(std::get<2>(psp), iElement) < epsilon; });
 	}
@@ -53,12 +53,11 @@ QuantumBoolMatrix is_very_small(const EvolvingDensity& density)
 /// @return The overall number of hyperparameters (including the magnitude of each kernel)
 static int number_of_overall_hyperparameters(const KernelTypeList& TypesOfKernels)
 {
-	const int size = TypesOfKernels.size();
 	int sum = 0;
-	for (int i = 0; i < size; i++)
+	for (shogun::EKernelType type : TypesOfKernels)
 	{
 		sum++; // weight
-		switch (TypesOfKernels[i])
+		switch (type)
 		{
 		case shogun::EKernelType::K_DIAG:
 			break; // no extra hyperparameter for diagonal kernel
@@ -76,19 +75,15 @@ static int number_of_overall_hyperparameters(const KernelTypeList& TypesOfKernel
 /// @brief Construct kernels from hyperparameters and their types, with features of training set
 /// @param[in] TypeOfKernel The vector containing type of all kernels that will be used
 /// @param[in] Hyperparameters The hyperparameters of all kernels (magnitude and other)
-/// @param[in] TrainingFeature The smart pointer to the training feature matrix
 /// @return A vector of all kernels, with parameters set, but without any feature
-static KernelList generate_kernels(
-	const KernelTypeList& TypesOfKernels,
-	const ParameterVector& Hyperparameters,
-	const FeaturePointer& TrainingFeature)
+static KernelList generate_kernels(const KernelTypeList& TypesOfKernels, const ParameterVector& Hyperparameters)
 {
-	const int NKernel = TypesOfKernels.size();
 	KernelList result;
-	for (int iKernel = 0, iParam = 0; iKernel < NKernel; iKernel++)
+	int iParam = 0;
+	for (shogun::EKernelType type : TypesOfKernels)
 	{
 		const double weight = Hyperparameters[iParam++];
-		switch (TypesOfKernels[iKernel])
+		switch (type)
 		{
 		case shogun::EKernelType::K_DIAG:
 			result.push_back(std::make_pair(weight, std::make_shared<shogun::DiagKernel>()));
@@ -108,7 +103,6 @@ static KernelList generate_kernels(
 		default:
 			break;
 		}
-		result.rbegin()->second->init(TrainingFeature, TrainingFeature);
 	}
 	return result;
 }
@@ -119,7 +113,7 @@ static KernelList generate_kernels(
 /// @param[inout] Kernels The vector containing all kernels that will be used, with parameters set and features not set
 /// @param[in] IsTraining Whether the features are all training set or not
 /// @return The kernel matrix
-/// @details This function calculates the kernel matrix with noise using the shogun library,
+/// @details This function calculates the kernel matrix with noise using the SHOGUN library,
 ///
 /// \f[
 /// k(\mathbf{x}_1,\mathbf{x}_2)=\sigma_f^2\mathrm{exp}\left(-\frac{(\mathbf{x}_1-\mathbf{x}_2)^\top M (\mathbf{x}_1-\mathbf{x}_2)}{2}\right)+\sigma_n^2\delta(\mathbf{x}_1-\mathbf{x}_2)
@@ -132,17 +126,17 @@ static KernelList generate_kernels(
 ///
 /// When there are more than one feature, the kernel matrix follows \f$ K_{ij}=k(X_{1_{\cdot i}}, X_{2_{\cdot j}}) \f$.
 static Eigen::MatrixXd get_kernel_matrix(
+	const Eigen::MatrixXd& LeftFeature,
+	const Eigen::MatrixXd& RightFeature,
 	KernelList& Kernels,
-	const bool IsTraining = true,
-	const FeaturePointer& LeftFeature = nullptr)
+	const bool IsTraining = false)
 {
-	const int NKernel = Kernels.size();
-	const FeaturePointer RightFeature = Kernels[0].second->get_rhs();
-	Eigen::MatrixXd result = Eigen::MatrixXd::Zero(LeftFeature == nullptr? RightFeature->get_num_vectors() : LeftFeature->get_num_vectors(), RightFeature->get_num_vectors());
-	for (int i = 0; i < NKernel; i++)
+	assert(LeftFeature.rows() == PhaseDim && RightFeature.rows() == PhaseDim);
+	std::shared_ptr<shogun::DenseFeatures<double>> left_feature = std::make_shared<shogun::DenseFeatures<double>>(const_cast<Eigen::MatrixXd&>(LeftFeature));
+	std::shared_ptr<shogun::DenseFeatures<double>> right_feature = std::make_shared<shogun::DenseFeatures<double>>(const_cast<Eigen::MatrixXd&>(RightFeature));
+	Eigen::MatrixXd result = Eigen::MatrixXd::Zero(LeftFeature.cols(), RightFeature.cols());
+	for (auto& [weight, kernel_ptr] : Kernels)
 	{
-		const double weight = Kernels[i].first;
-		std::shared_ptr<shogun::Kernel>& kernel_ptr = Kernels[i].second;
 		if (IsTraining == false && kernel_ptr->get_kernel_type() == shogun::EKernelType::K_DIAG)
 		{
 			// in case when it is not training feature, the diagonal kernel (working as noise) is not needed
@@ -150,11 +144,7 @@ static Eigen::MatrixXd get_kernel_matrix(
 		}
 		else
 		{
-			if (LeftFeature != nullptr)
-			{
-				// Left != Right, set the features
-				kernel_ptr->init(LeftFeature, RightFeature);
-			}
+			kernel_ptr->init(left_feature, right_feature);
 			result += weight * weight * Eigen::Map<Eigen::MatrixXd>(kernel_ptr->get_kernel_matrix());
 		}
 	}
@@ -173,12 +163,9 @@ static Eigen::MatrixXd get_kernel_matrix(
 static MatrixVector kernel_derivative_over_hyperparameters(KernelList& Kernels)
 {
 	// construct the feature
-	const int NKernel = Kernels.size();
 	MatrixVector result;
-	for (int i = 0; i < NKernel; i++)
+	for (auto& [weight, kernel_ptr] : Kernels)
 	{
-		const double weight = Kernels[i].first;
-		std::shared_ptr<shogun::Kernel>& kernel_ptr = Kernels[i].second;
 		switch (kernel_ptr->get_kernel_type())
 		{
 		case shogun::EKernelType::K_DIAG:
@@ -215,14 +202,14 @@ static double negative_log_marginal_likelihood(const ParameterVector& x, Paramet
 {
 	// get the parameters
 	const auto& [TrainingFeature, TrainingLabel, TypesOfKernels] = *static_cast<TrainingSet*>(params);
-	KernelList Kernels = generate_kernels(TypesOfKernels, x, TrainingFeature);
+	KernelList Kernels = generate_kernels(TypesOfKernels, x);
 	// get kernel and the derivatives of kernel over hyperparameters
-	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(Kernels);
+	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, Kernels, true);
 	// calculate
 	Eigen::LLT<Eigen::MatrixXd> DecompOfKernel(KernelMatrix);
 	const Eigen::MatrixXd& L = DecompOfKernel.matrixL();
-	const Eigen::MatrixXd& KInv = DecompOfKernel.solve(Eigen::MatrixXd::Identity(TrainingFeature->get_num_vectors(), TrainingFeature->get_num_vectors())); // inverse of kernel
-	const Eigen::VectorXd& KInvLbl = DecompOfKernel.solve(TrainingLabel);																				   // K^{-1}*y
+	const Eigen::MatrixXd& KInv = DecompOfKernel.solve(Eigen::MatrixXd::Identity(TrainingFeature.cols(), TrainingFeature.cols())); // inverse of kernel
+	const Eigen::VectorXd& KInvLbl = DecompOfKernel.solve(TrainingLabel);														   // K^{-1}*y
 	const double result = (TrainingLabel.adjoint() * KInvLbl).value() / 2.0 + L.diagonal().array().abs().log().sum();
 	if (grad.empty() == false)
 	{
@@ -260,9 +247,10 @@ Optimization::Optimization(
 	const ClassicalDoubleVector pSize = params.get_pmax() - params.get_pmin();
 	const ClassicalDoubleVector& xSigma = params.get_sigma_x0();
 	const ClassicalDoubleVector& pSigma = params.get_sigma_p0();
-	for (int iKernel = 0, iParam = 0; iKernel < KernelTypes.size(); iKernel++)
+	int iParam = 0;
+	for (shogun::EKernelType type : KernelTypes)
 	{
-		switch (KernelTypes[iKernel])
+		switch (type)
 		{
 		case shogun::EKernelType::K_DIAG:
 			LowerBound[iParam] = DiagMagMin;
@@ -295,12 +283,12 @@ Optimization::Optimization(
 		}
 	}
 	// set up other hyperparameters
-	for (int iElement = 1; iElement < NumElement; iElement++)
+	for (int iElement = 1; iElement < NumElements; iElement++)
 	{
 		Hyperparameters[iElement] = Hyperparameters[0];
 	}
 	// set up minimizers
-	for (int iElement = 0; iElement < NumElement; iElement++)
+	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		NLOptMinimizers.push_back(nlopt::opt(NonGradAlgo, NumHyperparameters));
 		NLOptMinimizers.rbegin()->set_lower_bounds(LowerBound);
@@ -325,27 +313,29 @@ double Optimization::optimize(const EvolvingDensity& density, const QuantumBoolM
 	double sum_marg_ll = 0.0;
 	// get a copy for sort
 	EvolvingDensity density_copy = density;
-	for (int iElement = 0; iElement < NumElement; iElement++)
+	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		// first, check if all points are very small or not
 		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
 		{
 			// select points for optimization
-			std::sort(std::execution::par_unseq, density_copy.begin(), density_copy.end(), [&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_func(get_density_matrix_element(std::get<2>(psp1), iElement)) > weight_func(get_density_matrix_element(std::get<2>(psp2), iElement)); });
+			std::sort(
+				std::execution::par_unseq,
+				density_copy.begin(),
+				density_copy.end(),
+				[&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_func(get_density_matrix_element(std::get<2>(psp1), iElement)) > weight_func(get_density_matrix_element(std::get<2>(psp2), iElement)); });
 			// reconstruct training feature (PhaseDim*N) and training labels (N*1)
-			const int NPoint = density.size() > NumPoint ? NumPoint : density.size();
-			Eigen::MatrixXd feature(PhaseDim, NPoint);
-			Eigen::VectorXd label(NPoint);
-			for (int iPoint = 0; iPoint < NPoint; iPoint++)
+			Eigen::MatrixXd feature(PhaseDim, NumPoint);
+			Eigen::VectorXd label(NumPoint);
+			for (int iPoint = 0; iPoint < NumPoint; iPoint++)
 			{
 				const auto& [x, p, rho] = density_copy[iPoint];
 				label[iPoint] = get_density_matrix_element(rho, iElement);
 				feature.col(iPoint) << x, p;
 			}
-			TrainingSet ts = std::make_tuple(std::make_shared<shogun::DenseFeatures<double>>(feature), label, TypesOfKernels);
+			TrainingSet ts = std::make_tuple(feature, label, TypesOfKernels);
 			NLOptMinimizers[2 * iElement + 0].set_min_objective(minimizing_function, &ts);
 			NLOptMinimizers[2 * iElement + 1].set_min_objective(minimizing_function, &ts);
-			std::cout << 2 << '.' << iElement << std::endl;
 			// set variable for saving hyperparameters and function value (marginal likelihood)
 			double marg_ll = 0.0;
 			try
@@ -365,8 +355,9 @@ double Optimization::optimize(const EvolvingDensity& density, const QuantumBoolM
 			// add up
 			sum_marg_ll += marg_ll;
 			// set up kernels
-			Kernels[iElement] = generate_kernels(TypesOfKernels, Hyperparameters[iElement], std::make_shared<shogun::DenseFeatures<double>>(feature));
-			KInvLbls[iElement] = get_kernel_matrix(Kernels[iElement]).llt().solve(label);
+			Kernels[iElement] = generate_kernels(TypesOfKernels, Hyperparameters[iElement]);
+			KInvLbls[iElement] = get_kernel_matrix(feature, feature, Kernels[iElement], true).llt().solve(label);
+			TrainingFeatures[iElement] = feature;
 		}
 	}
 	return sum_marg_ll;
@@ -381,42 +372,62 @@ double Optimization::optimize(const EvolvingDensity& density, const QuantumBoolM
 /// where \f$ X_* \f$ is the test features, \f$ X \f$ is the training features, and  \f$ \mathbf{y} \f$ is the training labels.
 ///
 /// Warning: must call optimize() first before callings of this function!
-QuantumComplexMatrix Optimization::predict(
-		const QuantumBoolMatrix& IsSmall,
-		const ClassicalDoubleVector& x,
-		const ClassicalDoubleVector& p) const
+double Optimization::predict_element(
+	const QuantumBoolMatrix& IsSmall,
+	const ClassicalDoubleVector& x,
+	const ClassicalDoubleVector& p,
+	const int ElementIndex) const
 {
-	using namespace std::literals::complex_literals;
-	QuantumComplexMatrix result = QuantumComplexMatrix::Zero();
-	for (int iElement = 0; iElement < NumElement; iElement++)
+	if (IsSmall(ElementIndex / NumPES, ElementIndex % NumPES) == false)
 	{
-		const int iPES = iElement / NumPES, jPES = iElement % NumPES;
-		if (IsSmall(iPES, jPES) == false)
-		{
-			// not small, have something to do
-			// generate feature
-			Eigen::MatrixXd test_feat(PhaseDim, 1);
-			test_feat << x, p;
-			// predict
-			const double val = (get_kernel_matrix(Kernels[iElement], false, std::make_shared<shogun::DenseFeatures<double>>(test_feat)) * KInvLbls[iElement]).value();
-			if (iPES <= jPES)
-			{
-				// add to real part of lower matrix
-				result(jPES, iPES) += val;
-			}
-			else
-			{
-				// add to imag part of lower matrix
-				result(iPES, jPES) += 1.0i * val;
-			}
-		}
+		// not small, have something to do
+		// generate feature
+		Eigen::MatrixXd test_feat(PhaseDim, 1);
+		test_feat << x, p;
+		// predict
+		return (get_kernel_matrix(test_feat, TrainingFeatures[ElementIndex], Kernels[ElementIndex]) * KInvLbls[ElementIndex]).value();
 	}
-	return result.selfadjointView<Eigen::Lower>();
+	else
+	{
+		return 0;
+	}
+}
+Eigen::VectorXd Optimization::predict_elements(
+	const QuantumBoolMatrix& IsSmall,
+	const ClassicalVectors& x,
+	const ClassicalVectors& p,
+	const int ElementIndex) const
+{
+	assert(x.size() == p.size());
+	const int NPoint = x.size();
+	if (IsSmall(ElementIndex / NumPES, ElementIndex % NumPES) == false)
+	{
+		// not small, have something to do
+		// generate feature
+		Eigen::MatrixXd test_feat(PhaseDim, NPoint);
+		for (int i = 0; i < NPoint; i++)
+		{
+			test_feat.col(i) << x[i], p[i];
+		}
+		// predict
+		return get_kernel_matrix(test_feat, TrainingFeatures[ElementIndex], Kernels[ElementIndex]) * KInvLbls[ElementIndex];
+	}
+	else
+	{
+		return Eigen::VectorXd::Zero(NPoint);
+	}
 }
 
-Eigen::MatrixXd Optimization::print_element(const Eigen::MatrixXd& PhaseGrids, const int ElementIndex) const
+Eigen::VectorXd Optimization::print_element(const QuantumBoolMatrix& IsSmall, const Eigen::MatrixXd& PhaseGrids, const int ElementIndex) const
 {
-	return (get_kernel_matrix(Kernels[ElementIndex], false, std::make_shared<shogun::DenseFeatures<double>>(const_cast<Eigen::MatrixXd&>(PhaseGrids))) * KInvLbls[ElementIndex]);
+	if (IsSmall(ElementIndex / NumPES, ElementIndex % NumPES) == false)
+	{
+		return get_kernel_matrix(PhaseGrids, TrainingFeatures[ElementIndex], Kernels[ElementIndex]) * KInvLbls[ElementIndex];
+	}
+	else
+	{
+		return Eigen::VectorXd::Zero(PhaseGrids.cols());
+	}
 }
 
 /// @details To calculate averages,
@@ -450,12 +461,12 @@ Averages Optimization::calculate_average(const ClassicalDoubleVector& mass, cons
 			// select the gaussian ARD kernel
 			if (kernel->get_kernel_type() == shogun::EKernelType::K_GAUSSIANARD)
 			{
-				const Eigen::Map<Eigen::MatrixXd>& Features = std::dynamic_pointer_cast<shogun::DenseFeatures<double>>(kernel->get_rhs())->get_feature_matrix(); // get feature matrix, PhaseDim-by-NPoint
+				const Eigen::MatrixXd& Features = TrainingFeatures[ElementIndex]; // get feature matrix, PhaseDim-by-NPoint
 				const int NPoint = Features.cols();
-				const ClassicalDoubleVector Characteristic = Eigen::Map<Eigen::MatrixXd>(std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel)->get_weights());
+				const Eigen::Matrix<double, PhaseDim, 1> Characteristic = Eigen::Map<Eigen::MatrixXd>(std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel)->get_weights());
 				const double GlobalWeight = std::pow(2.0 * Pi, Dim) * weight * weight / Characteristic.prod();
 				// population
-				ppl += GlobalWeight * Eigen::VectorXd::Ones(NPoint).dot(KInvLbl);
+				ppl += GlobalWeight * KInvLbl.sum();
 				// x and p
 				const auto& r = GlobalWeight * Features * KInvLbl;
 				x += r.block<Dim, 1>(0, 0);
@@ -555,9 +566,6 @@ QuantumComplexMatrix initial_distribution(
 	return result;
 }
 
-static std::mt19937 engine(std::chrono::system_clock::now().time_since_epoch().count()); ///< Random number generator, using merseen twister with seed from time
-
-static const int NOMC = 1000 * Dim * 2; ///< The number of monte carlo that will be done for each phase point selection
 
 /// @details Assuming that the distribution function containing all the required information. If
 /// it is a distribution from some parameters, those parameters should have already been
@@ -571,30 +579,47 @@ void monte_carlo_selection(
 	const QuantumBoolMatrix& IsSmall,
 	EvolvingDensity& density)
 {
+	static std::mt19937 engine(std::chrono::system_clock::now().time_since_epoch().count()); // Random number generator, using merseen twister with seed from time
+	static const int NOMC = 1000 * Dim * 2;													 // The number of monte carlo that will be done for each phase point selection
 	// TODO: mc techniques: begin from maximum of points, stepsize, number of MC steps
 	// alias names
 	const ClassicalDoubleVector& dxmax = params.get_dx();
 	const ClassicalDoubleVector& dpmax = params.get_dp();
+	const ClassicalDoubleVector& mass = params.get_mass();
+	const double dt = params.get_dt();
 	const int NumPoints = params.get_number_of_selected_points();
-	// get maximum
 	auto weight_func = [](const double x) -> double {
 		return x * x;
 	};
-	EvolvingDensity Maximums;
-	for (int iPES = 0, iElement = 0; iPES < NumPES; iPES++)
+	// get maximum, then evolve the points adiabatically
+	std::array<EvolvingDensity, NumElements> Maximums;
+	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		for (int jPES = 0; jPES < NumPES; jPES++)
+		const int iPES = iElement / NumPES, jPES = iElement % NumPES;
+		if (IsSmall(iPES, jPES) == false)
 		{
-			if (IsSmall(iPES, jPES) == false)
+			std::sort(
+				std::execution::par_unseq,
+				density.begin(),
+				density.end(),
+				[&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_func(get_density_matrix_element(std::get<2>(psp1), iElement)) > weight_func(get_density_matrix_element(std::get<2>(psp2), iElement)); });
+			for (int iPoint = 0; iPoint < NumPoints; iPoint++)
 			{
-				Maximums.push_back(*std::max_element(std::execution::par_unseq, density.begin(), density.end(), [&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_func(get_density_matrix_element(std::get<2>(psp1), iElement)) < weight_func(get_density_matrix_element(std::get<2>(psp2), iElement)); }));
+				auto [x, p, rho] = density[iPoint];
+				const Tensor3d f = adiabatic_force(x);
+				x = x.array() + p.array() / mass.array() * dt;
+				for (int iDim = 0; iDim < Dim; iDim++)
+				{
+					p[iDim] -= (f[iDim](iPES, iPES) + f[iDim](jPES, jPES)) / 2.0 * dt;
+				}
+				rho = distribution(x, p);
+				Maximums[iElement].push_back(std::make_tuple(x, p, rho));
 			}
-			iElement++;
 		}
 	}
 	density.clear();
 
-	// generate points; the number is from input
+	// moving random number generator and MC random number generator
 	std::vector<std::uniform_real_distribution<double>> x_displacement;
 	std::vector<std::uniform_real_distribution<double>> p_displacement;
 	for (int iDim = 0; iDim < Dim; iDim++)
@@ -604,52 +629,45 @@ void monte_carlo_selection(
 	}
 	std::uniform_real_distribution<double> mc_selection(0.0, 1.0); // for whether pick or not
 
-	for (int iPES = 0, iElement = 0; iPES < NumPES; iPES++)
+	// Monte Carlo selection
+	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		for (int jPES = 0; jPES < NumPES; jPES++)
+		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
 		{
-			if (IsSmall(iPES, jPES) == false)
+			// begin from an old point
+			for (auto& [x_old, p_old, rho_old] : Maximums[iElement])
 			{
-				const ClassicalDoubleVector& x0 = std::get<0>(Maximums[iElement]);
-				const ClassicalDoubleVector& p0 = std::get<1>(Maximums[iElement]);
-				for (int iPoint = 0; iPoint < NumPoints; iPoint++)
+				double weight_old = weight_func(get_density_matrix_element(rho_old, iElement));
+				// do MC
+				for (int iIter = 0; iIter < NOMC; iIter++)
 				{
-					// begin from a maximum
-					ClassicalDoubleVector x_old = x0, p_old = p0;
-					QuantumComplexMatrix rho_old = distribution(x_old, p_old);
-					double weight_old = weight_func(get_density_matrix_element(rho_old, iElement));
-					// do MC
-					for (int iIter = 0; iIter < NOMC; iIter++)
+					// calculate new weight there
+					ClassicalDoubleVector x_new = x_old, p_new = p_old;
+					for (int iDim = 0; iDim < Dim; iDim++)
 					{
-						// calculate new weight there
-						ClassicalDoubleVector x_new = x_old;
-						ClassicalDoubleVector p_new = p_old;
-						for (int iDim = 0; iDim < Dim; iDim++)
-						{
-							x_new[iDim] += x_displacement[iDim](engine);
-							p_new[iDim] += p_displacement[iDim](engine);
-						}
-						const QuantumComplexMatrix& rho_new = distribution(x_new, p_new);
-						const double weight_new = weight_func(get_density_matrix_element(rho_new, iElement));
-						if (weight_new < weight_old && weight_new / weight_old < mc_selection(engine))
-						{
-							// new weight is smaller, and the random number do not accept, reject
-							continue;
-						}
-						else
-						{
-							// otherwise, accept
-							x_old = x_new;
-							p_old = p_new;
-							rho_old = rho_new;
-							weight_old = weight_new;
-						}
+						x_new[iDim] += x_displacement[iDim](engine);
+						p_new[iDim] += p_displacement[iDim](engine);
 					}
-					// after MC, put the point into the selected density matrix
-					density.push_back(std::make_tuple(x_old, p_old, rho_old));
+					const QuantumComplexMatrix& rho_new = distribution(x_new, p_new);
+					const double weight_new = weight_func(get_density_matrix_element(rho_new, iElement));
+					if (weight_new < weight_old && weight_new / weight_old < mc_selection(engine))
+					{
+						// new weight is smaller, and the random number do not accept, reject
+						continue;
+					}
+					else
+					{
+						// otherwise, accept
+						x_old = x_new;
+						p_old = p_new;
+						rho_old = rho_new;
+						weight_old = weight_new;
+					}
 				}
+				// after MC, the new point is at the original place
 			}
-			iElement++;
+			// after all points updated, insert into the EvolvingDensity
+			density.insert(density.end(), Maximums[iElement].cbegin(), Maximums[iElement].cend());
 		}
 	}
 }

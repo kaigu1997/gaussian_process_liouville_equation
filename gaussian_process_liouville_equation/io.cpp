@@ -37,14 +37,21 @@ void read_param<ClassicalDoubleVector>(std::istream& is, ClassicalDoubleVector& 
 
 Parameters::Parameters(const std::string& input_file_name)
 {
+	// read input
 	std::ifstream in(input_file_name);
 	read_param(in, mass);
 	read_param(in, x0);
+	read_param(in, p0);
+	read_param(in, SigmaP0);
+	read_param(in, OutputTime);
+	read_param(in, ReoptimizationTime);
+	read_param(in, dt);
+	read_param(in, NumberOfSelectedPoints);
+	in.close();
+	// deal with input
 	xmax = x0.array().abs() * 2;
 	xmin = -xmax;
 	dx = xmax * 0.1; // dx = L/20
-	read_param(in, p0);
-	read_param(in, SigmaP0);
 	// in grid solution, dx = pi*hbar/(p0+3sigma_p), p in p0+pi*hbar/2/dx*[-1, 1]
 	// so pmax=3(p0+sigma_p)/2, pmin=(p0-3sigmap)/2, dp = Lp/20
 	pmax = (p0 + SigmaP0) * 1.5;
@@ -73,11 +80,6 @@ Parameters::Parameters(const std::string& input_file_name)
 		}
 		PhasePoints.col(iPoint) << xPoint, pPoint;
 	}
-	read_param(in, OutputTime);
-	read_param(in, ReselectTime);
-	read_param(in, dt);
-	read_param(in, NumberOfSelectedPoints);
-	in.close();
 }
 
 std::ostream& print_time(std::ostream& os)

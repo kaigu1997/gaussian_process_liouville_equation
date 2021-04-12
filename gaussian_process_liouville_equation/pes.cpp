@@ -105,7 +105,7 @@ static QuantumDoubleMatrix diabatic_to_adiabatic_matrix(const ClassicalDoubleVec
 	return solver.eigenvectors();
 }
 
-/// @see diabatic_to_adiabatic_matrix, diabatic_potential(), adiabatic_force()
+/// @see diabatic_to_adiabatic_matrix, diabatic_potential()
 /// @details Calculate from the diabatic potential by calculating the eigenvalues as the diagonal elements
 QuantumDoubleVector adiabatic_potential(const ClassicalDoubleVector& x)
 {
@@ -113,9 +113,9 @@ QuantumDoubleVector adiabatic_potential(const ClassicalDoubleVector& x)
 	return solver.eigenvalues();
 }
 
-/// @see diabatic_to_adiabatic_matrix(), diabatic_force(), adiabatic_potential(), adiabatic_coupling()
+/// @see diabatic_to_adiabatic_matrix(), diabatic_force()
 /// @details Calculate from diabatic force. On each direction, F(adia)=C^T*F(dia)^C, C the transformation matrix
-static Tensor3d adiabatic_force(const ClassicalDoubleVector& x)
+Tensor3d adiabatic_force(const ClassicalDoubleVector& x)
 {
 	Tensor3d AdiaForce;
 	const QuantumDoubleMatrix& TransformMatrix = diabatic_to_adiabatic_matrix(x);
@@ -127,8 +127,6 @@ static Tensor3d adiabatic_force(const ClassicalDoubleVector& x)
 	return AdiaForce;
 }
 
-
-/// @see adiabatic_force()
 /// @details Calculate the D matrix, whose element is d^alpha_{ij}=F^alpha_{ij}/(E_i-E_j), F^alpha the force on the alpha classical dimension, E the potential
 Tensor3d adiabatic_coupling(const ClassicalDoubleVector& x)
 {
@@ -150,8 +148,17 @@ Tensor3d adiabatic_coupling(const ClassicalDoubleVector& x)
 	return NAC;
 }
 
+ClassicalDoubleVector tensor_slice(const Tensor3d& tensor, const int row, const int col)
+{
+	ClassicalDoubleVector result;
+	for (int iDim = 0; iDim < Dim; iDim++)
+	{
+		result[iDim] = tensor[iDim](row, col);
+	}
+	return result;
+}
 
-// force basis
+// off-diagonal force basis
 /// @brief Transformation matrix from diabatic representation to force basis
 /// @param x Position of classical degree of freedom
 /// @paran idx The index of the classical dimension where the force matrix is diagonal

@@ -16,7 +16,7 @@ private:
 	ClassicalDoubleVector mass, x0, xmin, xmax, dx, p0, pmin, pmax, dp, SigmaX0, SigmaP0;
 	ClassicalIntVector xNumGrids, pNumGrids;
 	Eigen::MatrixXd PhasePoints;
-	double OutputTime, ReselectTime, dt;
+	double OutputTime, ReoptimizationTime, dt;
 	int NumberOfSelectedPoints;
 
 public:
@@ -125,9 +125,9 @@ public:
 
 	/// @brief To get re-selection frequency
 	/// @return Re-selection frequency, i.e. to re-select point by fitting current distribution every how many dt
-	int get_reselect_freq(void) const
+	int get_reoptimize_freq(void) const
 	{
-		return static_cast<int>(ReselectTime / dt);
+		return static_cast<int>(ReoptimizationTime / dt);
 	}
 
 	/// @brief To get output frequency
@@ -136,7 +136,7 @@ public:
 	/// there will be reselection at each output time
 	int get_output_freq(void) const
 	{
-		return static_cast<int>(OutputTime / ReselectTime) * static_cast<int>(ReselectTime / dt);
+		return static_cast<int>(OutputTime / ReoptimizationTime) * static_cast<int>(ReoptimizationTime / dt);
 	}
 
 	/// @brief To get dt
