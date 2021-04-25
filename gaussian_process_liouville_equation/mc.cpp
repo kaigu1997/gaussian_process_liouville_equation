@@ -9,8 +9,14 @@
 
 /// The smart pointer to feature matrix
 using FeaturePointer = std::shared_ptr<shogun::Features>;
-/// The training set for gaussian process passed as parameter to the optimization function. First is feature, second is label, last is the kernels to use
-using TrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
+/// The training and validation set for initial optimization
+/// passed as parameter to the optimization function.
+/// Training feature & label, validation feature & label, and kernels to use
+using MSETrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
+/// The training set for full hyperparameter optimization
+/// passed as parameter to the optimization function.
+/// First is feature, second is label, last is the kernels to use
+using FullMargllTrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
 /// An array of Eigen matrices, used for the derivatives of the kernel matrix
 using MatrixVector = std::vector<Eigen::MatrixXd, Eigen::aligned_allocator<Eigen::MatrixXd>>;
 
@@ -151,90 +157,51 @@ static Eigen::MatrixXd get_kernel_matrix(
 	return result;
 }
 
-/// @brief Calculate the derivative of kernel matrix over hyperparameters
-/// @param[inout] Kernels The vector containing all kernels that will be used, with parameters set and features not set
-/// @return A vector of matrices being the derivative of kernel matrix over hyperparameters, in the same order as Hyperparameters
-/// @details This function calculate the derivative of kernel matrix over each hyperparameter,
-/// and each gives a matrix,  so that the overall result is a vector of matrices.
-///
-/// For general kernels, the derivative over the square root of its weight gives
-/// the square root times the kernel without any weight. For special cases
-/// (like the Gaussian kernel) the derivative are calculated correspondingly.
-static MatrixVector kernel_derivative_over_hyperparameters(KernelList& Kernels)
+/// @brief The function for nlopt optimizer to minimize, return the MSE of validation set
+/// @param[in] x The input hyperparameters, need to calculate the function value and gradient at this point
+/// @param[out] grad The gradient at the given point. It will not be used
+/// @param[in] params Other parameters. Here it is combination of kernel types, training set and validation set
+/// @return The squared error of validation set
+static double mean_squared_error(const ParameterVector& x, ParameterVector& grad, void* params)
 {
-	// construct the feature
-	MatrixVector result;
-	for (auto& [weight, kernel_ptr] : Kernels)
-	{
-		switch (kernel_ptr->get_kernel_type())
-		{
-		case shogun::EKernelType::K_DIAG:
-		{
-			// calculate derivative over weight
-			result.push_back(weight * Eigen::Map<Eigen::MatrixXd>(kernel_ptr->get_kernel_matrix()));
-			break;
-		}
-		case shogun::EKernelType::K_GAUSSIANARD:
-		{
-			// calculate derivative over weight
-			result.push_back(weight * Eigen::Map<Eigen::MatrixXd>(kernel_ptr->get_kernel_matrix()));
-			// calculate derivative over the characteristic matrix elements
-			const Eigen::Map<Eigen::MatrixXd>& Characteristic = std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel_ptr)->get_weights();
-			for (int j = 0; j < PhaseDim; j++)
-			{
-				const Eigen::Map<Eigen::MatrixXd>& Deriv = kernel_ptr->get_parameter_gradient(std::make_pair("log_weights", std::make_shared<shogun::AnyParameter>()), j);
-				result.push_back(weight * weight / Characteristic(j, 0) * Deriv);
-			}
-			break;
-		}
-		default:
-			break;
-		}
-	}
-	return result;
+	// get parameters
+	const auto& [TrainingFeature, TrainingLabel, ValidationFeature, ValidationLabel, TypesOfKernels] = *static_cast<MSETrainingSet*>(params);
+	// get the kernel
+	KernelList Kernels = generate_kernels(TypesOfKernels, x);
+	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, Kernels, true);
+	// get prediction
+	const Eigen::VectorXd& PredictLabel = get_kernel_matrix(ValidationFeature, TrainingFeature, Kernels) * KernelMatrix.llt().solve(TrainingLabel);
+	// calculate MSE
+	return (PredictLabel - ValidationLabel).array().abs2().sum();
 }
 
 /// @brief The function for nlopt optimizer to minimize, return the negative log likelihood
 /// @param[in] x The input hyperparameters, need to calculate the function value and gradient at this point
-/// @param[out] grad The gradient at the given point. It needs calculation if it is not empty
+/// @param[out] grad The gradient at the given point. It will not be used
 /// @param[in] params Other parameters. Here it is combination of kernel types and selected training set
 static double negative_log_marginal_likelihood(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	// get the parameters
-	const auto& [TrainingFeature, TrainingLabel, TypesOfKernels] = *static_cast<TrainingSet*>(params);
+	const auto& [TrainingFeature, TrainingLabel, TypesOfKernels] = *static_cast<FullMargllTrainingSet*>(params);
+	// get kernel
 	KernelList Kernels = generate_kernels(TypesOfKernels, x);
-	// get kernel and the derivatives of kernel over hyperparameters
 	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, Kernels, true);
 	// calculate
 	Eigen::LLT<Eigen::MatrixXd> DecompOfKernel(KernelMatrix);
 	const Eigen::MatrixXd& L = DecompOfKernel.matrixL();
-	const Eigen::MatrixXd& KInv = DecompOfKernel.solve(Eigen::MatrixXd::Identity(TrainingFeature.cols(), TrainingFeature.cols())); // inverse of kernel
-	const Eigen::VectorXd& KInvLbl = DecompOfKernel.solve(TrainingLabel);														   // K^{-1}*y
-	const double result = (TrainingLabel.adjoint() * KInvLbl).value() / 2.0 + L.diagonal().array().abs().log().sum();
-	if (grad.empty() == false)
-	{
-		// need gradient information, calculated here
-		const MatrixVector& KernelDerivative = kernel_derivative_over_hyperparameters(Kernels);
-		for (int i = 0; i < x.size(); i++)
-		{
-			grad[i] = ((KInv - KInvLbl * KInvLbl.adjoint()) * KernelDerivative[i]).trace() / 2.0;
-		}
-	}
-	return result;
+	const Eigen::VectorXd& KInvLbl = DecompOfKernel.solve(TrainingLabel); // K^{-1}*y
+	return (TrainingLabel.adjoint() * KInvLbl).value() / 2.0 + L.diagonal().array().abs().log().sum();
 }
 
-const double Optimization::DiagMagMin = 1e-8;		  ///< Minimal value of the magnitude of the diagonal kernel
-const double Optimization::DiagMagMax = 1e-5;		  ///< Maximal value of the magnitude of the diagonal kernel
-const double Optimization::GaussMagMin = 1e-4;		  ///< Minimal value of the magintude of the gaussian kernel
-const double Optimization::GaussMagMax = 1.0;		  ///< Maximal value of the magnitude of the gaussian kernel
+const double Optimization::DiagMagMin = 1e-4;		  ///< Minimal value of the magnitude of the diagonal kernel
+const double Optimization::DiagMagMax = 1;			  ///< Maximal value of the magnitude of the diagonal kernel
 const double Optimization::AbsoluteTolerance = 1e-10; ///< Absolute tolerance of independent variable (x) in optimization
 const double Optimization::InitialStepSize = 0.5;	  ///< Initial step size in optimization
 
 Optimization::Optimization(
 	const Parameters& params,
 	const KernelTypeList& KernelTypes,
-	const nlopt::algorithm NonGradAlgo,
-	const nlopt::algorithm GradAlgo):
+	const nlopt::algorithm Algorithm):
 	TypesOfKernels(KernelTypes),
 	NumHyperparameters(number_of_overall_hyperparameters(KernelTypes)),
 	NumPoint(params.get_number_of_selected_points())
@@ -259,9 +226,9 @@ Optimization::Optimization(
 			iParam++;
 			break;
 		case shogun::EKernelType::K_GAUSSIANARD:
-			LowerBound[iParam] = GaussMagMin;
-			UpperBound[iParam] = GaussMagMax;
-			Hyperparameters[0][iParam] = GaussMagMax;
+			LowerBound[iParam] = std::numeric_limits<double>::min();
+			UpperBound[iParam] = std::numeric_limits<double>::max();
+			Hyperparameters[0][iParam] = 1.0;
 			iParam++;
 			// dealing with x
 			for (int iDim = 0; iDim < Dim; iDim++)
@@ -290,12 +257,7 @@ Optimization::Optimization(
 	// set up minimizers
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		NLOptMinimizers.push_back(nlopt::opt(NonGradAlgo, NumHyperparameters));
-		NLOptMinimizers.rbegin()->set_lower_bounds(LowerBound);
-		NLOptMinimizers.rbegin()->set_upper_bounds(UpperBound);
-		NLOptMinimizers.rbegin()->set_xtol_abs(AbsoluteTolerance);
-		NLOptMinimizers.rbegin()->set_initial_step(InitialStepSize);
-		NLOptMinimizers.push_back(nlopt::opt(GradAlgo, NumHyperparameters));
+		NLOptMinimizers.push_back(nlopt::opt(Algorithm, NumHyperparameters));
 		NLOptMinimizers.rbegin()->set_lower_bounds(LowerBound);
 		NLOptMinimizers.rbegin()->set_upper_bounds(UpperBound);
 		NLOptMinimizers.rbegin()->set_xtol_abs(AbsoluteTolerance);
@@ -303,8 +265,66 @@ Optimization::Optimization(
 	}
 }
 
+/// @details To reconstruct the given distribution using Gaussian process regression by optimizing weighted mean squared error
+double Optimization::initial_optimize(
+	const EvolvingDensity& density,
+	const Parameters& params,
+	const DistributionFunction& distribution,
+	const QuantumBoolMatrix& IsSmall)
+{
+	assert(density.size() == NumPoint && IsSmall.diagonal().any() == true);
+	const nlopt::vfunc minimizing_function = mean_squared_error;
+	// construct validation set
+	const ClassicalDoubleVector& x0 = params.get_x0(); // save initial positions
+	const ClassicalDoubleVector& p0 = params.get_p0(); // save initial momentum
+	EvolvingDensity validation_set;
+	for (int i = 0; i < NumPoint; i++)
+	{
+		validation_set.push_back(std::make_tuple(x0, p0, distribution(x0, p0))); // put the initial point into density
+	}
+	monte_carlo_selection(params, distribution, IsSmall, validation_set);
+	double mse = 0.0;
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		// only one of them is non-zero
+		if (IsSmall(iPES, iPES) == false)
+		{
+			const int ElementIndex = iPES * (NumPES + 1);
+			// construct training and validation set
+			Eigen::MatrixXd training_feature(PhaseDim, NumPoint), validation_feature(PhaseDim, NumPoint);
+			Eigen::VectorXd training_label(NumPoint), validation_label(NumPoint);
+			for (int iPoint = 0; iPoint < NumPoint; iPoint++)
+			{
+				const auto& [x_train, p_train, rho_train] = density[iPoint];
+				training_label[iPoint] = get_density_matrix_element(rho_train, ElementIndex);
+				training_feature.col(iPoint) << x_train, p_train;
+				const auto& [x_valid, p_valid, rho_valid] = validation_set[iPoint];
+				validation_label[iPoint] = get_density_matrix_element(rho_valid, ElementIndex);
+				validation_feature.col(iPoint) << x_valid, p_valid;
+			}
+			MSETrainingSet ts = std::make_tuple(training_feature, training_label, validation_feature, validation_label, TypesOfKernels);
+			NLOptMinimizers[ElementIndex].set_min_objective(minimizing_function, &ts);
+			// set variable for saving hyperparameters and function value (marginal likelihood)
+			try
+			{
+				NLOptMinimizers[ElementIndex].optimize(Hyperparameters[ElementIndex], mse);
+			}
+			catch (...)
+			{
+			}
+			// set up kernels
+			Kernels[ElementIndex] = generate_kernels(TypesOfKernels, Hyperparameters[ElementIndex]);
+			KInvLbls[ElementIndex] = get_kernel_matrix(training_feature, training_feature, Kernels[ElementIndex], true).llt().solve(training_label);
+			TrainingFeatures[ElementIndex] = training_feature;
+			break; // only 1 diagonal element is used
+		}
+	}
+	return mse;
+	// as MSE is minimized, no need to normalize
+}
+
 /// @details Using Gaussian Process Regression (GPR) to depict phase space distribution, element by element.
-double Optimization::optimize(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall)
+double Optimization::optimize_full_and_normalize(EvolvingDensity& density, const QuantumBoolMatrix& IsSmall)
 {
 	auto weight_func = [](const double x) -> double {
 		return x * x;
@@ -333,21 +353,13 @@ double Optimization::optimize(const EvolvingDensity& density, const QuantumBoolM
 				label[iPoint] = get_density_matrix_element(rho, iElement);
 				feature.col(iPoint) << x, p;
 			}
-			TrainingSet ts = std::make_tuple(feature, label, TypesOfKernels);
-			NLOptMinimizers[2 * iElement + 0].set_min_objective(minimizing_function, &ts);
-			NLOptMinimizers[2 * iElement + 1].set_min_objective(minimizing_function, &ts);
+			FullMargllTrainingSet ts = std::make_tuple(feature, label, TypesOfKernels);
+			NLOptMinimizers[iElement].set_min_objective(minimizing_function, &ts);
 			// set variable for saving hyperparameters and function value (marginal likelihood)
 			double marg_ll = 0.0;
 			try
 			{
-				NLOptMinimizers[2 * iElement + 0].optimize(Hyperparameters[iElement], marg_ll);
-			}
-			catch (...)
-			{
-			}
-			try
-			{
-				NLOptMinimizers[2 * iElement + 1].optimize(Hyperparameters[iElement], marg_ll);
+				NLOptMinimizers[iElement].optimize(Hyperparameters[iElement], marg_ll);
 			}
 			catch (...)
 			{
@@ -358,6 +370,36 @@ double Optimization::optimize(const EvolvingDensity& density, const QuantumBoolM
 			Kernels[iElement] = generate_kernels(TypesOfKernels, Hyperparameters[iElement]);
 			KInvLbls[iElement] = get_kernel_matrix(feature, feature, Kernels[iElement], true).llt().solve(label);
 			TrainingFeatures[iElement] = feature;
+		}
+	}
+	// after optimization, normalization
+	double population = 0.0;
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		if (IsSmall(iPES, iPES) == false)
+		{
+			const int ElementIndex = iPES * (NumPES + 1);
+			for (const auto& [weight, kernel] : Kernels[ElementIndex])
+			{
+				// select the gaussian ARD kernel
+				if (kernel->get_kernel_type() == shogun::EKernelType::K_GAUSSIANARD)
+				{
+					const Eigen::Matrix<double, PhaseDim, 1> Characteristic = Eigen::Map<Eigen::MatrixXd>(std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel)->get_weights());
+					population += weight * weight / Characteristic.prod() * KInvLbls[ElementIndex].sum();
+				}
+			}
+		}
+	}
+	population *= std::pow(2.0 * M_PI, Dim);
+	for (auto& [x, p, rho] : density)
+	{
+		rho /= population;
+	}
+	for (int iElement = 0; iElement < NumElements; iElement++)
+	{
+		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
+		{
+			KInvLbls[iElement] /= population;
 		}
 	}
 	return sum_marg_ll;
@@ -446,9 +488,9 @@ Eigen::VectorXd Optimization::print_element(const QuantumBoolMatrix& IsSmall, co
 /// For potential, a numerical integration is needed.
 Averages Optimization::calculate_average(const ClassicalDoubleVector& mass, const QuantumBoolMatrix& IsSmall, const int PESIndex) const
 {
-	static const double NumericIntegrationInitialStepsize = 1e-2;	   // initial step size for numeric integration below
-	static const double epsilon = std::exp(-12.5) / std::sqrt(2 * Pi); // value below this is 0; gaussian function value at 5 sigma
-	boost::numeric::odeint::bulirsch_stoer<double> stepper;			   // the stepper for numerical integration
+	static const double NumericIntegrationInitialStepsize = 1e-2;		   // initial step size for numeric integration below
+	static const double epsilon = std::exp(-12.5) / std::sqrt(2.0 * M_PI); // value below this is 0; gaussian function value at 5 sigma
+	boost::numeric::odeint::bulirsch_stoer<double> stepper;				   // the stepper for numerical integration
 	double ppl = 0.0, T = 0.0, V = 0.0;
 	ClassicalDoubleVector x = ClassicalDoubleVector::Zero(), p = ClassicalDoubleVector::Zero();
 	if (IsSmall(PESIndex, PESIndex) == false)
@@ -464,7 +506,7 @@ Averages Optimization::calculate_average(const ClassicalDoubleVector& mass, cons
 				const Eigen::MatrixXd& Features = TrainingFeatures[ElementIndex]; // get feature matrix, PhaseDim-by-NPoint
 				const int NPoint = Features.cols();
 				const Eigen::Matrix<double, PhaseDim, 1> Characteristic = Eigen::Map<Eigen::MatrixXd>(std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel)->get_weights());
-				const double GlobalWeight = std::pow(2.0 * Pi, Dim) * weight * weight / Characteristic.prod();
+				const double GlobalWeight = std::pow(2.0 * M_PI, Dim) * weight * weight / Characteristic.prod();
 				// population
 				ppl += GlobalWeight * KInvLbl.sum();
 				// x and p
@@ -478,7 +520,7 @@ Averages Optimization::calculate_average(const ClassicalDoubleVector& mass, cons
 					// rho(x)=int{dp rho(x,p)}=sigma_f^2*(2*pi)^(Dim/4)*\prod{l_p}*(s1,s2,...)*K^{-1}*y
 					// si = exp(-\sum_j{(x0j-xij)^2/l_{xj}^2}/2.0)
 					const auto& CharX = Characteristic.block<Dim, 1>(0, 0);
-					return weight * weight * std::pow(2.0 * Pi, Dim / 2.0) / CharX.prod() * (((Features.block(0, 0, Dim, NPoint).colwise() - x0).array().colwise() * CharX.array()).abs2().colwise().sum() / -2.0).exp().matrix().dot(KInvLbl) * adiabatic_potential(x0)[PESIndex];
+					return weight * weight * std::pow(2.0 * M_PI, Dim / 2.0) / CharX.prod() * (((Features.block(0, 0, Dim, NPoint).colwise() - x0).array().colwise() * CharX.array()).abs2().colwise().sum() / -2.0).exp().matrix().dot(KInvLbl) * adiabatic_potential(x0)[PESIndex];
 				};
 				std::vector<std::function<double(const Eigen::VectorXd&)>> integrate_n_dim(Dim);
 				integrate_n_dim[0] = [&](const Eigen::VectorXd& x0) -> double {
@@ -558,11 +600,8 @@ QuantumComplexMatrix initial_distribution(
 	const ClassicalDoubleVector& p0 = params.get_p0();
 	const ClassicalDoubleVector& SigmaX0 = params.get_sigma_x0();
 	const ClassicalDoubleVector& SigmaP0 = params.get_sigma_p0();
-	result(0, 0) = 1.0;
-	for (int iDim = 0; iDim < Dim; iDim++)
-	{
-		result(0, 0) *= std::exp(-(std::pow((x[iDim] - x0[iDim]) / SigmaX0[iDim], 2) + std::pow((p[iDim] - p0[iDim]) / SigmaP0[iDim], 2)) / 2.0) / Pi / SigmaX0[iDim] / SigmaP0[iDim];
-	}
+	result(0, 0) = std::exp(-(((x - x0).array() / SigmaX0.array()).abs2().sum() + ((p - p0).array() / SigmaP0.array()).abs2().sum()) / 2.0)
+		/ (std::pow(2.0 * M_PI, Dim) * SigmaX0.prod() * SigmaP0.prod());
 	return result;
 }
 
@@ -579,15 +618,17 @@ void monte_carlo_selection(
 	const QuantumBoolMatrix& IsSmall,
 	EvolvingDensity& density)
 {
-	static std::mt19937 engine(std::chrono::system_clock::now().time_since_epoch().count()); // Random number generator, using merseen twister with seed from time
-	static const int NOMC = 1000 * Dim * 2;													 // The number of monte carlo that will be done for each phase point selection
 	// TODO: mc techniques: begin from maximum of points, stepsize, number of MC steps
+	static std::mt19937 engine(std::chrono::system_clock::now().time_since_epoch().count()); // Random number generator, using merseen twister with seed from time
+	static const int MinNOMC = 100 * Dim * 2;												 // The minimum number of monte carlo steps that will be done for each phase point selection
+	static int NOMC = MinNOMC;																 // The number of monte carlo steps used
+	static const int NGrids = 20;															 // The number of grids on each phase direction
 	// alias names
-	const ClassicalDoubleVector& dxmax = params.get_dx();
-	const ClassicalDoubleVector& dpmax = params.get_dp();
-	const ClassicalDoubleVector& mass = params.get_mass();
-	const double dt = params.get_dt();
-	const int NumPoints = params.get_number_of_selected_points();
+	static const ClassicalDoubleVector& dxmax = (params.get_xmax() - params.get_xmin()) / NGrids;
+	static const ClassicalDoubleVector& dpmax = (params.get_pmax() - params.get_pmin()) / NGrids;
+	static const ClassicalDoubleVector& mass = params.get_mass();
+	static const double dt = params.get_dt();
+	static const int NumPoints = params.get_number_of_selected_points();
 	auto weight_func = [](const double x) -> double {
 		return x * x;
 	};
@@ -635,11 +676,14 @@ void monte_carlo_selection(
 		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
 		{
 			// begin from an old point
+#pragma omp parallel for
 			for (auto& [x_old, p_old, rho_old] : Maximums[iElement])
 			{
 				double weight_old = weight_func(get_density_matrix_element(rho_old, iElement));
 				// do MC
-				for (int iIter = 0; iIter < NOMC; iIter++)
+				// the number of MC steps (NOMC) is adaptive
+				int acc = 0;
+				for (int iIter = 0;; iIter++)
 				{
 					// calculate new weight there
 					ClassicalDoubleVector x_new = x_old, p_new = p_old;
@@ -650,18 +694,32 @@ void monte_carlo_selection(
 					}
 					const QuantumComplexMatrix& rho_new = distribution(x_new, p_new);
 					const double weight_new = weight_func(get_density_matrix_element(rho_new, iElement));
-					if (weight_new < weight_old && weight_new / weight_old < mc_selection(engine))
+					if (weight_new > weight_old || weight_new / weight_old > mc_selection(engine))
 					{
-						// new weight is smaller, and the random number do not accept, reject
-						continue;
-					}
-					else
-					{
-						// otherwise, accept
+						// new weight is larger than the random number, accept
+						// otherwise, reject
 						x_old = x_new;
 						p_old = p_new;
 						rho_old = rho_new;
 						weight_old = weight_new;
+						acc++;
+					}
+					if (iIter == NOMC)
+					{
+						if (acc * 1. / NOMC < 0.4)
+						{
+							// good acceptance, finish MC
+							if (NOMC > MinNOMC)
+							{
+								NOMC /= 2;
+							}
+							break;
+						}
+						else
+						{
+							// accpetance too high, double the step
+							NOMC *= 2;
+						}
 					}
 				}
 				// after MC, the new point is at the original place

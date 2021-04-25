@@ -28,7 +28,7 @@ class Optimization final
 {
 private:
 	// static constant variables
-	static const double DiagMagMin, DiagMagMax, GaussMagMin, GaussMagMax, AbsoluteTolerance, InitialStepSize;
+	static const double DiagMagMin, DiagMagMax, AbsoluteTolerance, InitialStepSize;
 	// local variables
 	const KernelTypeList TypesOfKernels;					   ///< The types of the kernels to use
 	const int NumHyperparameters;							   ///< The number of hyperparameters to use, derived from the kernel types
@@ -43,18 +43,27 @@ public:
 	/// @brief Constructor. Initial hyperparameters, kernels and optimization algorithms needed
 	/// @param[in] params Parameters object containing position, momentum, etc
 	/// @param[in] KernelTypes The vector containing all the kernel type used in optimization
-	/// @param[in] NonGradAlgo The non-gradient optimization algorithm
-	/// @param[in] GradAlgo The Gradient optimization algorithm
+	/// @param[in] Algorithm The non-gradient optimization algorithm
 	Optimization(
 		const Parameters& params,
 		const KernelTypeList& KernelTypes = { shogun::EKernelType::K_DIAG, shogun::EKernelType::K_GAUSSIANARD },
-		const nlopt::algorithm NonGradAlgo = nlopt::algorithm::LN_NELDERMEAD,
-		const nlopt::algorithm GradAlgo = nlopt::algorithm::LD_TNEWTON_PRECOND_RESTART);
+		const nlopt::algorithm Algorithm = nlopt::algorithm::LN_NELDERMEAD);
 	/// @brief To optimize hyperparameters based on the given density
-	/// @param[in] density The vector containing all known density matrix
+	/// @param[in] density The vector containing all known density matrix, the training set
+	/// @param[in] params Parameters objects containing all the required information (min, max, dmax) for construction of validation set
+	/// @param[in] distribution The function object to generate the distribution
+	/// @param[in] IsSmall The matrix that saves whether each element is small or not
+	/// @return The total squared error of sampled points of all elements of density matrix
+	double initial_optimize(
+		const EvolvingDensity& density,
+		const Parameters& params,
+		const DistributionFunction& distribution,
+		const QuantumBoolMatrix& IsSmall);
+	/// @brief To optimize hyperparameters based on the given density
+	/// @param[inout] density The vector containing all known density matrix, and normalized after optimization
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
 	/// @return The total negative log marginal likelihood of all elements of density matrix
-	double optimize(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall);
+	double optimize_full_and_normalize(EvolvingDensity& density, const QuantumBoolMatrix& IsSmall);
 	/// @brief To predict one of the elements of the density matrix at the given phase space point
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
 	/// @param[in] x Position of classical degree of freedom
