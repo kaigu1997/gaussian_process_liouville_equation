@@ -51,18 +51,16 @@ Parameters::Parameters(const std::string& input_file_name)
 	// deal with input
 	xmax = x0.array().abs() * 2;
 	xmin = -xmax;
-	dx = xmax * 0.1; // dx = L/20
-	// in grid solution, dx = pi*hbar/(p0+3sigma_p), p in p0+pi*hbar/2/dx*[-1, 1]
-	// so pmax=3(p0+sigma_p)/2, pmin=(p0-3sigmap)/2, dp = Lp/20
-	pmax = (p0 + SigmaP0) * 1.5;
-	pmin = (p0 - 3.0 * SigmaP0) / 2.0;
-	dp = (p0.array().abs() + 3.0 * SigmaP0.array()) / 20.0;
-	for (int i = 0; i < Dim; i++)
-	{
-		SigmaX0[i] = hbar / 2.0 / SigmaP0[i]; // follow the minimal uncertainty principle
-	}
+	SigmaX0 = hbar / 2.0 * SigmaP0.array().inverse(); // follow the minimal uncertainty principle
+	dx = M_PI * hbar * (p0 + 3.0 * SigmaP0).array().inverse(); // 4-5 grids per de Broglie wavelength
 	xNumGrids = ((xmax - xmin).array() / dx.array()).cast<int>();
-	pNumGrids = ((pmax - pmin).array() / dp.array()).cast<int>();
+	dx = (xmax - xmin).array() / xNumGrids.cast<double>().array();
+	// in grid solution, dx = pi*hbar/(p0+3sigma_p), p in p0+pi*hbar/2/dx*[-1, 1]
+	pmax = p0.array() + M_PI * hbar / 2.0 * dx.array().inverse();
+	pmin = p0.array() - M_PI * hbar / 2.0 * dx.array().inverse();
+	pNumGrids = xNumGrids;
+	dp = (pmax - pmin).array() / pNumGrids.cast<double>().array();
+	// whole phase space grids
 	PhasePoints.resize(PhaseDim, xNumGrids.prod() * pNumGrids.prod());
 	for (int iPoint = 0; iPoint < PhasePoints.cols(); iPoint++)
 	{

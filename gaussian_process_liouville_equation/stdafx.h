@@ -31,7 +31,6 @@
 #include <boost/numeric/odeint.hpp>
 #include <nlopt.hpp>
 #include <shogun/features/DenseFeatures.h>
-#include <shogun/kernel/ConstKernel.h>
 #include <shogun/kernel/DiagKernel.h>
 #include <shogun/kernel/GaussianARDKernel.h>
 #include <shogun/labels/RegressionLabels.h>
@@ -41,8 +40,7 @@
 #include <mkl.h>
 
 // mathmatical/physical constants
-const double hbar = 1.0;				  ///< Reduced Planck constant in a.u.
-const double Pi = 3.14159265358979323846; ///< As its name
+const double hbar = 1.0; ///< Reduced Planck constant in a.u.
 
 // DOF constants
 const int NumPES = 2;					 ///< The number of quantum degree (potential energy surfaces)

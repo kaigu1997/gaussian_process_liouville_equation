@@ -28,24 +28,25 @@ int main()
 	}
 	QuantumBoolMatrix IsSmall = QuantumBoolMatrix::Ones(); // matrix that saves whether each element of density matrix is close to 0 everywhere or not
 	IsSmall(0, 0) = false;
-	monte_carlo_selection(params, std::bind(initial_distribution, std::cref(params), std::placeholders::_1, std::placeholders::_2), IsSmall, density); // generated from MC from initial distribution
+	const DistributionFunction initdist = std::bind(initial_distribution, std::cref(params), std::placeholders::_1, std::placeholders::_2);
+	monte_carlo_selection(params, initdist, IsSmall, density); // generated from MC from initial distribution
 	// generate initial hyperparameters
 	Optimization optimizer(params);
-	double marg_ll = optimizer.optimize(density, IsSmall);
 	const DistributionFunction& predict_distribution = std::bind(evolve_predict, std::placeholders::_1, std::placeholders::_2, mass, dt, std::cref(IsSmall), std::cref(optimizer));
+	double marg_ll = optimizer.initial_optimize(density, params, initdist, IsSmall);
 	// initial output: average, hyperparameters, selected points, gridded phase space
-	std::clog << 0 << ' ' << marg_ll << ' ' << print_time << std::endl;
 	const Eigen::IOFormat VectorFormatter(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", " ", "", "", " ", "");
 	const Eigen::IOFormat MatrixFormatter(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", " ", "", "", "");
 	std::ofstream average("ave.txt");
 	std::ofstream hyperparam("param.txt", std::ios_base::binary);
 	std::ofstream point("point.txt", std::ios_base::binary);
 	std::ofstream phase("phase.txt", std::ios_base::binary);
+	std::clog << 0 << ' ' << marg_ll << ' ' << print_time << std::endl;
 	// average: time, population, x, p, V, T of each PES
-	average << 0 << ' ' << 1.0 << x0.format(VectorFormatter) << p0.format(VectorFormatter) << ' ' << adiabatic_potential(x0)[0] << ' ' << (p0.array().abs2() / mass.array()).sum() / 2.0;
-	for (int iPES = 1; iPES < NumPES; iPES++)
+	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
-		average << ' ' << 0.0 << ClassicalDoubleVector::Zero().format(VectorFormatter) << ClassicalDoubleVector::Zero().format(VectorFormatter) << ' ' << 0.0 << ' ' << 0.0;
+		const auto& [ppl, x, p, V, T] = optimizer.calculate_average(mass, IsSmall, iPES);
+		average << ' ' << ppl << x.format(VectorFormatter) << p.format(VectorFormatter) << ' ' << V << ' ' << T;
 	}
 	average << std::endl;
 	for (int iElement = 0; iElement < NumElements; iElement++)
@@ -58,32 +59,23 @@ int main()
 	}
 	hyperparam << '\n';
 	point << print_point(density).format(MatrixFormatter) << "\n\n";
-	for (int iPoint = 0; iPoint < PhaseGrids.cols(); iPoint++)
+	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		phase << ' ' << initial_distribution(params, PhaseGrids.block<Dim, 1>(0, iPoint), PhaseGrids.block<Dim, 1>(Dim, iPoint))(0, 0).real();
-	}
-	phase << '\n';
-	for (int iElement = 1; iElement < NumElements; iElement++)
-	{
-		for (int iPoint = 0; iPoint < PhaseGrids.cols(); iPoint++)
-		{
-			phase << ' ' << 0;
-		}
-		phase << '\n';
+		phase << optimizer.print_element(IsSmall, PhaseGrids, iElement).format(VectorFormatter) << '\n';
 	}
 	phase << '\n';
 
 	// evolution
 	for (int iTick = 1; iTick <= TotalTicks; iTick++)
 	{
-		// evolve; using Trotter expansion
-		// TODO: 5 steps splitting vs 7 steps
+		// evolve; using Trotter expansion, combined with MC selection
 		IsSmall = is_very_small(density);
 		monte_carlo_selection(params, predict_distribution, IsSmall, density);
+		// optimize weight only
 		if (iTick % ReoptFreq == 0)
 		{
 			// reselect, model training
-			marg_ll = optimizer.optimize(density, IsSmall);
+			marg_ll = optimizer.optimize_full_and_normalize(density, IsSmall);
 			if (iTick % OutputFreq == 0)
 			{
 				// output time
