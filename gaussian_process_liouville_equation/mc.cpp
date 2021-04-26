@@ -194,6 +194,25 @@ static double negative_log_marginal_likelihood(const ParameterVector& x, Paramet
 	return (TrainingLabel.adjoint() * KInvLbl).value() / 2.0 + L.diagonal().array().abs().log().sum();
 }
 
+/// @brief The function for nlopt optimizer to minimize, return the LOOCV MSE
+/// @param[in] x The input hyperparameters, need to calculate the function value and gradient at this point
+/// @param[out] grad The gradient at the given point. It will not be used
+/// @param[in] params Other parameters. Here it is combination of kernel types and selected training set
+/// @return The squared error of LOOCV
+static double leave_one_out_cross_validation(const ParameterVector& x, ParameterVector& grad, void* params)
+{
+	// get the parameters
+	const auto& [TrainingFeature, TrainingLabel, TypesOfKernels] = *static_cast<FullMargllTrainingSet*>(params);
+	// get kernel
+	KernelList Kernels = generate_kernels(TypesOfKernels, x);
+	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, Kernels, true);
+	// prediction: mu_i=y_i-[K^{-1}*y]_i/[K^{-1}]_{ii}
+	Eigen::LLT<Eigen::MatrixXd> DecompOfKernel(KernelMatrix);
+	const Eigen::MatrixXd& KInv = DecompOfKernel.solve(Eigen::MatrixXd::Identity(KernelMatrix.rows(), KernelMatrix.cols())); // K^{-1}
+	const Eigen::VectorXd& KInvLbl = DecompOfKernel.solve(TrainingLabel);													 // K^{-1}*y
+	return (KInvLbl.array() / KInv.diagonal().array()).abs2().sum();
+}
+
 const double Optimization::DiagMagMin = 1e-4;		  ///< Minimal value of the magnitude of the diagonal kernel
 const double Optimization::DiagMagMax = 1;			  ///< Maximal value of the magnitude of the diagonal kernel
 const double Optimization::AbsoluteTolerance = 1e-10; ///< Absolute tolerance of independent variable (x) in optimization
@@ -330,7 +349,7 @@ double Optimization::optimize_full_and_normalize(EvolvingDensity& density, const
 	auto weight_func = [](const double x) -> double {
 		return x * x;
 	};
-	const nlopt::vfunc minimizing_function = negative_log_marginal_likelihood;
+	const nlopt::vfunc minimizing_function = leave_one_out_cross_validation;
 	double sum_marg_ll = 0.0;
 	// get a copy for sort
 	EvolvingDensity density_copy = density;
