@@ -28,7 +28,7 @@ int main()
 	}
 	QuantumBoolMatrix IsSmall = QuantumBoolMatrix::Ones(); // matrix that saves whether each element of density matrix is close to 0 everywhere or not
 	IsSmall(0, 0) = false;
-	const DistributionFunction initdist = std::bind(initial_distribution, std::cref(params), std::placeholders::_1, std::placeholders::_2);
+	const DistributionFunction initdist = std::bind(initial_distribution, params, std::placeholders::_1, std::placeholders::_2);
 	monte_carlo_selection(params, initdist, IsSmall, density); // generated from MC from initial distribution
 	// generate initial hyperparameters
 	Optimization optimizer(params);

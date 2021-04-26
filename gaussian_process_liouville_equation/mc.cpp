@@ -179,6 +179,7 @@ static double mean_squared_error(const ParameterVector& x, ParameterVector& grad
 /// @param[in] x The input hyperparameters, need to calculate the function value and gradient at this point
 /// @param[out] grad The gradient at the given point. It will not be used
 /// @param[in] params Other parameters. Here it is combination of kernel types and selected training set
+/// @return The -ln(marginal likelihood + phasedim/2*ln(2*pi))
 static double negative_log_marginal_likelihood(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	// get the parameters
@@ -187,7 +188,7 @@ static double negative_log_marginal_likelihood(const ParameterVector& x, Paramet
 	KernelList Kernels = generate_kernels(TypesOfKernels, x);
 	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, Kernels, true);
 	// calculate
-	Eigen::LLT<Eigen::MatrixXd> DecompOfKernel(KernelMatrix);
+	const Eigen::LLT<Eigen::MatrixXd> DecompOfKernel(KernelMatrix);
 	const Eigen::MatrixXd& L = DecompOfKernel.matrixL();
 	const Eigen::VectorXd& KInvLbl = DecompOfKernel.solve(TrainingLabel); // K^{-1}*y
 	return (TrainingLabel.adjoint() * KInvLbl).value() / 2.0 + L.diagonal().array().abs().log().sum();
@@ -644,9 +645,8 @@ void monte_carlo_selection(
 				density.begin(),
 				density.end(),
 				[&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_func(get_density_matrix_element(std::get<2>(psp1), iElement)) > weight_func(get_density_matrix_element(std::get<2>(psp2), iElement)); });
-			for (int iPoint = 0; iPoint < NumPoints; iPoint++)
+			for (auto [x, p, rho] : density)
 			{
-				auto [x, p, rho] = density[iPoint];
 				const Tensor3d f = adiabatic_force(x);
 				x = x.array() + p.array() / mass.array() * dt;
 				for (int iDim = 0; iDim < Dim; iDim++)
@@ -676,7 +676,6 @@ void monte_carlo_selection(
 		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
 		{
 			// begin from an old point
-#pragma omp parallel for
 			for (auto& [x_old, p_old, rho_old] : Maximums[iElement])
 			{
 				double weight_old = weight_func(get_density_matrix_element(rho_old, iElement));
