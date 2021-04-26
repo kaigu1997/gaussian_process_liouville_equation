@@ -602,7 +602,6 @@ QuantumComplexMatrix initial_distribution(
 	const ClassicalDoubleVector& SigmaP0 = params.get_sigma_p0();
 	result(0, 0) = std::exp(-(((x - x0).array() / SigmaX0.array()).abs2().sum() + ((p - p0).array() / SigmaP0.array()).abs2().sum()) / 2.0)
 		/ (std::pow(2.0 * M_PI, Dim) * SigmaX0.prod() * SigmaP0.prod());
-	return result;
 }
 
 
