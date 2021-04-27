@@ -9,16 +9,20 @@
 
 /// The smart pointer to feature matrix
 using FeaturePointer = std::shared_ptr<shogun::Features>;
-/// The training and validation set for initial optimization
-/// passed as parameter to the optimization function.
-/// Training feature & label, validation feature & label, and kernels to use
-using MSETrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
 /// The training set for full hyperparameter optimization
 /// passed as parameter to the optimization function.
 /// First is feature, second is label, last is the kernels to use
-using FullMargllTrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
+using TrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
 /// An array of Eigen matrices, used for the derivatives of the kernel matrix
 using MatrixVector = std::vector<Eigen::MatrixXd, Eigen::aligned_allocator<Eigen::MatrixXd>>;
+
+/// @brief The weight function for sorting / MC selection
+/// @param x The input variable
+/// @return The weight of the input, which is the square of it
+static inline double weight_function(const double x)
+{
+	return x * x;
+}
 
 /// @brief To get the element of density matrix
 /// @param[in] DensityMatrix The density matrix
@@ -157,24 +161,6 @@ static Eigen::MatrixXd get_kernel_matrix(
 	return result;
 }
 
-/// @brief The function for nlopt optimizer to minimize, return the MSE of validation set
-/// @param[in] x The input hyperparameters, need to calculate the function value and gradient at this point
-/// @param[out] grad The gradient at the given point. It will not be used
-/// @param[in] params Other parameters. Here it is combination of kernel types, training set and validation set
-/// @return The squared error of validation set
-static double mean_squared_error(const ParameterVector& x, ParameterVector& grad, void* params)
-{
-	// get parameters
-	const auto& [TrainingFeature, TrainingLabel, ValidationFeature, ValidationLabel, TypesOfKernels] = *static_cast<MSETrainingSet*>(params);
-	// get the kernel
-	KernelList Kernels = generate_kernels(TypesOfKernels, x);
-	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, Kernels, true);
-	// get prediction
-	const Eigen::VectorXd& PredictLabel = get_kernel_matrix(ValidationFeature, TrainingFeature, Kernels) * KernelMatrix.llt().solve(TrainingLabel);
-	// calculate MSE
-	return (PredictLabel - ValidationLabel).array().abs2().sum();
-}
-
 /// @brief The function for nlopt optimizer to minimize, return the negative log likelihood
 /// @param[in] x The input hyperparameters, need to calculate the function value and gradient at this point
 /// @param[out] grad The gradient at the given point. It will not be used
@@ -183,7 +169,7 @@ static double mean_squared_error(const ParameterVector& x, ParameterVector& grad
 static double negative_log_marginal_likelihood(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	// get the parameters
-	const auto& [TrainingFeature, TrainingLabel, TypesOfKernels] = *static_cast<FullMargllTrainingSet*>(params);
+	const auto& [TrainingFeature, TrainingLabel, TypesOfKernels] = *static_cast<TrainingSet*>(params);
 	// get kernel
 	KernelList Kernels = generate_kernels(TypesOfKernels, x);
 	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, Kernels, true);
@@ -202,12 +188,12 @@ static double negative_log_marginal_likelihood(const ParameterVector& x, Paramet
 static double leave_one_out_cross_validation(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	// get the parameters
-	const auto& [TrainingFeature, TrainingLabel, TypesOfKernels] = *static_cast<FullMargllTrainingSet*>(params);
+	const auto& [TrainingFeature, TrainingLabel, TypesOfKernels] = *static_cast<TrainingSet*>(params);
 	// get kernel
 	KernelList Kernels = generate_kernels(TypesOfKernels, x);
 	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, Kernels, true);
 	// prediction: mu_i=y_i-[K^{-1}*y]_i/[K^{-1}]_{ii}
-	Eigen::LLT<Eigen::MatrixXd> DecompOfKernel(KernelMatrix);
+	const Eigen::LLT<Eigen::MatrixXd> DecompOfKernel(KernelMatrix);
 	const Eigen::MatrixXd& KInv = DecompOfKernel.solve(Eigen::MatrixXd::Identity(KernelMatrix.rows(), KernelMatrix.cols())); // K^{-1}
 	const Eigen::VectorXd& KInvLbl = DecompOfKernel.solve(TrainingLabel);													 // K^{-1}*y
 	return (KInvLbl.array() / KInv.diagonal().array()).abs2().sum();
@@ -285,72 +271,11 @@ Optimization::Optimization(
 	}
 }
 
-/// @details To reconstruct the given distribution using Gaussian process regression by optimizing weighted mean squared error
-double Optimization::initial_optimize(
-	const EvolvingDensity& density,
-	const Parameters& params,
-	const DistributionFunction& distribution,
-	const QuantumBoolMatrix& IsSmall)
-{
-	assert(density.size() == NumPoint && IsSmall.diagonal().any() == true);
-	const nlopt::vfunc minimizing_function = mean_squared_error;
-	// construct validation set
-	const ClassicalDoubleVector& x0 = params.get_x0(); // save initial positions
-	const ClassicalDoubleVector& p0 = params.get_p0(); // save initial momentum
-	EvolvingDensity validation_set;
-	for (int i = 0; i < NumPoint; i++)
-	{
-		validation_set.push_back(std::make_tuple(x0, p0, distribution(x0, p0))); // put the initial point into density
-	}
-	monte_carlo_selection(params, distribution, IsSmall, validation_set);
-	double mse = 0.0;
-	for (int iPES = 0; iPES < NumPES; iPES++)
-	{
-		// only one of them is non-zero
-		if (IsSmall(iPES, iPES) == false)
-		{
-			const int ElementIndex = iPES * (NumPES + 1);
-			// construct training and validation set
-			Eigen::MatrixXd training_feature(PhaseDim, NumPoint), validation_feature(PhaseDim, NumPoint);
-			Eigen::VectorXd training_label(NumPoint), validation_label(NumPoint);
-			for (int iPoint = 0; iPoint < NumPoint; iPoint++)
-			{
-				const auto& [x_train, p_train, rho_train] = density[iPoint];
-				training_label[iPoint] = get_density_matrix_element(rho_train, ElementIndex);
-				training_feature.col(iPoint) << x_train, p_train;
-				const auto& [x_valid, p_valid, rho_valid] = validation_set[iPoint];
-				validation_label[iPoint] = get_density_matrix_element(rho_valid, ElementIndex);
-				validation_feature.col(iPoint) << x_valid, p_valid;
-			}
-			MSETrainingSet ts = std::make_tuple(training_feature, training_label, validation_feature, validation_label, TypesOfKernels);
-			NLOptMinimizers[ElementIndex].set_min_objective(minimizing_function, &ts);
-			// set variable for saving hyperparameters and function value (marginal likelihood)
-			try
-			{
-				NLOptMinimizers[ElementIndex].optimize(Hyperparameters[ElementIndex], mse);
-			}
-			catch (...)
-			{
-			}
-			// set up kernels
-			Kernels[ElementIndex] = generate_kernels(TypesOfKernels, Hyperparameters[ElementIndex]);
-			KInvLbls[ElementIndex] = get_kernel_matrix(training_feature, training_feature, Kernels[ElementIndex], true).llt().solve(training_label);
-			TrainingFeatures[ElementIndex] = training_feature;
-			break; // only 1 diagonal element is used
-		}
-	}
-	return mse;
-	// as MSE is minimized, no need to normalize
-}
-
 /// @details Using Gaussian Process Regression (GPR) to depict phase space distribution, element by element.
-double Optimization::optimize_full_and_normalize(EvolvingDensity& density, const QuantumBoolMatrix& IsSmall)
+double Optimization::optimize(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall)
 {
-	auto weight_func = [](const double x) -> double {
-		return x * x;
-	};
 	const nlopt::vfunc minimizing_function = leave_one_out_cross_validation;
-	double sum_marg_ll = 0.0;
+	double sum_err = 0.0;
 	// get a copy for sort
 	EvolvingDensity density_copy = density;
 	for (int iElement = 0; iElement < NumElements; iElement++)
@@ -359,11 +284,12 @@ double Optimization::optimize_full_and_normalize(EvolvingDensity& density, const
 		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
 		{
 			// select points for optimization
-			std::sort(
+			std::nth_element(
 				std::execution::par_unseq,
 				density_copy.begin(),
+				density_copy.begin() + NumPoint,
 				density_copy.end(),
-				[&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_func(get_density_matrix_element(std::get<2>(psp1), iElement)) > weight_func(get_density_matrix_element(std::get<2>(psp2), iElement)); });
+				[&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_function(get_density_matrix_element(std::get<2>(psp1), iElement)) > weight_function(get_density_matrix_element(std::get<2>(psp2), iElement)); });
 			// reconstruct training feature (PhaseDim*N) and training labels (N*1)
 			Eigen::MatrixXd feature(PhaseDim, NumPoint);
 			Eigen::VectorXd label(NumPoint);
@@ -373,19 +299,19 @@ double Optimization::optimize_full_and_normalize(EvolvingDensity& density, const
 				label[iPoint] = get_density_matrix_element(rho, iElement);
 				feature.col(iPoint) << x, p;
 			}
-			FullMargllTrainingSet ts = std::make_tuple(feature, label, TypesOfKernels);
+			TrainingSet ts = std::make_tuple(feature, label, TypesOfKernels);
 			NLOptMinimizers[iElement].set_min_objective(minimizing_function, &ts);
 			// set variable for saving hyperparameters and function value (marginal likelihood)
-			double marg_ll = 0.0;
+			double err = 0.0;
 			try
 			{
-				NLOptMinimizers[iElement].optimize(Hyperparameters[iElement], marg_ll);
+				NLOptMinimizers[iElement].optimize(Hyperparameters[iElement], err);
 			}
 			catch (...)
 			{
 			}
 			// add up
-			sum_marg_ll += marg_ll;
+			sum_err += err;
 			// set up kernels
 			Kernels[iElement] = generate_kernels(TypesOfKernels, Hyperparameters[iElement]);
 			KInvLbls[iElement] = get_kernel_matrix(feature, feature, Kernels[iElement], true).llt().solve(label);
@@ -393,6 +319,14 @@ double Optimization::optimize_full_and_normalize(EvolvingDensity& density, const
 		}
 	}
 	// after optimization, normalization
+	return sum_err;
+}
+
+/// @details First, calculate the total population before normalization by analytical integration.
+/// 
+/// Then, divide the whole density matrix over the total population to normalize
+double Optimization::normalize(EvolvingDensity& density, const QuantumBoolMatrix& IsSmall) const
+{
 	double population = 0.0;
 	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
@@ -415,14 +349,39 @@ double Optimization::optimize_full_and_normalize(EvolvingDensity& density, const
 	{
 		rho /= population;
 	}
+	return population;
+}
+
+void Optimization::update_training_set(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall)
+{
+	// get a copy for sort
+	EvolvingDensity density_copy = density;
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
+		// first, check if all points are very small or not
 		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
 		{
-			KInvLbls[iElement] /= population;
+			// select points for optimization
+			std::nth_element(
+				std::execution::par_unseq,
+				density_copy.begin(),
+				density_copy.begin() + NumPoint,
+				density_copy.end(),
+				[&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_function(get_density_matrix_element(std::get<2>(psp1), iElement)) > weight_function(get_density_matrix_element(std::get<2>(psp2), iElement)); });
+			// reconstruct training feature (PhaseDim*N) and training labels (N*1)
+			Eigen::MatrixXd feature(PhaseDim, NumPoint);
+			Eigen::VectorXd label(NumPoint);
+			for (int iPoint = 0; iPoint < NumPoint; iPoint++)
+			{
+				const auto& [x, p, rho] = density_copy[iPoint];
+				label[iPoint] = get_density_matrix_element(rho, iElement);
+				feature.col(iPoint) << x, p;
+			}
+			// set up kernels
+			KInvLbls[iElement] = get_kernel_matrix(feature, feature, Kernels[iElement], true).llt().solve(label);
+			TrainingFeatures[iElement] = feature;
 		}
 	}
-	return sum_marg_ll;
 }
 
 /// @details Using Gaussian Process Regression to predict by
@@ -649,9 +608,6 @@ void monte_carlo_selection(
 	static const ClassicalDoubleVector& mass = params.get_mass();
 	static const double dt = params.get_dt();
 	static const int NumPoints = params.get_number_of_selected_points();
-	auto weight_func = [](const double x) -> double {
-		return x * x;
-	};
 	// get maximum, then evolve the points adiabatically
 	std::array<EvolvingDensity, NumElements> Maximums;
 	for (int iElement = 0; iElement < NumElements; iElement++)
@@ -659,18 +615,19 @@ void monte_carlo_selection(
 		const int iPES = iElement / NumPES, jPES = iElement % NumPES;
 		if (IsSmall(iPES, jPES) == false)
 		{
-			std::sort(
+			std::nth_element(
 				std::execution::par_unseq,
 				density.begin(),
+				density.begin() + NumPoints,
 				density.end(),
-				[&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_func(get_density_matrix_element(std::get<2>(psp1), iElement)) > weight_func(get_density_matrix_element(std::get<2>(psp2), iElement)); });
+				[&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_function(get_density_matrix_element(std::get<2>(psp1), iElement)) > weight_function(get_density_matrix_element(std::get<2>(psp2), iElement)); });
 			for (auto [x, p, rho] : density)
 			{
 				const Tensor3d f = adiabatic_force(x);
 				x = x.array() + p.array() / mass.array() * dt;
 				for (int iDim = 0; iDim < Dim; iDim++)
 				{
-					p[iDim] -= (f[iDim](iPES, iPES) + f[iDim](jPES, jPES)) / 2.0 * dt;
+					p[iDim] += (f[iDim](iPES, iPES) + f[iDim](jPES, jPES)) / 2.0 * dt;
 				}
 				rho = distribution(x, p);
 				Maximums[iElement].push_back(std::make_tuple(x, p, rho));
@@ -697,7 +654,7 @@ void monte_carlo_selection(
 			// begin from an old point
 			for (auto& [x_old, p_old, rho_old] : Maximums[iElement])
 			{
-				double weight_old = weight_func(get_density_matrix_element(rho_old, iElement));
+				double weight_old = weight_function(get_density_matrix_element(rho_old, iElement));
 				// do MC
 				// the number of MC steps (NOMC) is adaptive
 				int acc = 0;
@@ -711,7 +668,7 @@ void monte_carlo_selection(
 						p_new[iDim] += p_displacement[iDim](engine);
 					}
 					const QuantumComplexMatrix& rho_new = distribution(x_new, p_new);
-					const double weight_new = weight_func(get_density_matrix_element(rho_new, iElement));
+					const double weight_new = weight_function(get_density_matrix_element(rho_new, iElement));
 					if (weight_new > weight_old || weight_new / weight_old > mc_selection(engine))
 					{
 						// new weight is larger than the random number, accept

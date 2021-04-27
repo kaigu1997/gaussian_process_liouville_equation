@@ -49,21 +49,19 @@ public:
 		const KernelTypeList& KernelTypes = { shogun::EKernelType::K_DIAG, shogun::EKernelType::K_GAUSSIANARD },
 		const nlopt::algorithm Algorithm = nlopt::algorithm::LN_NELDERMEAD);
 	/// @brief To optimize hyperparameters based on the given density
-	/// @param[in] density The vector containing all known density matrix, the training set
-	/// @param[in] params Parameters objects containing all the required information (min, max, dmax) for construction of validation set
-	/// @param[in] distribution The function object to generate the distribution
-	/// @param[in] IsSmall The matrix that saves whether each element is small or not
-	/// @return The total squared error of sampled points of all elements of density matrix
-	double initial_optimize(
-		const EvolvingDensity& density,
-		const Parameters& params,
-		const DistributionFunction& distribution,
-		const QuantumBoolMatrix& IsSmall);
-	/// @brief To optimize hyperparameters based on the given density
 	/// @param[inout] density The vector containing all known density matrix, and normalized after optimization
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
-	/// @return The total negative log marginal likelihood of all elements of density matrix
-	double optimize_full_and_normalize(EvolvingDensity& density, const QuantumBoolMatrix& IsSmall);
+	/// @return The total error (MSE, log likelihood, etc) of all elements of density matrix
+	double optimize(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall);
+	/// @brief To normalize the training set
+	/// @param[inout] density The vector containing all known density matrix, and normalized after optimization
+	/// @param[in] IsSmall The matrix that saves whether each element is small or not
+	/// @return The total population before normalization
+	double normalize(EvolvingDensity& density, const QuantumBoolMatrix& IsSmall) const;
+	/// @brief To update the TrainingFeatures and KInvLbls up-to-date
+	/// @param[in] density The vector containing all known density matrix, and normalized after optimization
+	/// @param[in] IsSmall The matrix that saves whether each element is small or not
+	void update_training_set(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall);
 	/// @brief To predict one of the elements of the density matrix at the given phase space point
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
 	/// @param[in] x Position of classical degree of freedom

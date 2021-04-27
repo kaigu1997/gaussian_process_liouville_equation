@@ -78,6 +78,15 @@ Parameters::Parameters(const std::string& input_file_name)
 		}
 		PhasePoints.col(iPoint) << xPoint, pPoint;
 	}
+	// limitations on time intervals
+	if (ReoptimizationTime < dt)
+	{
+		ReoptimizationTime = dt;
+	}
+	if (OutputTime < ReoptimizationTime)
+	{
+		OutputTime = ReoptimizationTime;
+	}
 }
 
 std::ostream& print_time(std::ostream& os)
@@ -92,8 +101,8 @@ Eigen::MatrixXd print_point(const EvolvingDensity& density)
 	Eigen::MatrixXd result(PhaseDim, NPoint);
 	for (int iPoint = 0; iPoint < NPoint; iPoint++)
 	{
-		const PhaseSpacePoint& psp = density[iPoint];
-		result.col(iPoint) << std::get<0>(psp), std::get<1>(psp);
+		const auto& [x, p, rho] = density[iPoint];
+		result.col(iPoint) << x, p;
 	}
 	return result;
 }

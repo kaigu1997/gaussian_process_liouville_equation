@@ -33,7 +33,9 @@ int main()
 	// generate initial hyperparameters
 	Optimization optimizer(params);
 	const DistributionFunction& predict_distribution = std::bind(evolve_predict, std::placeholders::_1, std::placeholders::_2, mass, dt, std::cref(IsSmall), std::cref(optimizer));
-	double marg_ll = optimizer.initial_optimize(density, params, initdist, IsSmall);
+	double err = optimizer.optimize(density, IsSmall);
+	double ppl = optimizer.normalize(density, IsSmall);
+	optimizer.update_training_set(density, IsSmall);
 	// initial output: average, hyperparameters, selected points, gridded phase space
 	const Eigen::IOFormat VectorFormatter(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", " ", "", "", " ", "");
 	const Eigen::IOFormat MatrixFormatter(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", " ", "", "", "");
@@ -41,13 +43,13 @@ int main()
 	std::ofstream hyperparam("param.txt", std::ios_base::binary);
 	std::ofstream point("point.txt", std::ios_base::binary);
 	std::ofstream phase("phase.txt", std::ios_base::binary);
-	std::clog << 0 << ' ' << marg_ll << ' ' << print_time << std::endl;
-	// average: time, population, x, p, V, T of each PES
+	std::clog << 0 << ' ' << err << ' ' << ppl << ' ' << print_time << std::endl;
+	// average: time, population, x, p, V, T, E of each PES
 	average << 0.;
 	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
 		const auto& [ppl, x, p, V, T] = optimizer.calculate_average(mass, IsSmall, iPES);
-		average << ' ' << ppl << x.format(VectorFormatter) << p.format(VectorFormatter) << ' ' << V << ' ' << T;
+		average << ' ' << ppl << x.format(VectorFormatter) << p.format(VectorFormatter) << ' ' << V << ' ' << T << ' ' << V + T;
 	}
 	average << std::endl;
 	for (int iElement = 0; iElement < NumElements; iElement++)
@@ -72,28 +74,29 @@ int main()
 		// evolve; using Trotter expansion, combined with MC selection
 		IsSmall = is_very_small(density);
 		monte_carlo_selection(params, predict_distribution, IsSmall, density);
+		// update the training set for prediction
+		optimizer.update_training_set(density, IsSmall);
 		// optimize weight only
 		if (iTick % ReoptFreq == 0)
 		{
 			// reselect, model training
-			marg_ll = optimizer.optimize_full_and_normalize(density, IsSmall);
+			err = optimizer.optimize(density, IsSmall);
+			ppl = optimizer.normalize(density, IsSmall);
+			optimizer.update_training_set(density, IsSmall);
 			if (iTick % OutputFreq == 0)
 			{
 				// output time
-				std::clog << iTick * dt << ' ' << marg_ll << ' ' << print_time << std::endl;
+				std::clog << iTick * dt << ' ' << err << ' ' << ppl << ' ' << print_time << std::endl;
 				// output average
 				ClassicalDoubleVector x_tot = ClassicalDoubleVector::Zero();
-				double ppl_tot = 0.0;
 				average << iTick * dt;
 				for (int iPES = 0; iPES < NumPES; iPES++)
 				{
 					const auto& [ppl, x, p, V, T] = optimizer.calculate_average(mass, IsSmall, iPES);
-					average << ' ' << ppl << x.format(VectorFormatter) << p.format(VectorFormatter) << ' ' << V << ' ' << T;
+					average << ' ' << ppl << x.format(VectorFormatter) << p.format(VectorFormatter) << ' ' << V << ' ' << T << ' ' << V + T;
 					x_tot += x * ppl;
-					ppl_tot += ppl;
 				}
 				average << std::endl;
-				x_tot /= ppl_tot;
 				// output hyperparameters
 				for (int iElement = 0; iElement < NumElements; iElement++)
 				{
