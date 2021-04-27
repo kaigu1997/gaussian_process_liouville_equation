@@ -406,7 +406,9 @@ double Optimization::predict_element(
 		Eigen::MatrixXd test_feat(PhaseDim, 1);
 		test_feat << x, p;
 		// predict
-		return (get_kernel_matrix(test_feat, TrainingFeatures[ElementIndex], Kernels[ElementIndex]) * KInvLbls[ElementIndex]).value();
+		// not using the saved kernels because of multi-threading
+		KernelList Kernel = generate_kernels(TypesOfKernels, Hyperparameters[ElementIndex]);
+		return (get_kernel_matrix(test_feat, TrainingFeatures[ElementIndex], Kernel) * KInvLbls[ElementIndex]).value();
 	}
 	else
 	{
@@ -597,11 +599,12 @@ void monte_carlo_selection(
 	const QuantumBoolMatrix& IsSmall,
 	EvolvingDensity& density)
 {
-	// TODO: mc techniques: begin from maximum of points, stepsize, number of MC steps
+	// TODO: mc techniques: stepsize, number of MC steps
 	static std::mt19937 engine(std::chrono::system_clock::now().time_since_epoch().count()); // Random number generator, using merseen twister with seed from time
 	static const int MinNOMC = 100 * Dim * 2;												 // The minimum number of monte carlo steps that will be done for each phase point selection
 	static int NOMC = MinNOMC;																 // The number of monte carlo steps used
 	static const int NGrids = 20;															 // The number of grids on each phase direction
+	static const double MCAcceptRatio = 0.45;												 // The maximum acceptance ratio; greater than this value means too much acceptance
 	// alias names
 	static const ClassicalDoubleVector& dxmax = (params.get_xmax() - params.get_xmin()) / NGrids;
 	static const ClassicalDoubleVector& dpmax = (params.get_pmax() - params.get_pmin()) / NGrids;
@@ -652,13 +655,15 @@ void monte_carlo_selection(
 		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
 		{
 			// begin from an old point
+			bool not_enough_step = false;
+			#pragma omp parallel for
 			for (auto& [x_old, p_old, rho_old] : Maximums[iElement])
 			{
 				double weight_old = weight_function(get_density_matrix_element(rho_old, iElement));
 				// do MC
 				// the number of MC steps (NOMC) is adaptive
 				int acc = 0;
-				for (int iIter = 0;; iIter++)
+				for (int iIter = 0; iIter < NOMC; iIter++)
 				{
 					// calculate new weight there
 					ClassicalDoubleVector x_new = x_old, p_new = p_old;
@@ -679,25 +684,21 @@ void monte_carlo_selection(
 						weight_old = weight_new;
 						acc++;
 					}
-					if (iIter == NOMC)
-					{
-						if (acc * 1. / NOMC < 0.4)
-						{
-							// good acceptance, finish MC
-							if (NOMC > MinNOMC)
-							{
-								NOMC /= 2;
-							}
-							break;
-						}
-						else
-						{
-							// accpetance too high, double the step
-							NOMC *= 2;
-						}
-					}
 				}
-				// after MC, the new point is at the original place
+				if (acc * 1. / NOMC > MCAcceptRatio)
+				{
+					not_enough_step = true;
+				}
+			}
+			// after MC, the new point is at the original place
+			// then update the number of MC steps
+			if (not_enough_step == true)
+			{
+				NOMC *= 2;
+			}
+			else if (NOMC >= 2 * MinNOMC)
+			{
+				NOMC /= 2;
 			}
 			// after all points updated, insert into the EvolvingDensity
 			density.insert(density.end(), Maximums[iElement].cbegin(), Maximums[iElement].cend());

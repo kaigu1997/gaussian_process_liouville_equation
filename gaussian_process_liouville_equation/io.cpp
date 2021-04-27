@@ -62,6 +62,7 @@ Parameters::Parameters(const std::string& input_file_name)
 	dp = (pmax - pmin).array() / pNumGrids.cast<double>().array();
 	// whole phase space grids
 	PhasePoints.resize(PhaseDim, xNumGrids.prod() * pNumGrids.prod());
+	#pragma omp parallel for
 	for (int iPoint = 0; iPoint < PhasePoints.cols(); iPoint++)
 	{
 		ClassicalDoubleVector xPoint = xmin, pPoint = pmin;
