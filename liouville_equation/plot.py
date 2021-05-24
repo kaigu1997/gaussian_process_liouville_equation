@@ -71,7 +71,7 @@ fig, axs = plt.subplots(nrows=NUMPES, ncols=NUMPES, figsize=(20,10))
 time_template = 'time = %da.u.'
 
 # initialization: blank page
-def init():
+def ani_init():
 	# clear, then set x/y label, title of subplot, and colorbar
 	cfs = []
 	for i in range(NUMPES):
@@ -94,11 +94,11 @@ def init():
 	return fig, axs,
 
 # animation: each timestep in phase.txt
-def ani(i):
+def ani_frame(frame):
 	# get data, in rhoi_real
 	file = open('phase.txt', 'r')
 	# old data
-	for j in range(i - 1):
+	for j in range(frame - 1):
 		for k in range(NUMPES*NUMPES):
 			file.readline() # rho
 		file.readline() # blank line
@@ -124,11 +124,11 @@ def ani(i):
 	for j in range(NUMPES):
 		for k in range(NUMPES):
 			axs[j][k].contourf(xv, pv, rho[j][k], levels=levels[j][k], cmap=cmap)
-	fig.suptitle(time_template % t[i])
+	fig.suptitle(time_template % t[frame])
 	return fig, axs,
 
 # make the animation
-ani = animation.FuncAnimation(fig, ani, LEN_T, init, interval=10000//(t[1]-t[0]), repeat=False, blit=False)
+anime = animation.FuncAnimation(fig, ani_frame, LEN_T, ani_init, interval=10000//(t[1]-t[0]), repeat=False, blit=False)
 # show
-ani.save('phase.gif','imagemagick')
+anime.save('phase.gif','imagemagick')
 # plt.show()
