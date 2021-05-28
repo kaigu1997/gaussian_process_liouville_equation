@@ -48,6 +48,8 @@ FixNamespaceComments: false
 ForEachMacros: ['BOOST_FOREACH']
 IncludeBlocks: Regroup
 IncludeCategories:
+  - Regex: '"stdafx.h"' # precompiled header
+    Priority: -1
   - Regex: '<[[:alnum:]_]+>' # c++ std headers, std c headers are generally here
     Priority: 1
   - Regex: '^<[[:alnum:]_]+(/|[.]h[hpx+])' # most of the third-party libraries: boost, gsl, Eigen, nlopt, ...

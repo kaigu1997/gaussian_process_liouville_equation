@@ -1,6 +1,7 @@
 # ELF files
 *.o
 *.pchi
+*.gch
 *.x
 
 # scripts, especially for submission
