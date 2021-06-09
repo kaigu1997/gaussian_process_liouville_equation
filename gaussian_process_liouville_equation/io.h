@@ -173,6 +173,7 @@ std::ostream& print_time(std::ostream& os);
 /// @brief To format the selected phase points for printing
 /// @param[in] density The vector of selected points with its density matrix
 /// @return A PhaseDim-by-N matrix, N the number of points
-Eigen::MatrixXd print_point(const EvolvingDensity& density);
+/// @param NumPoints The number of points for each element
+Eigen::MatrixXd print_point(const EvolvingDensity& density, const int NumPoints);
 
 #endif // !IO_H

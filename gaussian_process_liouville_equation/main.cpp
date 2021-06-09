@@ -20,13 +20,16 @@ int main()
 	const int OutputFreq = params.get_output_freq();					 // save output frequency
 	const int ReoptFreq = params.get_reoptimize_freq();					 // save hyperparameter re-optimization frequency
 	const double dt = params.get_dt();									 // save dt directly
+	const int NumPoints = params.get_number_of_selected_points();		 // save the number of points for evolving/optimizing
 	// get initial distribution
 	EvolvingDensity density; // initial density
 	for (int i = 0; i < params.get_number_of_selected_points(); i++)
 	{
 		density.push_back(std::make_tuple(x0, p0, initial_distribution(params, x0, p0))); // put the initial point into density
 	}
-	QuantumBoolMatrix IsSmall = QuantumBoolMatrix::Ones(); // matrix that saves whether each element of density matrix is close to 0 everywhere or not
+	QuantumBoolMatrix IsSmall = QuantumBoolMatrix::Ones();			// whether each element of density matrix is close to 0 everywhere or not
+	QuantumBoolMatrix IsSmallOld = IsSmall;							// whether each element is small at last moment
+	QuantumBoolMatrix IsNew = IsSmallOld.array() > IsSmall.array(); // whether some element used to be small but is not small now
 	IsSmall(0, 0) = false;
 	const DistributionFunction initdist = std::bind(initial_distribution, params, std::placeholders::_1, std::placeholders::_2);
 	monte_carlo_selection(params, initdist, IsSmall, density); // generated from MC from initial distribution
@@ -43,7 +46,7 @@ int main()
 	std::ofstream hyperparam("param.txt", std::ios_base::binary);
 	std::ofstream point("point.txt", std::ios_base::binary);
 	std::ofstream phase("phase.txt", std::ios_base::binary);
-	std::clog << 0 << ' ' << err << ' ' << ppl << ' ' << print_time << std::endl;
+	std::cout << 0 << ' ' << err << ' ' << ppl << ' ' << print_time << std::endl;
 	// average: time, population, x, p, V, T, E of each PES
 	average << 0.;
 	for (int iPES = 0; iPES < NumPES; iPES++)
@@ -61,7 +64,7 @@ int main()
 		hyperparam << '\n';
 	}
 	hyperparam << '\n';
-	point << print_point(density).format(MatrixFormatter) << "\n\n";
+	point << print_point(density, NumPoints).format(MatrixFormatter) << "\n\n";
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		phase << optimizer.print_element(IsSmall, PhaseGrids, iElement).format(VectorFormatter) << '\n';
@@ -72,21 +75,22 @@ int main()
 	for (int iTick = 1; iTick <= TotalTicks; iTick++)
 	{
 		// evolve; using Trotter expansion, combined with MC selection
-		IsSmall = is_very_small(density);
 		monte_carlo_selection(params, predict_distribution, IsSmall, density);
-		// update the training set for prediction
-		optimizer.update_training_set(density, IsSmall);
-		// optimize weight only
-		if (iTick % ReoptFreq == 0)
+		IsSmall = is_very_small(density);
+		IsNew = IsSmallOld.array() > IsSmall.array();
+		// judge if it is time to re-optimize, or there are new elements having population
+		if (iTick % ReoptFreq == 0 || IsNew.any() == true)
 		{
-			// reselect, model training
+			// reselect; nothing new, nothing happens
+			new_element_point_selection(density, IsNew, NumPoints);
+			// model training
 			err = optimizer.optimize(density, IsSmall);
 			ppl = optimizer.normalize(density, IsSmall);
 			optimizer.update_training_set(density, IsSmall);
 			if (iTick % OutputFreq == 0)
 			{
 				// output time
-				std::clog << iTick * dt << ' ' << err << ' ' << ppl << ' ' << print_time << std::endl;
+				std::cout << iTick * dt << ' ' << err << ' ' << ppl << ' ' << print_time << std::endl;
 				// output average
 				ClassicalDoubleVector x_tot = ClassicalDoubleVector::Zero();
 				average << iTick * dt;
@@ -108,7 +112,7 @@ int main()
 				}
 				hyperparam << '\n';
 				// output point
-				point << print_point(density).format(MatrixFormatter) << "\n\n";
+				point << print_point(density, NumPoints).format(MatrixFormatter) << "\n\n";
 				// output phase
 				for (int iElement = 0; iElement < NumElements; iElement++)
 				{
@@ -122,6 +126,12 @@ int main()
 				}
 			}
 		}
+		else
+		{
+			// otherwise, update the training set for prediction
+			optimizer.update_training_set(density, IsSmall);
+		}
+		IsSmallOld = IsSmall;
 	}
 
 	// finalization

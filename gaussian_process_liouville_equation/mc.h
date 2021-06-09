@@ -6,8 +6,6 @@
 
 #include "io.h"
 
-/// A number of optimizers to study the hyperparameters of gaussian process
-using Optimizer = std::vector<nlopt::opt>;
 /// Vector containing the type of all kernels
 using KernelTypeList = std::vector<shogun::EKernelType>;
 /// A vector containing weights and pointers to kernels, which should be the same length as KernelTypeList
@@ -32,11 +30,11 @@ private:
 	// local variables
 	const KernelTypeList TypesOfKernels;					   ///< The types of the kernels to use
 	const int NumHyperparameters;							   ///< The number of hyperparameters to use, derived from the kernel types
-	const int NumPoint;										   ///< The number of points selected for hyperparameter optimization
-	Optimizer NLOptMinimizers;								   ///< The vector containing all NLOPT optimizers, one gradient and one non-grad for each element
+	const int NumPoints;									   ///< The number of points selected for hyperparameter optimization
+	std::vector<nlopt::opt> NLOptMinimizers;				   ///< The vector containing all NLOPT optimizers, one gradient and one non-grad for each element
 	std::array<ParameterVector, NumElements> Hyperparameters;  ///< The hyperparameters for all elements of density matrix
 	std::array<Eigen::MatrixXd, NumElements> TrainingFeatures; ///< The training features (phase space coordinates) of each density matrix element
-	mutable std::array<KernelList, NumElements> Kernels;	   ///< The kernels with hyperparameters set for all elements of density matrix
+	std::array<KernelList, NumElements> Kernels;			   ///< The kernels with hyperparameters set for all elements of density matrix
 	std::array<Eigen::VectorXd, NumElements> KInvLbls;		   ///< The inverse of kernel matrix of training features times the training labels
 
 public:
@@ -103,7 +101,7 @@ public:
 	}
 };
 
-/// @brief Generate initial adiabatic PWTDM at the given place
+/// @brief To generate initial adiabatic PWTDM at the given place
 /// @param[in] params Parameters objects containing all the required information (r0, sigma0, mass)
 /// @param[in] x Position of classical degree of freedom
 /// @param[in] p Momentum of classical degree of freedom
@@ -121,5 +119,11 @@ void monte_carlo_selection(
 	const DistributionFunction& distribution,
 	const QuantumBoolMatrix& IsSmall,
 	EvolvingDensity& density);
+
+/// @brief To select points for new elements of density matrix
+/// @param density The selected density matrices, new ones will also be put here
+/// @param IsNew The matrix that saves whether the element is newly populated or not
+/// @param NumPoints The number of points for each element
+void new_element_point_selection(EvolvingDensity& density, const QuantumBoolMatrix& IsNew, const int NumPoints);
 
 #endif // !MC_H

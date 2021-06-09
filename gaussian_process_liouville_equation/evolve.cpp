@@ -176,7 +176,7 @@ static inline double calculate_2_level_element(
 {
 	return Coe_1 * ((1.0 + phi(0, 0)) * rho(0, 0) + 2.0 * phi(0, 1) * omega1(0, 1) * rho(0, 1) - 2.0 * phi(0, 1) * omega1(0, 0) * rho(0, 2) + (1.0 - phi(0, 0)) * rho(0, 3))
 		+ Coe0 * (phi(1, 1) * rho(1, 0) - 2.0 * phi(1, 0) * omega1(1, 1) * rho(1, 1) + 2.0 * phi(1, 0) * omega1(1, 0) * rho(1, 2) - phi(1, 1) * rho(1, 3))
-		+ Coe1 * ((phi(2, 0) - 1.0) * rho(2, 0) + 2.0 * phi(2, 1) * omega1(2, 1) * rho(2, 1) - 2.0 * phi(2, 1) * omega1(2, 0) * rho(2, 2) - (phi(2, 0) + 1.0) * rho(2, 3));
+		+ Coe1 * ((1.0 - phi(2, 0)) * rho(2, 0) - 2.0 * phi(2, 1) * omega1(2, 1) * rho(2, 1) + 2.0 * phi(2, 1) * omega1(2, 0) * rho(2, 2) + (1.0 + phi(2, 0)) * rho(2, 3));
 }
 
 QuantumComplexMatrix evolve_predict(
@@ -194,7 +194,7 @@ QuantumComplexMatrix evolve_predict(
 	{
 		// 2-level system
 		// x_i and p_{i-1} have same number of elements, and p_i is branching
-		if (is_coupling(x, p, mass) == true)
+		if (false)//is_coupling(x, p, mass) == true)
 		{
 			// 17 steps
 			const ClassicalDoubleVector x1 = x.array() - p.array() / mass.array() * dt_4;
@@ -225,7 +225,7 @@ QuantumComplexMatrix evolve_predict(
 				const QuantumBoolMatrix& IsSmall,
 				const Optimization& optimizer) -> Eigen::MatrixXd
 			{
-				const int NBranch = x4.size() / 3.0;
+				const int NBranch = x4.size() / 3;
 				Eigen::MatrixXd result(NBranch, NumElements);
 				for (int iPES = 0; iPES < NumPES; iPES++)
 				{
@@ -248,7 +248,17 @@ QuantumComplexMatrix evolve_predict(
 						}
 					}
 				}
-				return result;
+				// now the arrangement is: gamma*(n, gamma'); need to rearrange to gamma*(gamma', n) for prediction
+				Eigen::MatrixXd rearrange_result(NBranch, NumElements);
+				for (int iN = 0; iN < 3; iN++)
+				{
+					for (int iGammaPrime = 0; iGammaPrime < 3; iGammaPrime++)
+					{
+						const int OldRow = iN * 3 + iGammaPrime, NewRow = iGammaPrime * 3 + iN;
+						rearrange_result.row(NewRow) = result.row(OldRow);
+					}
+				}
+				return rearrange_result;
 			}(x4, p3, IsSmall, optimizer);
 			const Eigen::MatrixXd phi = phi_of_2_level(x2, p2, mass, dt);
 			const Eigen::Vector2d omega0 = omega0_of_2_level(x, x1, x2[1], dt_2);
@@ -271,29 +281,29 @@ QuantumComplexMatrix evolve_predict(
 				return result;
 			}(x2, x3, x4, dt_2);
 			// calculate
-			const int NBranch = 3;
+			const int NBranch = 3; // the availability of n (off-diagonal momentum evolution branches)
 			result(0, 0) = calculate_2_level_element(
 				phi.block(0, 0, NBranch, phi.cols()),
 				omega1.block(0, 0, NBranch, omega1.cols()),
 				rho_predict.block(0, 0, NBranch, rho_predict.cols()),
 				(1.0 - phi(1, 0)) / 4.0,
 				phi(1, 1) / 2.0,
-				-(phi(1, 0) + 1.0) / 4.0);
+				(1.0 + phi(1, 0)) / 4.0);
 			result(1, 0) = calculate_2_level_element(
 				phi.block(NBranch, 0, NBranch, phi.cols()),
 				omega1.block(NBranch, 0, NBranch, omega1.cols()),
 				rho_predict.block(NBranch, 0, NBranch, rho_predict.cols()),
 				phi(1 + NBranch, 1) / 4.0,
 				phi(1 + NBranch, 0) / 2.0,
-				phi(1 + NBranch, 1) / 4.0) * (omega0[1] + 1.0i * omega0[0])
-				+ (omega1(1 + NBranch, 0) * rho_predict(1 + NBranch, 1) + omega1(1 + NBranch, 1) * rho_predict(1 + NBranch, 0)) * (-omega0[0] + 1.0i * omega0[1]);
+				-phi(1 + NBranch, 1) / 4.0) * (omega0[1] + 1.0i * omega0[0])
+				+ (omega1(1 + NBranch, 0) * rho_predict(1 + NBranch, 1) + omega1(1 + NBranch, 1) * rho_predict(1 + NBranch, 2)) * (-omega0[0] + 1.0i * omega0[1]);
 			result(1, 1) = calculate_2_level_element(
 				phi.block(2.0 * NBranch, 0, NBranch, phi.cols()),
 				omega1.block(2.0 * NBranch, 0, NBranch, omega1.cols()),
 				rho_predict.block(2.0 * NBranch, 0, NBranch, rho_predict.cols()),
 				(1.0 + phi(1 + 2.0 * NBranch, 0)) / 4.0,
-				phi(1 + 2.0 * NBranch, 1) / 2.0,
-				-(phi(1 + 2.0 * NBranch, 0) + 1.0) / 4.0);
+				-phi(1 + 2.0 * NBranch, 1) / 2.0,
+				(1.0 - phi(1 + 2.0 * NBranch, 0)) / 4.0);
 		}
 		else
 		{
@@ -302,7 +312,7 @@ QuantumComplexMatrix evolve_predict(
 			const ClassicalVectors p1 = momentum_diagonal_evolve({ x1 }, { p }, dt);
 			const ClassicalVectors x2 = position_evolve({ x1 }, p1, mass, dt_2);
 			const Eigen::Vector2d omega = omega0_of_2_level(x, x1, x2[1], dt);
-			const double re = optimizer.predict_element(IsSmall, x2[1], p1[1], 2), im = optimizer.predict_element(IsSmall, x2[1], p1[1], 1);
+			const double re = optimizer.predict_element(IsSmall, x2[1], p1[1], 1), im = optimizer.predict_element(IsSmall, x2[1], p1[1], 2);
 			result(0, 0) = optimizer.predict_element(IsSmall, x2[0], p1[0], 0);
 			result(1, 0) = re * (omega[1] + 1.0i * omega[0]) + im * (-omega[0] + 1.0i * omega[1]);
 			result(1, 1) = optimizer.predict_element(IsSmall, x2[2], p1[2], 3);

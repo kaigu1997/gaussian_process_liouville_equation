@@ -210,7 +210,7 @@ Optimization::Optimization(
 	const nlopt::algorithm Algorithm):
 	TypesOfKernels(KernelTypes),
 	NumHyperparameters(number_of_overall_hyperparameters(KernelTypes)),
-	NumPoint(params.get_number_of_selected_points())
+	NumPoints(params.get_number_of_selected_points())
 {
 	// set up bounds and hyperparameters
 	ParameterVector LowerBound(NumHyperparameters, std::numeric_limits<double>::lowest());
@@ -276,26 +276,19 @@ double Optimization::optimize(const EvolvingDensity& density, const QuantumBoolM
 {
 	const nlopt::vfunc minimizing_function = leave_one_out_cross_validation;
 	double sum_err = 0.0;
-	// get a copy for sort
-	EvolvingDensity density_copy = density;
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		// first, check if all points are very small or not
 		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
 		{
 			// select points for optimization
-			std::nth_element(
-				std::execution::par_unseq,
-				density_copy.begin(),
-				density_copy.begin() + NumPoint,
-				density_copy.end(),
-				[&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_function(get_density_matrix_element(std::get<2>(psp1), iElement)) > weight_function(get_density_matrix_element(std::get<2>(psp2), iElement)); });
-			// reconstruct training feature (PhaseDim*N) and training labels (N*1)
-			Eigen::MatrixXd feature(PhaseDim, NumPoint);
-			Eigen::VectorXd label(NumPoint);
-			for (int iPoint = 0; iPoint < NumPoint; iPoint++)
+			const int BeginIndex = iElement * NumPoints;
+			// construct training feature (PhaseDim*N) and training labels (N*1)
+			Eigen::MatrixXd feature(PhaseDim, NumPoints);
+			Eigen::VectorXd label(NumPoints);
+			for (int iPoint = 0; iPoint < NumPoints; iPoint++)
 			{
-				const auto& [x, p, rho] = density_copy[iPoint];
+				const auto& [x, p, rho] = density[BeginIndex + iPoint];
 				label[iPoint] = get_density_matrix_element(rho, iElement);
 				feature.col(iPoint) << x, p;
 			}
@@ -354,26 +347,19 @@ double Optimization::normalize(EvolvingDensity& density, const QuantumBoolMatrix
 
 void Optimization::update_training_set(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall)
 {
-	// get a copy for sort
-	EvolvingDensity density_copy = density;
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		// first, check if all points are very small or not
 		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
 		{
 			// select points for optimization
-			std::nth_element(
-				std::execution::par_unseq,
-				density_copy.begin(),
-				density_copy.begin() + NumPoint,
-				density_copy.end(),
-				[&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_function(get_density_matrix_element(std::get<2>(psp1), iElement)) > weight_function(get_density_matrix_element(std::get<2>(psp2), iElement)); });
-			// reconstruct training feature (PhaseDim*N) and training labels (N*1)
-			Eigen::MatrixXd feature(PhaseDim, NumPoint);
-			Eigen::VectorXd label(NumPoint);
-			for (int iPoint = 0; iPoint < NumPoint; iPoint++)
+			const int BeginIndex = iElement * NumPoints;
+			// construct training feature (PhaseDim*N) and training labels (N*1)
+			Eigen::MatrixXd feature(PhaseDim, NumPoints);
+			Eigen::VectorXd label(NumPoints);
+			for (int iPoint = 0; iPoint < NumPoints; iPoint++)
 			{
-				const auto& [x, p, rho] = density_copy[iPoint];
+				const auto& [x, p, rho] = density[BeginIndex + iPoint];
 				label[iPoint] = get_density_matrix_element(rho, iElement);
 				feature.col(iPoint) << x, p;
 			}
@@ -406,7 +392,7 @@ double Optimization::predict_element(
 		Eigen::MatrixXd test_feat(PhaseDim, 1);
 		test_feat << x, p;
 		// predict
-		// not using the saved kernels because of multi-threading
+		// not using the saved kernels because of multi-threading, and this is const member function
 		KernelList Kernel = generate_kernels(TypesOfKernels, Hyperparameters[ElementIndex]);
 		return (get_kernel_matrix(test_feat, TrainingFeatures[ElementIndex], Kernel) * KInvLbls[ElementIndex]).value();
 	}
@@ -433,7 +419,9 @@ Eigen::VectorXd Optimization::predict_elements(
 			test_feat.col(i) << x[i], p[i];
 		}
 		// predict
-		return get_kernel_matrix(test_feat, TrainingFeatures[ElementIndex], Kernels[ElementIndex]) * KInvLbls[ElementIndex];
+		// not using the saved kernels because of multi-threading, and this is const member function
+		KernelList Kernel = generate_kernels(TypesOfKernels, Hyperparameters[ElementIndex]);
+		return get_kernel_matrix(test_feat, TrainingFeatures[ElementIndex], Kernel) * KInvLbls[ElementIndex];
 	}
 	else
 	{
@@ -445,7 +433,9 @@ Eigen::VectorXd Optimization::print_element(const QuantumBoolMatrix& IsSmall, co
 {
 	if (IsSmall(ElementIndex / NumPES, ElementIndex % NumPES) == false)
 	{
-		return get_kernel_matrix(PhaseGrids, TrainingFeatures[ElementIndex], Kernels[ElementIndex]) * KInvLbls[ElementIndex];
+		// not using the saved kernels because this is const member function
+		KernelList Kernel = generate_kernels(TypesOfKernels, Hyperparameters[ElementIndex]);
+		return get_kernel_matrix(PhaseGrids, TrainingFeatures[ElementIndex], Kernel) * KInvLbls[ElementIndex];
 	}
 	else
 	{
@@ -601,7 +591,8 @@ void monte_carlo_selection(
 {
 	// TODO: mc techniques: stepsize, number of MC steps
 	static std::mt19937 engine(std::chrono::system_clock::now().time_since_epoch().count()); // Random number generator, using merseen twister with seed from time
-	static const int MinNOMC = 100 * Dim * 2;												 // The minimum number of monte carlo steps that will be done for each phase point selection
+	static const int MinNOMC = 100 * PhaseDim;												 // The minimum number of monte carlo steps
+	static const int MaxNOMC = 10000 * PhaseDim;											 // The maximum number of monte carlo steps
 	static int NOMC = MinNOMC;																 // The number of monte carlo steps used
 	static const int NGrids = 20;															 // The number of grids on each phase direction
 	static const double MCAcceptRatio = 0.45;												 // The maximum acceptance ratio; greater than this value means too much acceptance
@@ -618,14 +609,10 @@ void monte_carlo_selection(
 		const int iPES = iElement / NumPES, jPES = iElement % NumPES;
 		if (IsSmall(iPES, jPES) == false)
 		{
-			std::nth_element(
-				std::execution::par_unseq,
-				density.begin(),
-				density.begin() + NumPoints,
-				density.end(),
-				[&](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_function(get_density_matrix_element(std::get<2>(psp1), iElement)) > weight_function(get_density_matrix_element(std::get<2>(psp2), iElement)); });
-			for (auto [x, p, rho] : density)
+			const int BeginIndex = iElement * NumPoints;
+			for (int iPoint = 0; iPoint < NumPoints; iPoint++)
 			{
+				auto [x, p, rho] = density[BeginIndex + iPoint];
 				const Tensor3d f = adiabatic_force(x);
 				x = x.array() + p.array() / mass.array() * dt;
 				for (int iDim = 0; iDim < Dim; iDim++)
@@ -692,16 +679,51 @@ void monte_carlo_selection(
 			}
 			// after MC, the new point is at the original place
 			// then update the number of MC steps
-			if (not_enough_step == true)
+			if (not_enough_step == true && NOMC <= MaxNOMC / 2)
 			{
 				NOMC *= 2;
 			}
-			else if (NOMC >= 2 * MinNOMC)
+			if (not_enough_step == false && NOMC >= 2 * MinNOMC)
 			{
 				NOMC /= 2;
 			}
 			// after all points updated, insert into the EvolvingDensity
 			density.insert(density.end(), Maximums[iElement].cbegin(), Maximums[iElement].cend());
+		}
+		else
+		{
+			density.insert(density.end(), NumPoints, std::make_tuple(ClassicalDoubleVector::Zero(), ClassicalDoubleVector::Zero(), QuantumComplexMatrix::Zero()));
+		}
+	}
+}
+
+/// @details This function fills the newly populated density matrix element
+/// with density matrices of the greatest weight.
+void new_element_point_selection(EvolvingDensity& density, const QuantumBoolMatrix& IsNew, const int NumPoints)
+{
+	if (IsNew.all() == false)
+	{
+		return;
+	}
+	assert(NumElements * NumPoints == density.size());
+	EvolvingDensity density_copy = density;
+	for (int iElement = 0; iElement < NumElements; iElement++)
+	{
+		if (IsNew(iElement / NumPES, iElement % NumPES) == true)
+		{
+			// rearrange to find the points with the largest weight
+			std::nth_element(
+				std::execution::par_unseq,
+				density_copy.begin(),
+				density_copy.begin() + NumPoints,
+				density_copy.end(),
+				[ElementIndex = iElement](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_function(get_density_matrix_element(std::get<2>(psp1), ElementIndex)) > weight_function(get_density_matrix_element(std::get<2>(psp2), ElementIndex)); });
+			// then copy to the right place
+			std::copy(
+				std::execution::par_unseq,
+				density_copy.begin(),
+				density_copy.begin() + NumPoints,
+				density.begin() + iElement * NumPoints);
 		}
 	}
 }

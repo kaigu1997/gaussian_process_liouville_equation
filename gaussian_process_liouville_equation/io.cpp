@@ -52,7 +52,7 @@ Parameters::Parameters(const std::string& input_file_name)
 	xmax = x0.array().abs() * 2;
 	xmin = -xmax;
 	SigmaX0 = hbar / 2.0 * SigmaP0.array().inverse();		   // follow the minimal uncertainty principle
-	dx = M_PI * hbar * (p0 + 3.0 * SigmaP0).array().inverse(); // 4-5 grids per de Broglie wavelength
+	dx = M_PI * hbar * (p0 + 3.0 * SigmaP0).array().inverse() / 2.0; // 1 grids per de Broglie wavelength
 	xNumGrids = ((xmax - xmin).array() / dx.array()).cast<int>();
 	dx = (xmax - xmin).array() / xNumGrids.cast<double>().array();
 	// in grid solution, dx = pi*hbar/(p0+3sigma_p), p in p0+pi*hbar/2/dx*[-1, 1]
@@ -96,14 +96,18 @@ std::ostream& print_time(std::ostream& os)
 	return os << std::put_time(std::localtime(&CurrentTime), "%F %T %Z");
 }
 
-Eigen::MatrixXd print_point(const EvolvingDensity& density)
+Eigen::MatrixXd print_point(const EvolvingDensity& density, const int NumPoints)
 {
-	const int NPoint = density.size();
-	Eigen::MatrixXd result(PhaseDim, NPoint);
-	for (int iPoint = 0; iPoint < NPoint; iPoint++)
+	assert(NumElements * NumPoints == density.size());
+	Eigen::MatrixXd result(PhaseDim * NumElements, NumPoints);
+	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		const auto& [x, p, rho] = density[iPoint];
-		result.col(iPoint) << x, p;
+		const int StartRow = iElement * PhaseDim;
+		for (int iPoint = 0; iPoint < NumPoints; iPoint++)
+		{
+			const auto& [x, p, rho] = density[iPoint];
+			result.block<PhaseDim, 1>(StartRow, iPoint) << x, p;
+		}
 	}
 	return result;
 }
