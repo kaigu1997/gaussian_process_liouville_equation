@@ -2,7 +2,7 @@ CXX := g++
 CXXFLAGS := -std=c++17 -Ofast -march=native -fopenmp
 LDFLAGS := -std=c++17 -Ofast -march=native -Wl,-fuse-ld=gold -fopenmp
 LDLIBS := -lshogun -lnlopt -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -ltbb -lpthread
-Objects := io.o pes.o mc.o evolve.o main.o
+Objects := io.o pes.o mc.o opt.o evolve.o main.o
 PCH := stdafx.h.gch
 
 .PHONY: all
@@ -14,7 +14,9 @@ main.o: main.cpp evolve.h mc.h pes.h io.h ${PCH}
 	${CXX} -c main.cpp ${CXXFLAGS} -o main.o
 evolve.o: evolve.cpp evolve.h pes.h ${PCH}
 	${CXX} -c evolve.cpp ${CXXFLAGS} -o evolve.o
-mc.o: mc.cpp mc.h ${PCH}
+opt.o: opt.cpp opt.h mc.h io.h ${PCH}
+	${CXX} -c opt.cpp ${CXXFLAGS} -o opt.o
+mc.o: mc.cpp mc.h io.h ${PCH}
 	${CXX} -c mc.cpp ${CXXFLAGS} -o mc.o
 pes.o: pes.cpp pes.h ${PCH}
 	${CXX} -c pes.cpp ${CXXFLAGS} -o pes.o

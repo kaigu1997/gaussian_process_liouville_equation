@@ -51,7 +51,7 @@ Parameters::Parameters(const std::string& input_file_name)
 	// deal with input
 	xmax = x0.array().abs() * 2;
 	xmin = -xmax;
-	SigmaX0 = hbar / 2.0 * SigmaP0.array().inverse();		   // follow the minimal uncertainty principle
+	SigmaX0 = hbar / 2.0 * SigmaP0.array().inverse();				 // follow the minimal uncertainty principle
 	dx = M_PI * hbar * (p0 + 3.0 * SigmaP0).array().inverse() / 2.0; // 1 grids per de Broglie wavelength
 	xNumGrids = ((xmax - xmin).array() / dx.array()).cast<int>();
 	dx = (xmax - xmin).array() / xNumGrids.cast<double>().array();
@@ -62,7 +62,7 @@ Parameters::Parameters(const std::string& input_file_name)
 	dp = (pmax - pmin).array() / pNumGrids.cast<double>().array();
 	// whole phase space grids
 	PhasePoints.resize(PhaseDim, xNumGrids.prod() * pNumGrids.prod());
-	#pragma omp parallel for
+#pragma omp parallel for
 	for (int iPoint = 0; iPoint < PhasePoints.cols(); iPoint++)
 	{
 		ClassicalDoubleVector xPoint = xmin, pPoint = pmin;

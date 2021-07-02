@@ -4,7 +4,7 @@
 #ifndef EVOLVE_H
 #define EVOLVE_H
 
-#include "mc.h"
+#include "opt.h"
 
 /// @brief To predict the density matrix of the given point after evolving 1 time step
 /// @param[in] x Position of classical degree of freedom

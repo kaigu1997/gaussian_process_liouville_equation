@@ -6,6 +6,7 @@
 #include "evolve.h"
 
 #include "mc.h"
+#include "opt.h"
 #include "pes.h"
 
 static const double CouplingCriterion = 0.01; ///< Criteria of whether have coupling or not
@@ -194,7 +195,7 @@ QuantumComplexMatrix evolve_predict(
 	{
 		// 2-level system
 		// x_i and p_{i-1} have same number of elements, and p_i is branching
-		if (false)//is_coupling(x, p, mass) == true)
+		if (is_coupling(x, p, mass) == true)
 		{
 			// 17 steps
 			const ClassicalDoubleVector x1 = x.array() - p.array() / mass.array() * dt_4;

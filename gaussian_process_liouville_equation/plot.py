@@ -1,7 +1,4 @@
-from cycler import cycler
-import matplotlib as mpl
 from matplotlib import animation
-from matplotlib import colors
 import matplotlib.pyplot as plt
 from matplotlib import ticker
 import numpy as np
