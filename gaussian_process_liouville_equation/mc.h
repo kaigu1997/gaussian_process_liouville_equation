@@ -46,11 +46,16 @@ QuantumBoolMatrix is_very_small(const EvolvingDensity& density);
 
 /// @brief To generate initial adiabatic PWTDM at the given place
 /// @param[in] Params Parameters objects containing all the required information (r0, sigma0, mass)
+/// @param[in] InitialPopulation Initial population on each of the PES
 /// @param[in] x Position of classical degree of freedom
 /// @param[in] p Momentum of classical degree of freedom
 /// @return The initial density matrix at the give phase point under adiabatic basis
 /// @see learnt_distribution(), monte_carlo_selection()
-QuantumComplexMatrix initial_distribution(const Parameters& Params, const ClassicalDoubleVector& x, const ClassicalDoubleVector& p);
+QuantumComplexMatrix initial_distribution(
+	const Parameters& Params,
+	const std::array<double, NumPES>& InitialPopulation,
+	const ClassicalDoubleVector& x,
+	const ClassicalDoubleVector& p);
 
 /// To store the parameters used in MC process
 class MCParameters
@@ -122,7 +127,7 @@ void monte_carlo_selection(
 	const DistributionFunction& distribution,
 	const QuantumBoolMatrix& IsSmall,
 	EvolvingDensity& density,
-	const bool IsToBeEvolved = true);
+	const bool IsToBeEvolved = false);
 
 /// @brief To optimize the number of the monte carlo steps by autocorrelation
 /// @param[inout] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)

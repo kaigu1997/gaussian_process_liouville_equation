@@ -22,23 +22,35 @@ int main()
 	const int ReoptFreq = Params.get_reoptimize_freq();					 // save hyperparameter re-optimization frequency
 	const double dt = Params.get_dt();									 // save dt directly
 	const int NumPoints = Params.get_number_of_selected_points();		 // save the number of points for evolving/optimizing
-	// get initial distribution
+	// get initial distribution and energy
+	const std::array<double, NumPES> InitialPopulation = { 0.5, 0.5 };
 	EvolvingDensity density; // initial density
 	for (int i = 0; i < Params.get_number_of_selected_points(); i++)
 	{
-		density.push_back(std::make_tuple(x0, p0, initial_distribution(Params, x0, p0))); // put the initial point into density
+		density.push_back(std::make_tuple(x0, p0, initial_distribution(Params, InitialPopulation, x0, p0))); // put the initial point into density
 	}
-	QuantumBoolMatrix IsSmall = QuantumBoolMatrix::Ones();			// whether each element of density matrix is close to 0 everywhere or not
+	QuantumBoolMatrix IsSmall = is_very_small(density);				// whether each element of density matrix is close to 0 everywhere or not
 	QuantumBoolMatrix IsSmallOld = IsSmall;							// whether each element is small at last moment
 	QuantumBoolMatrix IsNew = IsSmallOld.array() > IsSmall.array(); // whether some element used to be small but is not small now
-	IsSmall(0, 0) = false;
+	bool IsCouple = false;											// whether the dynamics is adiabatic or not
 	MCParameters MCParams(Params);
-	const DistributionFunction initdist = std::bind(initial_distribution, Params, std::placeholders::_1, std::placeholders::_2);
-	monte_carlo_selection(Params, MCParams, initdist, IsSmall, density, false); // generated from MC from initial distribution
-	// generate initial hyperparameters
+	const DistributionFunction initdist = std::bind(initial_distribution, Params, InitialPopulation, std::placeholders::_1, std::placeholders::_2);
+	monte_carlo_selection(Params, MCParams, initdist, IsSmall, density); // generated from MC from initial distribution
 	Optimization optimizer(Params);
+	const double TotalEnergy = [&](void) -> double
+	{
+		const double SumWeight = std::accumulate(InitialPopulation.begin(), InitialPopulation.end(), 0.);
+		double result = 0.;
+		for (int iPES = 0; iPES < NumPES; iPES++)
+		{
+			const auto& [ppl_prm, r_prm, r_mc, T_mc, V_mc] = calculate_average(optimizer, density, mass, IsSmall, iPES);
+			result += InitialPopulation[iPES] * (T_mc + V_mc);
+		}
+		return result / SumWeight;
+	}();
+	// generate initial hyperparameters
 	const DistributionFunction& evolve_predict_distribution = std::bind(
-		evolve_predict,
+		non_adiabatic_evolve_predict,
 		std::placeholders::_1,
 		std::placeholders::_2,
 		mass,
@@ -51,7 +63,7 @@ int main()
 		std::cref(IsSmall),
 		std::placeholders::_1,
 		std::placeholders::_2); // predict current step distribution
-	double err = optimizer.optimize(density, IsSmall);
+	double err = optimizer.optimize(density, mass, TotalEnergy, IsSmall);
 	double ppl = optimizer.normalize(density, IsSmall);
 	optimizer.update_training_set(density, IsSmall);
 	// initial output: average, hyperparameters, selected points, gridded phase space
@@ -63,13 +75,23 @@ int main()
 	std::ofstream phase("phase.txt", std::ios_base::binary);
 	std::ofstream autocor("autocor.txt", std::ios_base::binary);
 	// average: time, population, x, p, V, T, E of each PES
+	double ppl_all = 0.;
+	ClassicalPhaseVector r_prm_all = ClassicalPhaseVector::Zero();
+	ClassicalPhaseVector r_mc_all = ClassicalPhaseVector::Zero();
+	double T_all = 0.;
+	double V_all = 0.;
 	average << 0.;
 	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
-		const auto& [ppl, x, p, V, T] = optimizer.calculate_average(mass, IsSmall, iPES);
-		average << ' ' << ppl << x.format(VectorFormatter) << p.format(VectorFormatter) << ' ' << V << ' ' << T << ' ' << V + T;
+		const auto& [ppl_prm, r_prm, r_mc, T_mc, V_mc] = calculate_average(optimizer, density, mass, IsSmall, iPES);
+		average << ' ' << ppl_prm << r_prm.format(VectorFormatter) << r_mc.format(VectorFormatter) << ' ' << T_mc << ' ' << V_mc << ' ' << V_mc + T_mc;
+		ppl_all += ppl_prm;
+		r_prm_all += ppl_prm * r_prm;
+		r_mc_all += ppl_prm * r_mc;
+		T_all += ppl_prm * T_mc;
+		V_all += ppl_prm * V_mc;
 	}
-	average << std::endl;
+	average << ' ' << ppl_all << r_prm_all.format(VectorFormatter) << r_mc_all.format(VectorFormatter) << ' ' << T_all << ' ' << V_all << ' ' << V_all + T_all << std::endl;
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		for (double d : optimizer.get_hyperparameter(iElement))
@@ -98,32 +120,56 @@ int main()
 	// evolution
 	for (int iTick = 1; iTick <= TotalTicks; iTick++)
 	{
-		// evolve; using Trotter expansion, combined with MC selection
-		monte_carlo_selection(Params, MCParams, evolve_predict_distribution, IsSmall, density);
+		// evolve
+		evolve(density, MCParams.get_num_points(), mass, dt, IsSmall, optimizer);
 		IsSmall = is_very_small(density);
 		IsNew = IsSmallOld.array() > IsSmall.array();
+		IsCouple = std::any_of(std::execution::par_unseq, density.cbegin(), density.cend(), [&mass](const PhaseSpacePoint& psp) -> bool { const auto& [x, p, rho] = psp; return is_coupling(x, p, mass).any(); });
 		// judge if it is time to re-optimize, or there are new elements having population
 		if (iTick % ReoptFreq == 0 || IsNew.any() == true)
 		{
 			// reselect; nothing new, nothing happens
 			new_element_point_selection(density, IsNew, NumPoints);
-			// model training
-			err = optimizer.optimize(density, IsSmall);
-			ppl = optimizer.normalize(density, IsSmall);
-			optimizer.update_training_set(density, IsSmall);
+			// model training if non-adiabatic
+			if (IsCouple == true)
+			{
+				err = optimizer.optimize(density, mass, TotalEnergy, IsSmall);
+				ppl = optimizer.normalize(density, IsSmall);
+				optimizer.update_training_set(density, IsSmall);
+			}
 			if (iTick % OutputFreq == 0)
 			{
+				if (IsCouple == true)
+				{
+					// if in the coupling region, reselect points
+					monte_carlo_selection(Params, MCParams, predict_distribution, IsSmall, density);
+				}
+				else
+				{
+					// not coupled, optimize for output
+					err = optimizer.optimize(density, mass, TotalEnergy, IsSmall);
+					ppl = optimizer.normalize(density, IsSmall);
+					optimizer.update_training_set(density, IsSmall);
+				}
 				// output time
 				// output average
-				ClassicalDoubleVector x_tot = ClassicalDoubleVector::Zero();
+				ppl_all = 0.;
+				r_prm_all = ClassicalPhaseVector::Zero();
+				r_mc_all = ClassicalPhaseVector::Zero();
+				T_all = 0.;
+				V_all = 0.;
 				average << iTick * dt;
 				for (int iPES = 0; iPES < NumPES; iPES++)
 				{
-					const auto& [ppl, x, p, V, T] = optimizer.calculate_average(mass, IsSmall, iPES);
-					average << ' ' << ppl << x.format(VectorFormatter) << p.format(VectorFormatter) << ' ' << V << ' ' << T << ' ' << V + T;
-					x_tot += x * ppl;
+					const auto& [ppl_prm, r_prm, r_mc, T_mc, V_mc] = calculate_average(optimizer, density, mass, IsSmall, iPES);
+					average << ' ' << ppl_prm << r_prm.format(VectorFormatter) << r_mc.format(VectorFormatter) << ' ' << T_mc << ' ' << V_mc << ' ' << V_mc + T_mc;
+					ppl_all += ppl_prm;
+					r_prm_all += ppl_prm * r_prm;
+					r_mc_all += ppl_prm * r_mc;
+					T_all += ppl_prm * T_mc;
+					V_all += ppl_prm * V_mc;
 				}
-				average << std::endl;
+				average << ' ' << ppl_all << r_prm_all.format(VectorFormatter) << r_mc_all.format(VectorFormatter) << ' ' << T_all << ' ' << V_all << ' ' << V_all + T_all << std::endl;
 				// output hyperparameters
 				for (int iElement = 0; iElement < NumElements; iElement++)
 				{
@@ -133,7 +179,7 @@ int main()
 					}
 					hyperparam << '\n';
 				}
-				hyperparam << '\n';
+				hyperparam << std::endl;
 				// output point
 				point << print_point(density, NumPoints).format(MatrixFormatter) << "\n\n";
 				// output phase
@@ -152,6 +198,7 @@ int main()
 				autocor << '\n';
 				std::cout << iTick * dt << ' ' << err << ' ' << ppl << ' ' << MCParams.get_num_MC_steps() << ' ' << MCParams.get_max_dispalcement() << ' ' << print_time << std::endl;
 				// judge whether to finish or not: any of the dimension go over -x0
+				ClassicalDoubleVector x_tot = r_mc_all.block<Dim, 1>(0, 0);
 				if ((x_tot.array() > -x0.array()).any() == true)
 				{
 					break;

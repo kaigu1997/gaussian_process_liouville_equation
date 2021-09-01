@@ -103,9 +103,10 @@ Eigen::MatrixXd print_point(const EvolvingDensity& density, const int NumPoints)
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		const int StartRow = iElement * PhaseDim;
+		const int StartPoint = iElement * NumPoints;
 		for (int iPoint = 0; iPoint < NumPoints; iPoint++)
 		{
-			const auto& [x, p, rho] = density[iPoint];
+			const auto& [x, p, rho] = density[iPoint + StartPoint];
 			result.block<PhaseDim, 1>(StartRow, iPoint) << x, p;
 		}
 	}

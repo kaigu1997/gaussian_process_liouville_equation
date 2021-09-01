@@ -31,26 +31,45 @@ def read_input(input_file):
 
 
 def plot_log(log_file, pic_file):
-	NUM_VAR = 2 # error and population
+	NUM_VAR = 4 # error, population, autocor step, and autocor displacement
+	NUM_LINE_PER_PLOT = 2 # number of lines on each plots (axis)
+	NUM_PLOT = NUM_VAR // NUM_LINE_PER_PLOT # number of axis
+	NUM_COL = 2 # number of columns of axis
+	NUM_ROW = NUM_PLOT // NUM_COL # number of rows of axis
 	# get data
-	t, err, ppl = np.loadtxt(log_file, usecols=np.linspace(0, NUM_VAR, NUM_VAR + 1, dtype=int), unpack=True)
+	t, err, ppl, autocor_step, autocor_displace = np.loadtxt(log_file, usecols=np.linspace(0, NUM_VAR, NUM_VAR + 1, dtype=int), unpack=True)
 	fig = plt.figure(figsize=(FIGSIZE, FIGSIZE))
-	ax = fig.subplots()
-	ax_twin = ax.twinx()
+	ax1, ax2 = fig.subplots(nrows=NUM_ROW, ncols=NUM_COL)
+	ax1_twin = ax1.twinx()
+	ax2_twin = ax2.twinx()
 	# plot
-	p1, = ax.semilogy(t, err, label="Error")
-	ax_twin.plot([],[])
-	p2, = ax_twin.plot(t, ppl, label="Normal Factor")
+	p1, = ax1.semilogy(t, err, label="Error")
+	ax1_twin.plot([], [])
+	ax2.plot([], [])
+	ax2_twin.plot([], [])
+	p2, = ax1_twin.plot(t, ppl, label="Normal Factor")
+	ax2.plot([], [])
+	ax2_twin.plot([], [])
+	p3, = ax2.plot(t, autocor_step, label="Autocorrelation Steps")
+	ax2_twin.plot([], [])
+	p4, = ax2_twin.plot(t, autocor_displace, label="Autocorrelation Displacement")
 	# set label
-	ax.set_xlabel("Time")
-	ax.set_ylabel("log(error)", color=p1.get_color())
-	ax_twin.set_ylabel("Norm", color=p2.get_color())
+	ax1.set_xlabel("Time")
+	ax2.set_xlabel("Time")
+	ax1.set_ylabel("log(error)", color=p1.get_color())
+	ax1_twin.set_ylabel("Norm", color=p2.get_color())
+	ax2.set_ylabel("Step", color=p3.get_color())
+	ax2_twin.set_ylabel("Displacement", color=p4.get_color())
 	# set tick
-	ax.tick_params(axis='x')
-	ax.tick_params(axis='y', colors=p1.get_color())
-	ax_twin.tick_params(axis='y', colors=p2.get_color())
+	ax1.tick_params(axis='x')
+	ax2.tick_params(axis='x')
+	ax1.tick_params(axis='y', colors=p1.get_color())
+	ax1_twin.tick_params(axis='y', colors=p2.get_color())
+	ax2.tick_params(axis='y', colors=p3.get_color())
+	ax2_twin.tick_params(axis='y', colors=p4.get_color())
 	# set legend
-	ax.legend(handles=[p1, p2], loc='best')
+	ax1.legend(handles=[p1, p2], loc='best')
+	ax2.legend(handles=[p3, p4], loc='best')
 	# set title
 	plt.suptitle("Evolution Log")
 	# save file
@@ -59,11 +78,11 @@ def plot_log(log_file, pic_file):
 
 
 def plot_average(t, ave_file, pic_file):
-	NUM_VAR = 6 # ppl, x, p, T, V, E for each PES
-	Y_LABEL = ["Population", "x", "p", "V", "T", "E"]
-	NUM_ROW, NUM_COL = 3, 2 # for plot
+	NUM_VAR = 8 # ppl, x, p, T, V, E for each PES
+	Y_LABEL = ["Population", "x", "p", "x", "p", "T", "V", "E"]
+	NUM_ROW, NUM_COL = 2, 4 # for plot
 	# get data
-	data = np.loadtxt(ave_file, usecols=np.linspace(1, NUM_VAR * NUM_PES, NUM_VAR * NUM_PES, dtype=int)).reshape((-1, NUM_PES, NUM_VAR))
+	data = np.loadtxt(ave_file, usecols=np.linspace(1, NUM_VAR * (NUM_PES + 1), NUM_VAR * (NUM_PES + 1), dtype=int)).reshape((-1, NUM_PES + 1, NUM_VAR))
 	fig = plt.figure(figsize=(FIGSIZE, FIGSIZE))
 	axs = fig.subplots(nrows=NUM_ROW, ncols=NUM_COL)
 	# plot one by one
@@ -71,6 +90,7 @@ def plot_average(t, ave_file, pic_file):
 		ax = axs[i // NUM_COL][i % NUM_COL]
 		for j in range(NUM_PES):
 			ax.plot(t, data[:, j, i], label="State %d" % j)
+		ax.plot(t, data[:, NUM_PES, i], label="Total")
 		ax.set_xlabel("Time")
 		ax.set_ylabel(Y_LABEL[i])
 		ax.legend(loc='best')

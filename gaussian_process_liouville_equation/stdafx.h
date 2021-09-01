@@ -29,7 +29,6 @@
 
 #include <Eigen/Eigen>
 #include <Eigen/StdVector>
-#include <boost/numeric/odeint.hpp>
 #include <nlopt.hpp>
 #include <shogun/features/DenseFeatures.h>
 #include <shogun/kernel/DiagKernel.h>
@@ -62,6 +61,8 @@ using QuantumComplexMatrix = Eigen::Matrix<std::complex<double>, NumPES, NumPES>
 using ClassicalBoolVector = Eigen::Matrix<bool, Dim, 1>;
 /// The vector used in classical degree (e.g. mass, x0, p0) with double values
 using ClassicalDoubleVector = Eigen::Matrix<double, Dim, 1>;
+/// The vector to depict a phase space point (i.e. coordinate)
+using ClassicalPhaseVector = Eigen::Matrix<double, 2 * Dim, 1>;
 /// 3d tensor type for Force and NAC, based on Matrix with extra dimenstion from classical degree
 using Tensor3d = Eigen::Matrix<QuantumDoubleMatrix, Dim, 1>;
 /// The vector containing branched classical position/momentum

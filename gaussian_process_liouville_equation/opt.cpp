@@ -10,10 +10,14 @@
 
 /// The smart pointer to feature matrix
 using FeaturePointer = std::shared_ptr<shogun::Features>;
-/// The training set for full hyperparameter optimization
+/// The training set for hyperparameter optimization of one element of density matrix
 /// passed as parameter to the optimization function.
 /// First is feature, second is label, last is the kernels to use
-using TrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
+using ElementTrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, KernelTypeList>;
+/// The training set for optimization of all diagonal elements
+/// altogether with regularization of population and energy.
+/// First is separate training set for each diagonal elements, then the energy for each PES and the total energy (last term)
+using DiagonalTrainingSet = std::tuple<std::array<ElementTrainingSet, NumPES>, std::array<double, NumPES + 1>>;
 
 /// @brief Calculate the overall number of hyperparameters the optimization will use
 /// @param[in] TypesOfKernels The vector containing all the kernel type used in optimization
@@ -126,7 +130,7 @@ static Eigen::MatrixXd get_kernel_matrix(
 static double negative_log_marginal_likelihood(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	// get the parameters
-	const auto& [TrainingFeature, TrainingLabel, TypesOfKernels] = *static_cast<TrainingSet*>(params);
+	const auto& [TrainingFeature, TrainingLabel, TypesOfKernels] = *static_cast<ElementTrainingSet*>(params);
 	// get kernel
 	KernelList Kernels = generate_kernels(TypesOfKernels, x);
 	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, Kernels, true);
@@ -145,7 +149,7 @@ static double negative_log_marginal_likelihood(const ParameterVector& x, Paramet
 static double leave_one_out_cross_validation(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	// get the parameters
-	const auto& [TrainingFeature, TrainingLabel, TypesOfKernels] = *static_cast<TrainingSet*>(params);
+	const auto& [TrainingFeature, TrainingLabel, TypesOfKernels] = *static_cast<ElementTrainingSet*>(params);
 	// get kernel
 	KernelList Kernels = generate_kernels(TypesOfKernels, x);
 	const Eigen::MatrixXd& KernelMatrix = get_kernel_matrix(TrainingFeature, TrainingFeature, Kernels, true);
@@ -156,10 +160,142 @@ static double leave_one_out_cross_validation(const ParameterVector& x, Parameter
 	return (KInvLbl.array() / KInv.diagonal().array()).abs2().sum();
 }
 
-const double Optimization::DiagMagMin = 1e-4;		  ///< Minimal value of the magnitude of the diagonal kernel
-const double Optimization::DiagMagMax = 1;			  ///< Maximal value of the magnitude of the diagonal kernel
-const double Optimization::AbsoluteTolerance = 1e-10; ///< Absolute tolerance of independent variable (x) in optimization
-const double Optimization::InitialStepSize = 0.5;	  ///< Initial step size in optimization
+/// @brief To calculate the population of one diagonal element by analytic integration of hyperparameters
+/// @param[in] Kernel The kernels with hyperparameters set for the given element
+/// @param[in] KInvLbl The inverse of kernel matrix of training features times the training labels
+/// @return Population of the given element
+static double calculate_population(const KernelList& Kernel, const Eigen::VectorXd& KInvLbl)
+{
+	static const double GlobalFactor = std::pow(2.0 * M_PI, Dim);
+	double ppl = 0.0;
+	for (const auto& [weight, kernel] : Kernel)
+	{
+		// select the gaussian ARD kernel
+		if (kernel->get_kernel_type() == shogun::EKernelType::K_GAUSSIANARD)
+		{
+			const Eigen::Matrix<double, PhaseDim, 1> Characteristic = Eigen::Map<Eigen::MatrixXd>(std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel)->get_weights());
+			ppl += GlobalFactor * weight * weight / Characteristic.prod() * KInvLbl.sum();
+		}
+	}
+	return ppl;
+}
+
+/// @brief To calculate the average position and momentum of one diagonal element by monte carlo integration
+/// @param[in] density The selected density matrices
+/// @param[in] PESIndex The index of the potential energy surface, corresponding to (PESIndex, PESIndex) in density matrix
+/// @return Average position and momentum
+static ClassicalPhaseVector calculate_1st_order_average(const EvolvingDensity& density, const int PESIndex)
+{
+	const int NumPoints = density.size() / NumElements;
+	const int BeginIndex = PESIndex * (NumPES + 1) * NumPoints;
+	ClassicalPhaseVector r = ClassicalPhaseVector::Zero();
+	for (int iPoint = BeginIndex; iPoint < BeginIndex + NumPoints; iPoint++)
+	{
+		const auto& [x, p, rho] = density[iPoint];
+		for (int iDim = 0; iDim < Dim; iDim++)
+		{
+			r[iDim] += x[iDim];
+			r[iDim + Dim] += p[iDim];
+		}
+	}
+	return r / NumPoints;
+}
+
+/// @brief To calculate the average position and momentum of one diagonal element by analytic integration of hyperparameters
+/// @param[in] Features The training features (phase space coordinates) of the given density matrix element
+/// @param[in] Kernel The kernels with hyperparameters set for the given elements of density matrix
+/// @param[in] KInvLbl The inverse of kernel matrix of training features times the training labels
+/// @return Average position and momentum
+static ClassicalPhaseVector calculate_1st_order_average(const Eigen::MatrixXd& Features, const KernelList& Kernel, const Eigen::VectorXd& KInvLbl)
+{
+	static const double GlobalFactor = std::pow(2.0 * M_PI, Dim);
+	ClassicalPhaseVector r = ClassicalPhaseVector::Zero();
+	for (const auto& [weight, kernel] : Kernel)
+	{
+		// select the gaussian ARD kernel
+		if (kernel->get_kernel_type() == shogun::EKernelType::K_GAUSSIANARD)
+		{
+			const Eigen::Matrix<double, PhaseDim, 1> Characteristic = Eigen::Map<Eigen::MatrixXd>(std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel)->get_weights());
+			r += GlobalFactor * weight * weight / Characteristic.prod() * Features * KInvLbl;
+		}
+	}
+	return r;
+}
+
+/// @brief To calculate the average kinetic energy of one diagonal element by monte carlo integration
+/// @param[in] density The selected density matrices
+/// @param[in] PESIndex The index of the potential energy surface, corresponding to (PESIndex, PESIndex) in density matrix
+/// @param[in] mass Mass of classical degree of freedom
+/// @return Average kinetic energy
+static double calculate_kinetic_average(const EvolvingDensity& density, const int PESIndex, const ClassicalDoubleVector& mass)
+{
+	const int NumPoints = density.size() / NumElements;
+	const int BeginIndex = PESIndex * (NumPES + 1) * NumPoints;
+	double T = 0.0;
+	for (int iPoint = BeginIndex; iPoint < BeginIndex + NumPoints; iPoint++)
+	{
+		const auto& [x, p, rho] = density[iPoint];
+		T += p.dot((p.array() / mass.array()).matrix()) / 2.0;
+	}
+	return T / NumPoints;
+}
+
+/// @brief To calculate the average potential energy of one diagonal element by monte carlo integration
+/// @param[in] density The selected density matrices
+/// @param[in] PESIndex The index of the potential energy surface, corresponding to (PESIndex, PESIndex) in density matrix
+/// @return Average potential energy
+static double calculate_potential_average(const EvolvingDensity& density, const int PESIndex)
+{
+	const int NumPoints = density.size() / NumElements;
+	const int BeginIndex = PESIndex * (NumPES + 1) * NumPoints;
+	double V = 0.0;
+	for (int iPoint = BeginIndex; iPoint < BeginIndex + NumPoints; iPoint++)
+	{
+		const auto& [x, p, rho] = density[iPoint];
+		V += adiabatic_potential(x)[PESIndex];
+	}
+	return V / NumPoints;
+}
+
+/// @brief The function for nlopt optimizer to minimize, return the LOOCV MSE + Regularization of Normalization
+/// @param[in] x The input hyperparameters of all diagonal elements, need to calculate the function value and gradient at this point
+/// @param[out] grad The gradient at the given point. It will not be used
+/// @param[in] params Other parameters. Here it is combination of kernel types and selected training set
+/// @return The squared error of LOOCV and the magnified squared error of normalization
+static double diagonal_loocv_with_normalization(const ParameterVector& x, ParameterVector& grad, void* params)
+{
+	static const double NormRegCoe = 1e3; // enlargement coefficient of normalization regularization
+	static const double EngRegCoe = 1e3;  // enlargement coefficient of energy regularization
+	double err = 0.0;
+	double ppl = 0.0;
+	double eng = 0.0;
+	// get the parameters
+	const auto& [TrainingSets, Energies] = *static_cast<DiagonalTrainingSet*>(params);
+	const int NumHyperparameters = x.size() / NumPES;
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		const auto& [features, labels, TypesOfKernels] = TrainingSets[iPES];
+		if (TypesOfKernels.size() != 0)
+		{
+			const int ParamBeginIndex = iPES * NumHyperparameters;
+			const ParameterVector param(x.cbegin() + ParamBeginIndex, x.cbegin() + ParamBeginIndex + NumHyperparameters);
+			// get loocv error
+			err += leave_one_out_cross_validation(param, grad, const_cast<ElementTrainingSet*>(&TrainingSets[iPES]));
+			// get population
+			KernelList Kernels = generate_kernels(TypesOfKernels, param);
+			const Eigen::VectorXd& KInvLbl = get_kernel_matrix(features, features, Kernels, true).llt().solve(labels);
+			const double ppl_i = calculate_population(Kernels, KInvLbl);
+			ppl += ppl_i;
+			eng += ppl_i * Energies[iPES];
+		}
+	}
+	return err + NormRegCoe * std::pow(1.0 - ppl, 2) + EngRegCoe * std::pow(Energies[NumPES] - eng, 2);
+}
+
+const double Optimization::DiagMagMin = 1e-4;	  ///< Minimal value of the magnitude of the diagonal kernel
+const double Optimization::DiagMagMax = 1;		  ///< Maximal value of the magnitude of the diagonal kernel
+const double Optimization::Tolerance = 1e-5;	  ///< Absolute tolerance of independent variable (x) in optimization
+const double Optimization::InitialStepSize = 0.5; ///< Initial step size in optimization
 
 Optimization::Optimization(
 	const Parameters& Params,
@@ -223,15 +359,30 @@ Optimization::Optimization(
 		NLOptMinimizers.push_back(nlopt::opt(Algorithm, NumHyperparameters));
 		NLOptMinimizers.rbegin()->set_lower_bounds(LowerBound);
 		NLOptMinimizers.rbegin()->set_upper_bounds(UpperBound);
-		NLOptMinimizers.rbegin()->set_xtol_abs(AbsoluteTolerance);
+		NLOptMinimizers.rbegin()->set_xtol_abs(Tolerance);
+		NLOptMinimizers.rbegin()->set_ftol_rel(Tolerance);
 		NLOptMinimizers.rbegin()->set_initial_step(InitialStepSize);
 	}
+	// last minimizer for all diagonal elements with population regularization
+	ParameterVector DiagLowerBound = LowerBound;
+	ParameterVector DiagUpperBound = UpperBound;
+	for (int iPES = 1; iPES < NumPES; iPES++)
+	{
+		DiagLowerBound.insert(DiagLowerBound.cend(), LowerBound.cbegin(), LowerBound.cend());
+		DiagUpperBound.insert(DiagUpperBound.cend(), UpperBound.cbegin(), UpperBound.cend());
+	}
+	NLOptMinimizers.push_back(nlopt::opt(Algorithm, NumHyperparameters * NumPES));
+	NLOptMinimizers.rbegin()->set_lower_bounds(DiagLowerBound);
+	NLOptMinimizers.rbegin()->set_upper_bounds(DiagUpperBound);
+	NLOptMinimizers.rbegin()->set_xtol_abs(Tolerance);
+	NLOptMinimizers.rbegin()->set_ftol_rel(Tolerance);
+	NLOptMinimizers.rbegin()->set_initial_step(InitialStepSize);
 }
 
-/// @details Using Gaussian Process Regression (GPR) to depict phase space distribution, element by element.
-double Optimization::optimize(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall)
+double Optimization::optimize_elementwise(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall)
 {
-	const nlopt::vfunc minimizing_function = leave_one_out_cross_validation;
+	static const nlopt::vfunc minimizing_function = leave_one_out_cross_validation;
+	// first, optimize element by element, and prepare for diagonal elements
 	double sum_err = 0.0;
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
@@ -241,15 +392,17 @@ double Optimization::optimize(const EvolvingDensity& density, const QuantumBoolM
 			// select points for optimization
 			const int BeginIndex = iElement * NumPoints;
 			// construct training feature (PhaseDim*N) and training labels (N*1)
-			Eigen::MatrixXd feature(PhaseDim, NumPoints);
-			Eigen::VectorXd label(NumPoints);
+			ElementTrainingSet ts;
+			auto& [feature, label, kernels] = ts;
+			feature.resize(PhaseDim, NumPoints);
+			label.resize(NumPoints);
 			for (int iPoint = 0; iPoint < NumPoints; iPoint++)
 			{
 				const auto& [x, p, rho] = density[BeginIndex + iPoint];
-				label[iPoint] = get_density_matrix_element(rho, iElement);
 				feature.col(iPoint) << x, p;
+				label[iPoint] = get_density_matrix_element(rho, iElement);
 			}
-			TrainingSet ts = std::make_tuple(feature, label, TypesOfKernels);
+			kernels = TypesOfKernels;
 			NLOptMinimizers[iElement].set_min_objective(minimizing_function, &ts);
 			// set variable for saving hyperparameters and function value (marginal likelihood)
 			double err = 0.0;
@@ -257,19 +410,114 @@ double Optimization::optimize(const EvolvingDensity& density, const QuantumBoolM
 			{
 				NLOptMinimizers[iElement].optimize(Hyperparameters[iElement], err);
 			}
+#ifdef NDEBUG
 			catch (...)
 			{
 			}
-			// add up
-			sum_err += err;
+#else
+			catch (std::exception& e)
+			{
+				std::cerr << e.what() << std::endl;
+			}
+#endif
 			// set up kernels
+			TrainingFeatures[iElement] = feature;
 			Kernels[iElement] = generate_kernels(TypesOfKernels, Hyperparameters[iElement]);
 			KInvLbls[iElement] = get_kernel_matrix(feature, feature, Kernels[iElement], true).llt().solve(label);
-			TrainingFeatures[iElement] = feature;
+			if (iElement % (NumPES + 1) != 0)
+			{
+				// off-diagonal element
+				// add up
+				sum_err += err;
+			}
 		}
 	}
-	// after optimization, normalization
 	return sum_err;
+}
+
+double Optimization::optimize_diagonal(
+	const EvolvingDensity& density,
+	const ClassicalDoubleVector& mass,
+	const double TotalEnergy,
+	const QuantumBoolMatrix& IsSmall)
+{
+	static const nlopt::vfunc minimizing_function = diagonal_loocv_with_normalization;
+	// construct training set
+	DiagonalTrainingSet dts;
+	auto& [diagonal_element_ts, energies] = dts;
+	energies[NumPES] = TotalEnergy;
+	ParameterVector DiagonalHyperparameters;
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		const int ElementIndex = iPES * (NumPES + 1);
+		if (IsSmall(iPES, iPES) == false)
+		{
+			const int BeginIndex = ElementIndex * NumPoints;
+			energies[iPES] = calculate_kinetic_average(density, iPES, mass) + calculate_potential_average(density, iPES);
+			auto& [feature, label, kernels] = diagonal_element_ts[iPES];
+			feature.resize(PhaseDim, NumPoints);
+			label.resize(NumPoints);
+			for (int iPoint = 0; iPoint < NumPoints; iPoint++)
+			{
+				const auto& [x, p, rho] = density[BeginIndex + iPoint];
+				feature.col(iPoint) << x, p;
+				label[iPoint] = get_density_matrix_element(rho, ElementIndex);
+			}
+			kernels = TypesOfKernels;
+		}
+		DiagonalHyperparameters.insert(
+			DiagonalHyperparameters.cend(),
+			Hyperparameters[ElementIndex].cbegin(),
+			Hyperparameters[ElementIndex].cend());
+	}
+	NLOptMinimizers[NumElements].set_min_objective(minimizing_function, &dts);
+	ParameterVector grad;
+	// set variable for saving hyperparameters and function value (marginal likelihood)
+	double err = 0.0;
+	try
+	{
+		NLOptMinimizers[NumElements].optimize(DiagonalHyperparameters, err);
+	}
+#ifdef NDEBUG
+	catch (...)
+	{
+	}
+#else
+	catch (std::exception& e)
+	{
+		std::cerr << e.what() << std::endl;
+	}
+#endif
+	// set up kernels
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		if (IsSmall(iPES, iPES) == false)
+		{
+			const auto& [feature, label, kernels] = diagonal_element_ts[iPES];
+			const int ElementIndex = iPES * (NumPES + 1);
+			const int ParamIndex = iPES * NumHyperparameters;
+			const int LabelIndex = iPES * NumPoints;
+			ParameterVector(DiagonalHyperparameters.cbegin() + ParamIndex, DiagonalHyperparameters.cbegin() + ParamIndex + NumHyperparameters).swap(Hyperparameters[ElementIndex]);
+			TrainingFeatures[ElementIndex] = feature;
+			Kernels[ElementIndex] = generate_kernels(TypesOfKernels, Hyperparameters[ElementIndex]);
+			KInvLbls[ElementIndex] = get_kernel_matrix(TrainingFeatures[ElementIndex], TrainingFeatures[ElementIndex], Kernels[ElementIndex], true).llt().solve(label);
+		}
+	}
+	return err;
+}
+
+/// @details Using Gaussian Process Regression (GPR) to depict phase space distribution.
+/// First optimize elementwise, then optimize the diagonal with normalization and energy conservation
+double Optimization::optimize(
+	const EvolvingDensity& density,
+	const ClassicalDoubleVector& mass,
+	const double TotalEnergy,
+	const QuantumBoolMatrix& IsSmall)
+{
+	double err = 0.0;
+	err += optimize_elementwise(density, IsSmall);
+	err += optimize_diagonal(density, mass, TotalEnergy, IsSmall);
+	return err;
 }
 
 /// @details First, calculate the total population before normalization by analytical integration.
@@ -282,19 +530,9 @@ double Optimization::normalize(EvolvingDensity& density, const QuantumBoolMatrix
 	{
 		if (IsSmall(iPES, iPES) == false)
 		{
-			const int ElementIndex = iPES * (NumPES + 1);
-			for (const auto& [weight, kernel] : Kernels[ElementIndex])
-			{
-				// select the gaussian ARD kernel
-				if (kernel->get_kernel_type() == shogun::EKernelType::K_GAUSSIANARD)
-				{
-					const Eigen::Matrix<double, PhaseDim, 1> Characteristic = Eigen::Map<Eigen::MatrixXd>(std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel)->get_weights());
-					population += weight * weight / Characteristic.prod() * KInvLbls[ElementIndex].sum();
-				}
-			}
+			population += calculate_population(Kernels[iPES * (NumPES + 1)], KInvLbls[iPES * (NumPES + 1)]);
 		}
 	}
-	population *= std::pow(2.0 * M_PI, Dim);
 	for (auto& [x, p, rho] : density)
 	{
 		rho /= population;
@@ -390,13 +628,13 @@ Eigen::VectorXd Optimization::predict_elements(
 	const int ElementIndex) const
 {
 	assert(x.size() == p.size());
-	const int NPoint = x.size();
+	const int NumPoints = x.size();
 	if (IsSmall(ElementIndex / NumPES, ElementIndex % NumPES) == false)
 	{
 		// not small, have something to do
 		// generate feature
-		Eigen::MatrixXd test_feat(PhaseDim, NPoint);
-		for (int i = 0; i < NPoint; i++)
+		Eigen::MatrixXd test_feat(PhaseDim, NumPoints);
+		for (int i = 0; i < NumPoints; i++)
 		{
 			test_feat.col(i) << x[i], p[i];
 		}
@@ -407,7 +645,7 @@ Eigen::VectorXd Optimization::predict_elements(
 	}
 	else
 	{
-		return Eigen::VectorXd::Zero(NPoint);
+		return Eigen::VectorXd::Zero(NumPoints);
 	}
 }
 
@@ -439,98 +677,37 @@ Eigen::VectorXd Optimization::print_element(const QuantumBoolMatrix& IsSmall, co
 /// \f$ l_p \f$ is the characteristic length of momentum.
 ///
 /// For potential, a numerical integration is needed.
-Averages Optimization::calculate_average(const ClassicalDoubleVector& mass, const QuantumBoolMatrix& IsSmall, const int PESIndex) const
+/// 
+/// To integrate with Monte Carlo, \f$ I=\int f(x)dx \f$, one select a weight function \f$ w(x) \f$,
+/// so that the integration becomes \f$ I=\int \frac{f(x)}{w(x)} w(x)dx \f$.
+/// 
+/// To do that, one samples \f$ N \f$ points with the weight function, then \f$ I\approx\frac{1}{N}\sum\frac{f(x_i)}{w(x_i)} \f$.
+/// 
+/// To calculate average of \f$ f=x,p,V,T \f$, one integrate \f$ <f>=\int f(x)w(x)dx \f$, or \f$ <f>\approx\frac{1}{N}\sum f(x_i) \f$
+Averages calculate_average(
+	const Optimization& optimizer,
+	const EvolvingDensity& density,
+	const ClassicalDoubleVector& mass,
+	const QuantumBoolMatrix& IsSmall,
+	const int PESIndex)
 {
-	static const double NumericIntegrationInitialStepsize = 1e-2;		   // initial step size for numeric integration below
-	static const double epsilon = std::exp(-12.5) / std::sqrt(2.0 * M_PI); // value below this is 0; gaussian function value at 5 sigma
-	boost::numeric::odeint::bulirsch_stoer<double> stepper;				   // the stepper for numerical integration
-	double ppl = 0.0, T = 0.0, V = 0.0;
-	ClassicalDoubleVector x = ClassicalDoubleVector::Zero(), p = ClassicalDoubleVector::Zero();
+	assert(PESIndex >= 0 && PESIndex < NumPES);
 	if (IsSmall(PESIndex, PESIndex) == false)
 	{
-		// not small, calculate by integration
+		// not small, calculate by exact hyperparameter integration
 		const int ElementIndex = PESIndex * (NumPES + 1);
-		const Eigen::VectorXd& KInvLbl = KInvLbls[ElementIndex];
-		for (const auto& [weight, kernel] : Kernels[ElementIndex])
-		{
-			// select the gaussian ARD kernel
-			if (kernel->get_kernel_type() == shogun::EKernelType::K_GAUSSIANARD)
-			{
-				const Eigen::MatrixXd& Features = TrainingFeatures[ElementIndex]; // get feature matrix, PhaseDim-by-NPoint
-				const int NPoint = Features.cols();
-				const Eigen::Matrix<double, PhaseDim, 1> Characteristic = Eigen::Map<Eigen::MatrixXd>(std::dynamic_pointer_cast<shogun::GaussianARDKernel>(kernel)->get_weights());
-				const double GlobalWeight = std::pow(2.0 * M_PI, Dim) * weight * weight / Characteristic.prod();
-				// population
-				ppl += GlobalWeight * KInvLbl.sum();
-				// x and p
-				const auto& r = GlobalWeight * Features * KInvLbl;
-				x += r.block<Dim, 1>(0, 0);
-				p += r.block<Dim, 1>(Dim, 0);
-				// T
-				T += GlobalWeight * ((Features.block(Dim, 0, Dim, NPoint).array().abs2().matrix() * KInvLbl).array() / mass.array()).sum() / 2.0;
-				// V, int_R{f(x)dx}=int_0^1{dt[f((1-t)/t)+f((t-1)/t)]t^2} by x=(1-t)/t, f(x)=V(x)*rho(x)
-				auto potential_times_population = [&, weight = weight](const ClassicalDoubleVector& x0) -> double {
-					// rho(x)=int{dp rho(x,p)}=sigma_f^2*(2*pi)^(Dim/4)*\prod{l_p}*(s1,s2,...)*K^{-1}*y
-					// si = exp(-\sum_j{(x0j-xij)^2/l_{xj}^2}/2.0)
-					const auto& CharX = Characteristic.block<Dim, 1>(0, 0);
-					return weight * weight * std::pow(2.0 * M_PI, Dim / 2.0) / CharX.prod() * (((Features.block(0, 0, Dim, NPoint).colwise() - x0).array().colwise() * CharX.array()).abs2().colwise().sum() / -2.0).exp().matrix().dot(KInvLbl) * adiabatic_potential(x0)[PESIndex];
-				};
-				std::vector<std::function<double(const Eigen::VectorXd&)>> integrate_n_dim(Dim);
-				integrate_n_dim[0] = [&](const Eigen::VectorXd& x0) -> double {
-					return potential_times_population(x0);
-				};
-				// loop until the last dimension, where the vector parameter will be length 1
-				for (int iDim = 1; iDim < Dim; iDim++)
-				{
-					// integrate over the last dimension, from -inf to inf
-					integrate_n_dim[iDim] = [&, iDim](const Eigen::VectorXd& x0) -> double {
-						double result = 0.0;
-						boost::numeric::odeint::integrate_adaptive(
-							stepper,
-							[&](const double& /*x*/, double& dxdt, const double t) {
-								if (std::abs(t) < epsilon)
-								{
-									// this dimension is +-inf, very far away, population will be 0 there
-									dxdt = 0.0;
-								}
-								else
-								{
-									const double x_val = (1.0 - t) / t;
-									Eigen::VectorXd x_vec_plus(Dim + 1 - iDim), x_vec_minus(Dim + 1 - iDim);
-									x_vec_plus << x0, x_val;
-									x_vec_minus << x0, -x_val;
-									dxdt = (integrate_n_dim[iDim - 1](x_vec_plus) + integrate_n_dim[iDim - 1](x_vec_minus)) / (t * t);
-								}
-							},
-							result,
-							0.0,
-							1.0,
-							NumericIntegrationInitialStepsize);
-						return result;
-					};
-				}
-				boost::numeric::odeint::integrate_adaptive(
-					stepper,
-					[&](const double& /*x*/, double& dxdt, const double t) {
-						if (std::abs(t) < epsilon)
-						{
-							dxdt = 0.0;
-						}
-						else
-						{
-							const double x_val = (1.0 - t) / t;
-							Eigen::VectorXd x_vec_plus(1), x_vec_minus(1);
-							x_vec_plus[0] = x_val;
-							x_vec_minus[0] = -x_val;
-							dxdt = (integrate_n_dim[Dim - 1](x_vec_plus) + integrate_n_dim[Dim - 1](x_vec_minus)) / (t * t);
-						}
-					},
-					V,
-					0.0,
-					1.0,
-					NumericIntegrationInitialStepsize);
-			}
-		}
+		const Eigen::MatrixXd& Features = optimizer.TrainingFeatures[ElementIndex]; // get feature matrix, PhaseDim-by-NumPoints
+		const KernelList& Kernel = optimizer.Kernels[ElementIndex];
+		const Eigen::VectorXd& KInvLbl = optimizer.KInvLbls[ElementIndex];
+		return std::make_tuple(
+			calculate_population(Kernel, KInvLbl),
+			calculate_1st_order_average(Features, Kernel, KInvLbl),
+			calculate_1st_order_average(density, PESIndex),
+			calculate_kinetic_average(density, PESIndex, mass),
+			calculate_potential_average(density, PESIndex));
 	}
-	return std::make_tuple(ppl, x, p, V, T);
+	else
+	{
+		return std::make_tuple(0.0, ClassicalPhaseVector::Zero(), ClassicalPhaseVector::Zero(), 0.0, 0.0);
+	}
 }

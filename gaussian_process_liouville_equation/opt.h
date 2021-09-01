@@ -12,8 +12,8 @@ using KernelTypeList = std::vector<shogun::EKernelType>;
 using KernelList = std::vector<std::pair<double, std::shared_ptr<shogun::Kernel>>>;
 /// The vector containing hyperparameters (or similarly: bounds, gradient, etc)
 using ParameterVector = std::vector<double>;
-/// The averages to calculate: <1>, <x>, <p>, <V>, <T>
-using Averages = std::tuple<double, ClassicalDoubleVector, ClassicalDoubleVector, double, double>;
+/// The averages to calculate: <1>, <x>, <p> (from hyperparameter), <x>, <p>, <T>, <V> (by sampling)
+using Averages = std::tuple<double, ClassicalPhaseVector, ClassicalPhaseVector, double, double>;
 
 /// Store hyperparameters, kernels and optimization algorithms to use.
 /// Optimize hyperparameters, and then predict density matrix and given point.
@@ -21,7 +21,7 @@ class Optimization final
 {
 private:
 	// static constant variables
-	static const double DiagMagMin, DiagMagMax, AbsoluteTolerance, InitialStepSize;
+	static const double DiagMagMin, DiagMagMax, Tolerance, InitialStepSize;
 	// local variables
 	const KernelTypeList TypesOfKernels;					   ///< The types of the kernels to use
 	const int NumHyperparameters;							   ///< The number of hyperparameters to use, derived from the kernel types
@@ -31,6 +31,24 @@ private:
 	std::array<Eigen::MatrixXd, NumElements> TrainingFeatures; ///< The training features (phase space coordinates) of each density matrix element
 	std::array<KernelList, NumElements> Kernels;			   ///< The kernels with hyperparameters set for all elements of density matrix
 	std::array<Eigen::VectorXd, NumElements> KInvLbls;		   ///< The inverse of kernel matrix of training features times the training labels
+
+	/// @brief To optimize hyperparameters of each density matrix element based on the given density
+	/// @param[inout] density The vector containing all known density matrix
+	/// @param[in] IsSmall The matrix that saves whether each element is small or not
+	/// @return The total error (MSE, log likelihood, etc) of all off-diagonal elements of density matrix
+	double optimize_elementwise(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall);
+
+	/// @brief To optimize hyperparameters of diagonal elements based on the given density and regularzations
+	/// @param[inout] density The vector containing all known density matrix
+	/// @param[in] mass Mass of classical degree of freedom
+	/// @param[in] TotalEnergy The total energy of the system used for energy conservation
+	/// @param[in] IsSmall The matrix that saves whether each element is small or not
+	/// @return The total error (MSE, log likelihood, etc) of all diagonal elements of density matrix
+	double optimize_diagonal(
+		const EvolvingDensity& density,
+		const ClassicalDoubleVector& mass,
+		const double TotalEnergy,
+		const QuantumBoolMatrix& IsSmall);
 
 public:
 	/// @brief Constructor. Initial hyperparameters, kernels and optimization algorithms needed
@@ -43,19 +61,25 @@ public:
 		const nlopt::algorithm Algorithm = nlopt::algorithm::LN_NELDERMEAD);
 
 	/// @brief To optimize hyperparameters based on the given density
-	/// @param[inout] density The vector containing all known density matrix, and normalized after optimization
+	/// @param[inout] density The vector containing all known density matrix
+	/// @param[in] mass Mass of classical degree of freedom
+	/// @param[in] TotalEnergy The total energy of the system used for energy conservation
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
 	/// @return The total error (MSE, log likelihood, etc) of all elements of density matrix
-	double optimize(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall);
+	double optimize(
+		const EvolvingDensity& density,
+		const ClassicalDoubleVector& mass,
+		const double TotalEnergy,
+		const QuantumBoolMatrix& IsSmall);
 
 	/// @brief To normalize the training set
-	/// @param[inout] density The vector containing all known density matrix, and normalized after optimization
+	/// @param[inout] density The vector containing all known density matrix that needs normalization
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
 	/// @return The total population before normalization
 	double normalize(EvolvingDensity& density, const QuantumBoolMatrix& IsSmall) const;
 
 	/// @brief To update the TrainingFeatures and KInvLbls up-to-date
-	/// @param[in] density The vector containing all known density matrix, and normalized after optimization
+	/// @param[in] density The vector containing all known density matrix
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
 	void update_training_set(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall);
 
@@ -99,12 +123,6 @@ public:
 	/// @return A 1-by-N matrix, N is the number of required grids
 	Eigen::VectorXd print_element(const QuantumBoolMatrix& IsSmall, const Eigen::MatrixXd& PhaseGrids, const int ElementIndex) const;
 
-	/// @brief To calculate the averages (population, <x>, <p>, <V>, <T>) from hyperparameters
-	/// @param[in] IsSmall The matrix that saves whether each element is small or not
-	/// @param[in] PESIndex The index of the potential energy surface, corresponding to (PESIndex, PESIndex) in density matrix
-	/// @return Tuple of the 5 averages
-	Averages calculate_average(const ClassicalDoubleVector& mass, const QuantumBoolMatrix& IsSmall, const int PESIndex) const;
-
 	/// @brief To get the hyperparameter of the corresponding element
 	/// @param[in] ElementIndex The index of the density matrix element
 	/// @return The hyperparameters of the corresponding element of density matrix
@@ -112,6 +130,20 @@ public:
 	{
 		return Hyperparameters[ElementIndex];
 	}
+
+	/// @brief To calculate the averages from hyperparameters and by importance sampling
+	/// @param[in] optimizer The optimization object containing all the hyperparameter and training set information
+	/// @param[in] density The selected density matrices
+	/// @param[in] IsSmall The matrix that saves whether each element is small or not
+	/// @param[in] PESIndex The index of the potential energy surface, corresponding to (PESIndex, PESIndex) in density matrix
+	/// @param[in] mass Mass of classical degree of freedom
+	/// @return Tuple of the averages
+	friend Averages calculate_average(
+		const Optimization& optimizer,
+		const EvolvingDensity& density,
+		const ClassicalDoubleVector& mass,
+		const QuantumBoolMatrix& IsSmall,
+		const int PESIndex);
 };
 
 #endif // !OPT_H

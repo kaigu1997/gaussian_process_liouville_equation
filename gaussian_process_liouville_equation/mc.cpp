@@ -11,8 +11,6 @@
 using Maximums = std::array<EvolvingDensity, NumElements>;
 /// All the distributions of displacements of position OR momentum
 using Displacements = std::array<std::uniform_real_distribution<double>, Dim>;
-/// The vector to depict a phase space point (or coordinate)
-using ClassicalPhaseVector = Eigen::Matrix<double, 2 * Dim, 1>;
 /// A collection of phase space coordinates vectors
 using ClassicalPhaseVectors = std::vector<ClassicalPhaseVector, Eigen::aligned_allocator<ClassicalPhaseVector>>;
 
@@ -38,6 +36,7 @@ QuantumBoolMatrix is_very_small(const EvolvingDensity& density)
 /// where i goes over all direction in the classical DOF
 QuantumComplexMatrix initial_distribution(
 	const Parameters& Params,
+	const std::array<double, NumPES>& InitialPopulation,
 	const ClassicalDoubleVector& x,
 	const ClassicalDoubleVector& p)
 {
@@ -46,12 +45,16 @@ QuantumComplexMatrix initial_distribution(
 	const ClassicalDoubleVector& p0 = Params.get_p0();
 	const ClassicalDoubleVector& SigmaX0 = Params.get_sigma_x0();
 	const ClassicalDoubleVector& SigmaP0 = Params.get_sigma_p0();
-	result(0, 0) = std::exp(-(((x - x0).array() / SigmaX0.array()).abs2().sum() + ((p - p0).array() / SigmaP0.array()).abs2().sum()) / 2.0)
-		/ (std::pow(2.0 * M_PI, Dim) * SigmaX0.prod() * SigmaP0.prod());
+	const double GaussWeight = std::exp(-(((x - x0).array() / SigmaX0.array()).abs2().sum() + ((p - p0).array() / SigmaP0.array()).abs2().sum()) / 2.0) / (std::pow(2.0 * M_PI, Dim) * SigmaX0.prod() * SigmaP0.prod());
+	const double SumWeight = std::accumulate(InitialPopulation.begin(), InitialPopulation.end(), 0.);
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		result(iPES, iPES) = GaussWeight * InitialPopulation[iPES] / SumWeight;
+	}
 	return result;
 }
 
-const double MCParameters::AboveMinFactor = 2.5; ///< choose the minimal step or max displacement whose autocor < factor*min{autocor}
+const double MCParameters::AboveMinFactor = 1.1; ///< choose the minimal step or max displacement whose autocor < factor*min{autocor}
 
 MCParameters::MCParameters(const Parameters& Params, const int NOMC_):
 	NumPoints(Params.get_number_of_selected_points()), NOMC(NOMC_),
@@ -360,7 +363,7 @@ AutoCorrelations autocorrelation_optimize_steps(
 			}
 			result[iElement] /= maxs[iElement].size();
 			// find the best step
-			const double MinAutoCor = std::abs(result[iElement].array().abs().minCoeff(&BestMCSteps[iElement]));
+			const double MinAutoCor = std::abs(result[iElement].minCoeff(&BestMCSteps[iElement]));
 			for (int iStep = 1; iStep < BestMCSteps[iElement]; iStep++)
 			{
 				if (std::abs(result[iElement][iStep]) <= MCParameters::AboveMinFactor * MinAutoCor)
