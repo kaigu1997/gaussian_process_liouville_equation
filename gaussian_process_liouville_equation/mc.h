@@ -9,14 +9,6 @@
 /// The type for saving all autocorrelations
 using AutoCorrelations = std::array<Eigen::VectorXd, NumElements>;
 
-/// @brief The weight function for sorting / MC selection
-/// @param x The input variable
-/// @return The weight of the input, which is the square of it
-inline double weight_function(const double x)
-{
-	return x * x;
-}
-
 /// @brief To get the element of density matrix
 /// @param[in] DensityMatrix The density matrix
 /// @param[in] ElementIndex The index of the element in density matrix
@@ -50,7 +42,6 @@ QuantumBoolMatrix is_very_small(const EvolvingDensity& density);
 /// @param[in] x Position of classical degree of freedom
 /// @param[in] p Momentum of classical degree of freedom
 /// @return The initial density matrix at the give phase point under adiabatic basis
-/// @see learnt_distribution(), monte_carlo_selection()
 QuantumComplexMatrix initial_distribution(
 	const Parameters& Params,
 	const std::array<double, NumPES>& InitialPopulation,

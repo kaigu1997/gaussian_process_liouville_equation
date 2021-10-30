@@ -12,6 +12,7 @@
 int main()
 {
 	// initialization: save some input parameters, using initial distribution to select points, and initial output
+	std::chrono::high_resolution_clock::time_point begin = std::chrono::high_resolution_clock::now(), end = begin;
 	const Parameters Params("input");									 // get mass, x0, p0, sigma_x0, sigma_p0, dt, output time
 	const ClassicalDoubleVector& x0 = Params.get_x0();					 // save initial positions
 	const ClassicalDoubleVector& p0 = Params.get_p0();					 // save initial momentum
@@ -19,7 +20,7 @@ int main()
 	const ClassicalDoubleVector& mass = Params.get_mass();				 // save mass directly
 	const int TotalTicks = Params.calc_total_ticks();					 // calculate total time in unit of dt
 	const int OutputFreq = Params.get_output_freq();					 // save output frequency
-	const int ReoptFreq = Params.get_reoptimize_freq();					 // save hyperparameter re-optimization frequency
+	const int ReoptFreq = Params.get_reoptimize_freq();					 // save parameter re-optimization frequency
 	const double dt = Params.get_dt();									 // save dt directly
 	const int NumPoints = Params.get_number_of_selected_points();		 // save the number of points for evolving/optimizing
 	// get initial distribution and energy
@@ -43,12 +44,14 @@ int main()
 		double result = 0.;
 		for (int iPES = 0; iPES < NumPES; iPES++)
 		{
-			const auto& [ppl_prm, r_prm, r_mc, T_mc, V_mc] = calculate_average(optimizer, density, mass, IsSmall, iPES);
+			const auto& [ppl_prm, r_prm, r_mc, T_mc, V_mc] = calculate_average(optimizer, density, mass, IsSmall, iPES); // prm = parameter
 			result += InitialPopulation[iPES] * (T_mc + V_mc);
 		}
 		return result / SumWeight;
-	}();
-	// generate initial hyperparameters
+	}(); // Total energy, calculated from MC average
+	const double Purity = std::accumulate(InitialPopulation.cbegin(), InitialPopulation.cend(), 0., [](const double sum, const double elem) -> double { return sum + elem * elem; })
+		/ std::pow(std::accumulate(InitialPopulation.cbegin(), InitialPopulation.cend(), 0.), 2); // Purity, sum of squared weight over square of sum weight
+	// generate initial parameters
 	const DistributionFunction& evolve_predict_distribution = std::bind(
 		non_adiabatic_evolve_predict,
 		std::placeholders::_1,
@@ -63,10 +66,10 @@ int main()
 		std::cref(IsSmall),
 		std::placeholders::_1,
 		std::placeholders::_2); // predict current step distribution
-	double err = optimizer.optimize(density, mass, TotalEnergy, IsSmall);
+	auto [err, steps] = optimizer.optimize(density, mass, TotalEnergy, Purity, IsSmall);
 	double ppl = optimizer.normalize(density, IsSmall);
 	optimizer.update_training_set(density, IsSmall);
-	// initial output: average, hyperparameters, selected points, gridded phase space
+	// initial output: average, parameters, selected points, gridded phase space
 	const Eigen::IOFormat VectorFormatter(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", " ", "", "", " ", "");
 	const Eigen::IOFormat MatrixFormatter(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", " ", "", "", "");
 	std::ofstream average("ave.txt");
@@ -84,17 +87,18 @@ int main()
 	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
 		const auto& [ppl_prm, r_prm, r_mc, T_mc, V_mc] = calculate_average(optimizer, density, mass, IsSmall, iPES);
-		average << ' ' << ppl_prm << r_prm.format(VectorFormatter) << r_mc.format(VectorFormatter) << ' ' << T_mc << ' ' << V_mc << ' ' << V_mc + T_mc;
+		average << ' ' << ppl_prm << (r_prm / ppl_prm).format(VectorFormatter) << r_mc.format(VectorFormatter) << ' ' << T_mc << ' ' << V_mc << ' ' << V_mc + T_mc;
 		ppl_all += ppl_prm;
-		r_prm_all += ppl_prm * r_prm;
+		r_prm_all += r_prm;
 		r_mc_all += ppl_prm * r_mc;
 		T_all += ppl_prm * T_mc;
 		V_all += ppl_prm * V_mc;
 	}
-	average << ' ' << ppl_all << r_prm_all.format(VectorFormatter) << r_mc_all.format(VectorFormatter) << ' ' << T_all << ' ' << V_all << ' ' << V_all + T_all << std::endl;
+	average << ' ' << ppl_all << r_prm_all.format(VectorFormatter) << r_mc_all.format(VectorFormatter) << ' ' << T_all << ' ' << V_all << ' ' << V_all + T_all;
+	average << ' ' << optimizer.calculate_purity(IsSmall) << std::endl;
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		for (double d : optimizer.get_hyperparameter(iElement))
+		for (double d : optimizer.get_parameter(iElement))
 		{
 			hyperparam << ' ' << d;
 		}
@@ -115,7 +119,14 @@ int main()
 		autocor << step_autocor[iElement].format(VectorFormatter) << displ_autocor[iElement].format(VectorFormatter) << '\n';
 	}
 	autocor << '\n';
-	std::cout << 0 << ' ' << err << ' ' << ppl << ' ' << MCParams.get_num_MC_steps() << ' ' << MCParams.get_max_dispalcement() << ' ' << print_time << std::endl;
+	end = std::chrono::high_resolution_clock::now();
+	std::cout << 0 << ' ' << err << ' ' << ppl << ' ' << MCParams.get_num_MC_steps() << ' ' << MCParams.get_max_dispalcement();
+	for (auto step : steps)
+	{
+		std::cout << ' ' << step;
+	}
+	std::cout << ' ' << std::chrono::duration<double>(end - begin).count() << ' ' << print_time << std::endl;
+	begin = end;
 
 	// evolution
 	for (int iTick = 1; iTick <= TotalTicks; iTick++)
@@ -133,7 +144,7 @@ int main()
 			// model training if non-adiabatic
 			if (IsCouple == true)
 			{
-				err = optimizer.optimize(density, mass, TotalEnergy, IsSmall);
+				std::tie(err, steps) = optimizer.optimize(density, mass, TotalEnergy, Purity, IsSmall);
 				ppl = optimizer.normalize(density, IsSmall);
 				optimizer.update_training_set(density, IsSmall);
 			}
@@ -147,7 +158,7 @@ int main()
 				else
 				{
 					// not coupled, optimize for output
-					err = optimizer.optimize(density, mass, TotalEnergy, IsSmall);
+					std::tie(err, steps) = optimizer.optimize(density, mass, TotalEnergy, Purity, IsSmall);
 					ppl = optimizer.normalize(density, IsSmall);
 					optimizer.update_training_set(density, IsSmall);
 				}
@@ -162,18 +173,19 @@ int main()
 				for (int iPES = 0; iPES < NumPES; iPES++)
 				{
 					const auto& [ppl_prm, r_prm, r_mc, T_mc, V_mc] = calculate_average(optimizer, density, mass, IsSmall, iPES);
-					average << ' ' << ppl_prm << r_prm.format(VectorFormatter) << r_mc.format(VectorFormatter) << ' ' << T_mc << ' ' << V_mc << ' ' << V_mc + T_mc;
+					average << ' ' << ppl_prm << (r_prm / ppl_prm).format(VectorFormatter) << r_mc.format(VectorFormatter) << ' ' << T_mc << ' ' << V_mc << ' ' << V_mc + T_mc;
 					ppl_all += ppl_prm;
-					r_prm_all += ppl_prm * r_prm;
+					r_prm_all += r_prm;
 					r_mc_all += ppl_prm * r_mc;
 					T_all += ppl_prm * T_mc;
 					V_all += ppl_prm * V_mc;
 				}
-				average << ' ' << ppl_all << r_prm_all.format(VectorFormatter) << r_mc_all.format(VectorFormatter) << ' ' << T_all << ' ' << V_all << ' ' << V_all + T_all << std::endl;
-				// output hyperparameters
+				average << ' ' << ppl_all << r_prm_all.format(VectorFormatter) << r_mc_all.format(VectorFormatter) << ' ' << T_all << ' ' << V_all << ' ' << V_all + T_all;
+				average << ' ' << optimizer.calculate_purity(IsSmall) << std::endl;
+				// output parameters
 				for (int iElement = 0; iElement < NumElements; iElement++)
 				{
-					for (double d : optimizer.get_hyperparameter(iElement))
+					for (double d : optimizer.get_parameter(iElement))
 					{
 						hyperparam << ' ' << d;
 					}
@@ -196,7 +208,14 @@ int main()
 					autocor << step_autocor[iElement].format(VectorFormatter) << displ_autocor[iElement].format(VectorFormatter) << '\n';
 				}
 				autocor << '\n';
-				std::cout << iTick * dt << ' ' << err << ' ' << ppl << ' ' << MCParams.get_num_MC_steps() << ' ' << MCParams.get_max_dispalcement() << ' ' << print_time << std::endl;
+				end = std::chrono::high_resolution_clock::now();
+				std::cout << iTick * dt << ' ' << err << ' ' << ppl << ' ' << MCParams.get_num_MC_steps() << ' ' << MCParams.get_max_dispalcement();
+				for (auto step : steps)
+				{
+					std::cout << ' ' << step;
+				}
+				std::cout << ' ' << std::chrono::duration<double>(end - begin).count() << ' ' << print_time << std::endl;
+				begin = end;
 				// judge whether to finish or not: any of the dimension go over -x0
 				ClassicalDoubleVector x_tot = r_mc_all.block<Dim, 1>(0, 0);
 				if ((x_tot.array() > -x0.array()).any() == true)

@@ -1,5 +1,5 @@
 /// @file stdafx.h
-/// @brief The header file containing all headers and constants.
+/// @brief The header file containing all headers and constants. stdafx = STanDard Application Framework eXtensions
 
 #ifndef STDAFX_H
 #define STDAFX_H
@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <complex>
@@ -30,12 +31,6 @@
 #include <Eigen/Eigen>
 #include <Eigen/StdVector>
 #include <nlopt.hpp>
-#include <shogun/features/DenseFeatures.h>
-#include <shogun/kernel/DiagKernel.h>
-#include <shogun/kernel/GaussianARDKernel.h>
-#include <shogun/labels/RegressionLabels.h>
-#include <shogun/lib/SGMatrix.h>
-#include <shogun/lib/SGVector.h>
 
 #include <mkl.h>
 
@@ -43,10 +38,12 @@
 const double hbar = 1.0; ///< Reduced Planck constant in a.u.
 
 // DOF constants
-const int NumPES = 2;					 ///< The number of quantum degree (potential energy surfaces)
-const int Dim = 1;						 ///< The dimension of the system, half the dimension of the phase space
-const int NumElements = NumPES * NumPES; ///< The number of elements of matrices in quantum degree (e.g. H, rho)
-const int PhaseDim = Dim * 2;			 ///< The dimension of the phase space, twice the dimension of the system
+const int NumPES = 2;									  ///< The number of quantum degree (potential energy surfaces)
+const int NumElements = NumPES * NumPES;				  ///< The number of elements of matrices in quantum degree (e.g. H, rho)
+const int NumDiagonalElements = NumPES;					  ///< The number of diagonal elements
+const int NumOffDiagonalElements = NumPES * (NumPES - 1); ///< The number of off-diagonal elements; overall numpes^2 elements
+const int Dim = 1;										  ///< The dimension of the system, half the dimension of the phase space
+const int PhaseDim = Dim * 2;							  ///< The dimension of the phase space, twice the dimension of the system
 
 // typedefs
 /// Judge if all grids of certain density matrix element are very small or not

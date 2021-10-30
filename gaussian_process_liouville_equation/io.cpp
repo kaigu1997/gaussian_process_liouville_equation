@@ -52,7 +52,7 @@ Parameters::Parameters(const std::string& input_file_name)
 	xmax = x0.array().abs() * 2;
 	xmin = -xmax;
 	SigmaX0 = hbar / 2.0 * SigmaP0.array().inverse();				 // follow the minimal uncertainty principle
-	dx = M_PI * hbar * (p0 + 3.0 * SigmaP0).array().inverse() / 2.0; // 1 grids per de Broglie wavelength
+	dx = M_PI * hbar / 2.0 * (p0 + 3.0 * SigmaP0).array().inverse(); // 4 grids per de Broglie wavelength
 	xNumGrids = ((xmax - xmin).array() / dx.array()).cast<int>();
 	dx = (xmax - xmin).array() / xNumGrids.cast<double>().array();
 	// in grid solution, dx = pi*hbar/(p0+3sigma_p), p in p0+pi*hbar/2/dx*[-1, 1]
@@ -98,7 +98,7 @@ std::ostream& print_time(std::ostream& os)
 
 Eigen::MatrixXd print_point(const EvolvingDensity& density, const int NumPoints)
 {
-	assert(NumElements * NumPoints == density.size());
+	assert(static_cast<unsigned>(NumElements * NumPoints) == density.size());
 	Eigen::MatrixXd result(PhaseDim * NumElements, NumPoints);
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{

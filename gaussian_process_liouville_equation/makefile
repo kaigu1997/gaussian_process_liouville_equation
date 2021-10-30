@@ -1,7 +1,7 @@
 CXX := g++
-CXXFLAGS := -std=c++17 -Ofast -march=native -fopenmp
-LDFLAGS := -std=c++17 -Ofast -march=native -Wl,-fuse-ld=gold -fopenmp
-LDLIBS := -lshogun -lnlopt -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -ltbb -lpthread
+CXXFLAGS := -Wall -Wextra -std=c++17 -Ofast -march=native -fopenmp
+LDFLAGS := ${CXXFLAGS} -Wl,-fuse-ld=gold -Wl,--no-as-needed
+LDLIBS := -lnlopt -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -ltbb -lpthread
 Objects := io.o pes.o mc.o opt.o evolve.o main.o
 PCH := stdafx.h.gch
 
@@ -10,9 +10,9 @@ all: gple.x
 
 gple.x: ${Objects}
 	${CXX} ${Objects} ${LDFLAGS} -o gple.x ${LDLIBS}
-main.o: main.cpp evolve.h mc.h pes.h io.h ${PCH}
+main.o: main.cpp evolve.h opt.h mc.h pes.h io.h ${PCH}
 	${CXX} -c main.cpp ${CXXFLAGS} -o main.o
-evolve.o: evolve.cpp evolve.h pes.h ${PCH}
+evolve.o: evolve.cpp evolve.h opt.h mc.h pes.h ${PCH}
 	${CXX} -c evolve.cpp ${CXXFLAGS} -o evolve.o
 opt.o: opt.cpp opt.h mc.h io.h ${PCH}
 	${CXX} -c opt.cpp ${CXXFLAGS} -o opt.o

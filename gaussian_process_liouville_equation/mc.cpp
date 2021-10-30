@@ -14,6 +14,14 @@ using Displacements = std::array<std::uniform_real_distribution<double>, Dim>;
 /// A collection of phase space coordinates vectors
 using ClassicalPhaseVectors = std::vector<ClassicalPhaseVector, Eigen::aligned_allocator<ClassicalPhaseVector>>;
 
+/// @brief The weight function for sorting / MC selection
+/// @param x The input variable
+/// @return The weight of the input, which is the square of it
+static inline double weight_function(const double x)
+{
+	return x * x;
+}
+
 QuantumBoolMatrix is_very_small(const EvolvingDensity& density)
 {
 	// value below this are regarded as 0
@@ -115,7 +123,6 @@ static Maximums get_maximums(
 /// @details The points are at their original places.
 static Maximums get_maximums(
 	const MCParameters& MCParams,
-	const DistributionFunction& distribution,
 	const QuantumBoolMatrix& IsSmall,
 	const EvolvingDensity& density)
 {
@@ -184,7 +191,7 @@ static ClassicalPhaseVectors monte_carlo_chain(
 	static std::mt19937 engine(std::chrono::system_clock::now().time_since_epoch().count()); // Random number generator, using merseen twister with seed from time
 	static std::uniform_real_distribution<double> mc_selection(0.0, 1.0);					 // for whether pick or not
 	ClassicalDoubleVector x_old, x_new, p_old, p_new;
-	double weight_old = weight, weight_new;
+	double weight_old = weight;
 	x_old = x;
 	p_old = p;
 	ClassicalPhaseVectors r_all(MCParams.get_num_MC_steps() + 1);
@@ -230,7 +237,7 @@ void monte_carlo_selection(
 	const int NumPoints = MCParams.get_num_points(); // The number of threads in MC
 	// get maximum, then evolve the points adiabatically
 	Maximums maxs = IsToBeEvolved == true ? get_maximums(Params, MCParams, distribution, IsSmall, density)
-										  : get_maximums(MCParams, distribution, IsSmall, density);
+										  : get_maximums(MCParams, IsSmall, density);
 	density.clear();
 
 	// moving random number generator and MC random number generator
@@ -323,7 +330,7 @@ AutoCorrelations autocorrelation_optimize_steps(
 	// parameters needed for MC
 	static const int MaxNOMC = PhaseDim * 400; // The number of monte carlo steps (including head and tail)
 	static const int MaxAutoCorStep = (MaxNOMC + 1) / 2;
-	const Maximums maxs = get_maximums(MCParams, distribution, IsSmall, density);
+	const Maximums maxs = get_maximums(MCParams, IsSmall, density);
 
 	// moving random number generator and MC random number generator
 	std::pair<Displacements, Displacements> displacements = generate_displacements(MCParams);
@@ -389,7 +396,7 @@ AutoCorrelations autocorrelation_optimize_displacement(
 	// parameters needed for MC
 	static const std::vector<double> PossibleDisplacement = { 1e-3, 2e-3, 5e-3, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5 };
 	static const int NPossibleDisplacement = PossibleDisplacement.size();
-	const Maximums maxs = get_maximums(MCParams, distribution, IsSmall, density);
+	const Maximums maxs = get_maximums(MCParams, IsSmall, density);
 
 	// moving random number generator and MC random number generator
 	std::pair<Displacements, Displacements> displacements = generate_displacements(MCParams);
@@ -409,7 +416,7 @@ AutoCorrelations autocorrelation_optimize_displacement(
 				{
 #pragma omp single
 					{
-						MCParams.set_displacement(PossibleDisplacement[iDispl]);
+						displacements = generate_displacements(MCParams, PossibleDisplacement[iDispl]);
 					}
 #pragma omp for
 					for (auto [x, p, rho] : maxs[iElement])
@@ -459,7 +466,7 @@ void new_element_point_selection(EvolvingDensity& density, const QuantumBoolMatr
 	{
 		return;
 	}
-	assert(NumElements * NumPoints == density.size());
+	assert(static_cast<unsigned>(NumElements * NumPoints) == density.size());
 	EvolvingDensity density_copy = density;
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{

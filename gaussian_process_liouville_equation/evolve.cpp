@@ -19,11 +19,14 @@ enum Direction
 };
 
 ClassicalBoolVector is_coupling(
-	const ClassicalDoubleVector& x,
-	const ClassicalDoubleVector& p,
-	const ClassicalDoubleVector& mass)
+	[[maybe_unused]] const ClassicalDoubleVector& x,
+	[[maybe_unused]] const ClassicalDoubleVector& p,
+	[[maybe_unused]] const ClassicalDoubleVector& mass)
 {
-	/*
+#define ADIA
+#ifdef ADIA
+	return ClassicalBoolVector::Zero();
+#else
 	if (NumPES == 2)
 	{
 		const ClassicalDoubleVector nac_01 = tensor_slice(adiabatic_coupling(x), 0, 1), f_01 = tensor_slice(adiabatic_force(x), 0, 1);
@@ -42,8 +45,7 @@ ClassicalBoolVector is_coupling(
 		}
 		return result;
 	}
-	*/
-	return ClassicalBoolVector::Zero();
+#endif
 }
 
 /// @brief To evolve all the positions
@@ -62,9 +64,9 @@ static ClassicalVectors position_evolve(
 	const Direction drc)
 {
 	assert(p.size() % x.size() == 0);
-	const int NumBranch = p.size() / x.size();
+	const int NumPoints = x.size(), NumBranch = p.size() / x.size();
 	ClassicalVectors result;
-	for (int i = 0; i < x.size(); i++)
+	for (int i = 0; i < NumPoints; i++)
 	{
 		for (int j = 0; j < NumBranch; j++)
 		{
@@ -120,8 +122,9 @@ static ClassicalVectors momentum_diagonal_branching_evolve(
 	const Direction drc)
 {
 	assert(x.size() == p.size());
+	const int NumPoints = x.size();
 	ClassicalVectors result;
-	for (int i = 0; i < x.size(); i++)
+	for (int i = 0; i < NumPoints; i++)
 	{
 		const ClassicalVectors f = adiabatic_diagonal_forces(x[i]);
 		for (int iPES = 0; iPES < NumPES; iPES++)
@@ -173,8 +176,9 @@ static ClassicalVectors momentum_offdiagonal_evolve(
 	assert(x.size() == p.size());
 	if (Couple.cast<bool>().any() == true)
 	{
+		const int NumPoints = x.size();
 		ClassicalVectors result;
-		for (int i = 0; i < x.size(); i++)
+		for (int i = 0; i < NumPoints; i++)
 		{
 			const ClassicalDoubleVector f_01 = tensor_slice(adiabatic_force(x[i]), 0, 1);
 			result.push_back(p[i].array() - f_01.array() * dt * Couple.array());
@@ -347,13 +351,13 @@ void evolve(
 	}
 }
 
-/// @brief To calculate sin and cos of \f$ dt(\omega(x_2^{\gamma})+2\omega(x_{3,n}^{\gamma})+\omega(x_{4,n}^{\gamma,\gamma'}))/4 \f$
+/// @brief To calculate sin and cos of \f$ dt(\omega(x_2^{\gamma})+2\omega(x_{3,n}^{\gamma})+\omega(x_{4,n}^{\gamma,\gamma^{\prime}}))/4 \f$
 /// @param[in] x2 Third position
 /// @param[in] x3 Fourth position
 /// @param[in] x4 Final position
 /// @param[in] dt Time interval
 /// @param[in] drc The direction of evolution
-/// @return sin and cos \f$ dt(\omega(x_2^{\gamma})+2\omega(x_{3,n}^{\gamma})+\omega(x_{4,n}^{\gamma,\gamma'}))/4 \f$, where \f$ \omega(x) = (E_0(x)-E_1(x))/\hbar \f$
+/// @return sin and cos \f$ dt(\omega(x_2^{\gamma})+2\omega(x_{3,n}^{\gamma})+\omega(x_{4,n}^{\gamma,\gamma^{\prime}}))/4 \f$, where \f$ \omega(x) = (E_0(x)-E_1(x))/\hbar \f$
 static Eigen::MatrixXd calculate_omega1_of_2_level(
 	const ClassicalVectors& x2,
 	const ClassicalVectors& x3,
@@ -361,9 +365,9 @@ static Eigen::MatrixXd calculate_omega1_of_2_level(
 	const double dt,
 	const Direction drc)
 {
-	const int NumBranch1 = x3.size() / x2.size(), NumBranch2 = x4.size() / x3.size();
+	const int NumPoints = x2.size(), NumBranch1 = x3.size() / x2.size(), NumBranch2 = x4.size() / x3.size();
 	Eigen::MatrixXd result(x3.size(), 2);
-	for (int i = 0; i < x2.size(); i++)
+	for (int i = 0; i < NumPoints; i++)
 	{
 		for (int j = 0; j < NumBranch1; j++)
 		{
@@ -387,9 +391,9 @@ static Eigen::MatrixXd calculate_phi_of_2_level(
 	const double dt)
 {
 	assert(p.size() % x.size() == 0);
-	const int NumBranch = p.size() / x.size();
+	const int NumPoints = x.size(), NumBranch = p.size() / x.size();
 	Eigen::MatrixXd result(p.size(), 2);
-	for (int i = 0; i < x.size(); i++)
+	for (int i = 0; i < NumPoints; i++)
 	{
 		const ClassicalDoubleVector& d01 = tensor_slice(adiabatic_coupling(x[i]), 0, 1);
 		for (int j = 0; j < NumBranch; j++)
@@ -450,23 +454,25 @@ static Eigen::MatrixXd calculate_non_adiabatic_rho_elements(
 	return rearrange_result;
 }
 
-/// @brief To calculate the element of 2-level system
-/// @param[in] phi sin and cos of \f$ dt\phi_{\pm} \f$
-/// @param[in] omega1 sin and cos of \f$ dt\omega_{1,\pm}/2 \f$
-/// @param[in] rho The predicted density matrix element
-/// @param[in] Coe_1 \f$ c_{-1} \f$
-/// @param[in] Coe0 \f$ c_0 \f$
-/// @param[in] Coe1 \f$ c_1 \f$
-/// @return The element
-/// @details The element is given by
-///
-/// \f{eqnarray*}{
-/// &&c_{-1}((1+\sin\phi_-)\rho_{00}+2\cos\phi_-\cos\omega_{1,-}\rho_{01}-2\cos\phi_-\sin\omega_{1,-}\rho_{10}+(1-\sin\phi_-)\rho_{11}) \\
-/// +&&c_0(\cos\phi\rho_{00}-2\sin\phi\cos\omega_1\rho_{01}+2\sin\phi\sin\omega_1\rho_{10}-\cos\phi\rho_{11}) \\
-/// +&&c_1((\sin\phi_+-1)\rho_{00}+2\cos\phi_+\cos\omega_{1,+}\rho_{01}-2\cos\phi_+\sin\omega_{1,+}\rho_{10}-(\sin\phi_++1)\rho_{11})
-/// \f}
-///
-/// where \f$ \rho_{01}=\Re\rho_{10} \f$ and \f$ \rho_{10}=\Im\rho_{10} \f$.
+/**
+ * @brief To calculate the element of 2-level system
+ * @param[in] phi sin and cos of \f$ dt\phi_{\pm} \f$
+ * @param[in] omega1 sin and cos of \f$ dt\omega_{1,\pm}/2 \f$
+ * @param[in] rho The predicted density matrix element
+ * @param[in] Coe_1 \f$ c_{-1} \f$
+ * @param[in] Coe0 \f$ c_0 \f$
+ * @param[in] Coe1 \f$ c_1 \f$
+ * @return The element
+ * @details The element is given by
+ *
+ * \f{eqnarray*}{
+ * &&c_{-1}((1+\sin\phi_-)\rho_{00}+2\cos\phi_-\cos\omega_{1,-}\rho_{01}-2\cos\phi_-\sin\omega_{1,-}\rho_{10}+(1-\sin\phi_-)\rho_{11}) \\
+ * +&&c_0(\cos\phi\rho_{00}-2\sin\phi\cos\omega_1\rho_{01}+2\sin\phi\sin\omega_1\rho_{10}-\cos\phi\rho_{11}) \\
+ * +&&c_1((\sin\phi_+-1)\rho_{00}+2\cos\phi_+\cos\omega_{1,+}\rho_{01}-2\cos\phi_+\sin\omega_{1,+}\rho_{10}-(\sin\phi_++1)\rho_{11})
+ * \f}
+ *
+ * where \f$ \rho_{01}=\Re\rho_{10} \f$ and \f$ \rho_{10}=\Im\rho_{10} \f$.
+ */
 static inline double calculate_2_level_element(
 	const Eigen::MatrixXd& phi,
 	const Eigen::MatrixXd& omega1,
@@ -557,7 +563,8 @@ QuantumComplexMatrix non_adiabatic_evolve_predict(
 	}
 	else
 	{
-		const ClassicalBoolVector IsCoupling = is_coupling(x, p, mass);
+		assert(!"NO INSTANTATION OF MORE THAN TWO LEVEL SYSTEM NOW\n");
+		// const ClassicalBoolVector IsCoupling = is_coupling(x, p, mass);
 	}
 	return result.selfadjointView<Eigen::Lower>();
 }

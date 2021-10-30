@@ -1,75 +1,97 @@
 /// @file opt.h
-/// @brief Interface to functions of hyperparameter optimization
+/// @brief Interface to functions of parameter optimization
 
 #ifndef OPT_H
 #define OPT_H
 
 #include "mc.h"
 
-/// Vector containing the type of all kernels
-using KernelTypeList = std::vector<shogun::EKernelType>;
-/// A vector containing weights and pointers to kernels, which should be the same length as KernelTypeList
-using KernelList = std::vector<std::pair<double, std::shared_ptr<shogun::Kernel>>>;
-/// The vector containing hyperparameters (or similarly: bounds, gradient, etc)
+/// The vector containing parameters (or similarly: bounds, gradient, etc)
 using ParameterVector = std::vector<double>;
-/// The averages to calculate: <1>, <x>, <p> (from hyperparameter), <x>, <p>, <T>, <V> (by sampling)
+/// The averages to calculate: <1>, <x>, <p> (from parameter), <x>, <p>, <T>, <V> (by sampling)
 using Averages = std::tuple<double, ClassicalPhaseVector, ClassicalPhaseVector, double, double>;
 
-/// Store hyperparameters, kernels and optimization algorithms to use.
-/// Optimize hyperparameters, and then predict density matrix and given point.
+/// Store parameters, kernels and optimization algorithms to use.
+/// Optimize parameters, and then predict density matrix and given point.
 class Optimization final
 {
 private:
-	// static constant variables
-	static const double DiagMagMin, DiagMagMax, Tolerance, InitialStepSize;
 	// local variables
-	const KernelTypeList TypesOfKernels;					   ///< The types of the kernels to use
-	const int NumHyperparameters;							   ///< The number of hyperparameters to use, derived from the kernel types
-	const int NumPoints;									   ///< The number of points selected for hyperparameter optimization
-	std::vector<nlopt::opt> NLOptMinimizers;				   ///< The vector containing all NLOPT optimizers, one non-grad for each element
-	std::array<ParameterVector, NumElements> Hyperparameters;  ///< The hyperparameters for all elements of density matrix
+	const int NumPoints;									   ///< The number of points selected for parameter optimization
+	const ParameterVector InitialParameter;					   ///< The initial parameter for each of the element and for reopt
+	std::vector<nlopt::opt> NLOptLocalMinimizers;			   ///< The vector containing all local NLOPT optimizers, one non-grad for each element
+	std::vector<nlopt::opt> NLOptGlobalMinimizers;			   ///< The vector containing all global NLOPT optimizers
+	std::array<ParameterVector, NumElements> ParameterVectors; ///< The parameters for all elements of density matrix
 	std::array<Eigen::MatrixXd, NumElements> TrainingFeatures; ///< The training features (phase space coordinates) of each density matrix element
-	std::array<KernelList, NumElements> Kernels;			   ///< The kernels with hyperparameters set for all elements of density matrix
 	std::array<Eigen::VectorXd, NumElements> KInvLbls;		   ///< The inverse of kernel matrix of training features times the training labels
 
-	/// @brief To optimize hyperparameters of each density matrix element based on the given density
+	/// @brief To optimize parameters of each density matrix element based on the given density
 	/// @param[inout] density The vector containing all known density matrix
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
-	/// @return The total error (MSE, log likelihood, etc) of all off-diagonal elements of density matrix
-	double optimize_elementwise(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall);
+	/// @param[inout] minimizers The minimizers to use
+	/// @return A vector of int, containing the optimization steps of each element
+	std::vector<int> optimize_elementwise(
+		const EvolvingDensity& density,
+		const QuantumBoolMatrix& IsSmall,
+		std::vector<nlopt::opt>& minimizers);
 
-	/// @brief To optimize hyperparameters of diagonal elements based on the given density and regularzations
+	/// @brief To optimize parameters of diagonal elements based on the given density and constraint regularizations
 	/// @param[inout] density The vector containing all known density matrix
 	/// @param[in] mass Mass of classical degree of freedom
 	/// @param[in] TotalEnergy The total energy of the system used for energy conservation
+	/// @param[in] Purity The purity of the partial Wigner transformed density matrix
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
-	/// @return The total error (MSE, log likelihood, etc) of all diagonal elements of density matrix
-	double optimize_diagonal(
+	/// @param[inout] minimizers The minimizer to use
+	/// @return The total error (MSE, log likelihood, etc, including regularizations) of all diagonal elements of density matrix
+	std::tuple<double, int> optimize_diagonal(
 		const EvolvingDensity& density,
 		const ClassicalDoubleVector& mass,
 		const double TotalEnergy,
-		const QuantumBoolMatrix& IsSmall);
+		const double Purity,
+		const QuantumBoolMatrix& IsSmall,
+		nlopt::opt& minimizer);
+
+	/// @brief To optimize parameters of off-diagonal element based on the given density and purity
+	/// @param[inout] density The vector containing all known density matrix
+	/// @param[in] Purity The purity of the partial Wigner transformed density matrix, which should conserve
+	/// @param[in] IsSmall The matrix that saves whether each element is small or not
+	/// @param[inout] minimizers The minimizers to use
+	/// @return The total error (MSE, log likelihood, etc, including regularizations) of all off-diagonal elements of density matrix
+	std::tuple<double, int> optimize_offdiagonal(
+		const EvolvingDensity& density,
+		const double Purity,
+		const QuantumBoolMatrix& IsSmall,
+		nlopt::opt& minimizer);
+
+	/// @brief To judge whether reoptimization is needed
+	/// @param[in] density The vector containing all known density matrix
+	/// @param[in] IsSmall The matrix that saves whether each element is small or not
+	/// @return True for reopt, false for not
+	bool is_reoptimize(const EvolvingDensity& density, const QuantumBoolMatrix& IsSmall);
 
 public:
-	/// @brief Constructor. Initial hyperparameters, kernels and optimization algorithms needed
+	/// @brief Constructor. Initial parameters, kernels and optimization algorithms needed
 	/// @param[in] Params Parameters object containing position, momentum, etc
 	/// @param[in] KernelTypes The vector containing all the kernel type used in optimization
-	/// @param[in] Algorithm The non-gradient optimization algorithm
+	/// @param[in] LocalAlgorithm The optimization algorithm for local optimization
+	/// @param[in] GlobalAlgorithm The optimization algorithm for global optimization
 	Optimization(
 		const Parameters& Params,
-		const KernelTypeList& KernelTypes = { shogun::EKernelType::K_DIAG, shogun::EKernelType::K_GAUSSIANARD },
-		const nlopt::algorithm Algorithm = nlopt::algorithm::LN_NELDERMEAD);
+		const nlopt::algorithm LocalAlgorithm = nlopt::algorithm::LN_NELDERMEAD,
+		const nlopt::algorithm GlobalAlgorithm = nlopt::algorithm::G_MLSL_LDS);
 
-	/// @brief To optimize hyperparameters based on the given density
-	/// @param[inout] density The vector containing all known density matrix
+	/// @brief To optimize parameters based on the given density
+	/// @param[in] density The vector containing all known density matrix
 	/// @param[in] mass Mass of classical degree of freedom
 	/// @param[in] TotalEnergy The total energy of the system used for energy conservation
+	/// @param[in] Purity The purity of the partial Wigner transformed density matrix
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
 	/// @return The total error (MSE, log likelihood, etc) of all elements of density matrix
-	double optimize(
+	std::tuple<double, std::vector<int>> optimize(
 		const EvolvingDensity& density,
 		const ClassicalDoubleVector& mass,
 		const double TotalEnergy,
+		const double Purity,
 		const QuantumBoolMatrix& IsSmall);
 
 	/// @brief To normalize the training set
@@ -123,21 +145,19 @@ public:
 	/// @return A 1-by-N matrix, N is the number of required grids
 	Eigen::VectorXd print_element(const QuantumBoolMatrix& IsSmall, const Eigen::MatrixXd& PhaseGrids, const int ElementIndex) const;
 
-	/// @brief To get the hyperparameter of the corresponding element
+	/// @brief To get the parameter of the corresponding element
 	/// @param[in] ElementIndex The index of the density matrix element
-	/// @return The hyperparameters of the corresponding element of density matrix
-	ParameterVector get_hyperparameter(const int ElementIndex) const
+	/// @return The parameters of the corresponding element of density matrix
+	ParameterVector get_parameter(const int ElementIndex) const
 	{
-		return Hyperparameters[ElementIndex];
+		return ParameterVectors[ElementIndex];
 	}
 
-	/// @brief To calculate the averages from hyperparameters and by importance sampling
-	/// @param[in] optimizer The optimization object containing all the hyperparameter and training set information
-	/// @param[in] density The selected density matrices
+	/// @brief To calculate the purity of the density matrix by parameters
 	/// @param[in] IsSmall The matrix that saves whether each element is small or not
-	/// @param[in] PESIndex The index of the potential energy surface, corresponding to (PESIndex, PESIndex) in density matrix
-	/// @param[in] mass Mass of classical degree of freedom
-	/// @return Tuple of the averages
+	/// @return The purity of the overall partial Wigner transformed density matrix
+	double calculate_purity(const QuantumBoolMatrix& IsSmall) const;
+
 	friend Averages calculate_average(
 		const Optimization& optimizer,
 		const EvolvingDensity& density,
@@ -145,5 +165,19 @@ public:
 		const QuantumBoolMatrix& IsSmall,
 		const int PESIndex);
 };
+
+/// @brief To calculate the averages from parameters and by importance sampling
+/// @param[in] optimizer The optimization object containing all the parameter and training set information
+/// @param[in] density The selected density matrices
+/// @param[in] IsSmall The matrix that saves whether each element is small or not
+/// @param[in] PESIndex The index of the potential energy surface, corresponding to (PESIndex, PESIndex) in density matrix
+/// @param[in] mass Mass of classical degree of freedom
+/// @return Tuple of the averages
+Averages calculate_average(
+	const Optimization& optimizer,
+	const EvolvingDensity& density,
+	const ClassicalDoubleVector& mass,
+	const QuantumBoolMatrix& IsSmall,
+	const int PESIndex);
 
 #endif // !OPT_H
