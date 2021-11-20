@@ -18,28 +18,28 @@ enum Direction
 	Forward = 1	   ///< Going forward, for point evolution
 };
 
-ClassicalBoolVector is_coupling(
-	[[maybe_unused]] const ClassicalDoubleVector& x,
-	[[maybe_unused]] const ClassicalDoubleVector& p,
-	[[maybe_unused]] const ClassicalDoubleVector& mass)
+ClassicalVector<bool> is_coupling(
+	[[maybe_unused]] const ClassicalVector<double>& x,
+	[[maybe_unused]] const ClassicalVector<double>& p,
+	[[maybe_unused]] const ClassicalVector<double>& mass)
 {
 #define ADIA
 #ifdef ADIA
-	return ClassicalBoolVector::Zero();
+	return ClassicalVector<bool>::Zero();
 #else
 	if (NumPES == 2)
 	{
-		const ClassicalDoubleVector nac_01 = tensor_slice(adiabatic_coupling(x), 0, 1), f_01 = tensor_slice(adiabatic_force(x), 0, 1);
+		const ClassicalVector<double> nac_01 = tensor_slice(adiabatic_coupling(x), 0, 1), f_01 = tensor_slice(adiabatic_force(x), 0, 1);
 		return nac_01.array() * p.array() / mass.array() > CouplingCriterion || f_01.array() > CouplingCriterion;
 	}
 	else
 	{
-		ClassicalBoolVector result = ClassicalBoolVector::Zero();
+		ClassicalVector<bool> result = ClassicalVector<bool>::Zero();
 		for (int iPES = 1; iPES < NumPES; iPES++)
 		{
 			for (int jPES = 0; jPES < iPES; jPES++)
 			{
-				const ClassicalDoubleVector nac = tensor_slice(adiabatic_coupling(x), iPES, jPES), f = tensor_slice(adiabatic_force(x), iPES, jPES);
+				const ClassicalVector<double> nac = tensor_slice(adiabatic_coupling(x), iPES, jPES), f = tensor_slice(adiabatic_force(x), iPES, jPES);
 				result = result.array() || nac.array() * p.array() / mass.array() > CouplingCriterion || f.array() > CouplingCriterion;
 			}
 		}
@@ -56,16 +56,16 @@ ClassicalBoolVector is_coupling(
 /// @param[in] drc The direction of evolution
 /// @return All branches of momentum vectors
 /// @details \f$ x_{i,j} = x_i - \frac{p_{i,j}}{m} dt \f$
-static ClassicalVectors position_evolve(
-	const ClassicalVectors& x,
-	const ClassicalVectors& p,
-	const ClassicalDoubleVector& mass,
+static EigenVector<ClassicalVector<double>> position_evolve(
+	const EigenVector<ClassicalVector<double>>& x,
+	const EigenVector<ClassicalVector<double>>& p,
+	const ClassicalVector<double>& mass,
 	const double dt,
 	const Direction drc)
 {
 	assert(p.size() % x.size() == 0);
 	const int NumPoints = x.size(), NumBranch = p.size() / x.size();
-	ClassicalVectors result;
+	EigenVector<ClassicalVector<double>> result;
 	for (int i = 0; i < NumPoints; i++)
 	{
 		for (int j = 0; j < NumBranch; j++)
@@ -84,10 +84,10 @@ static ClassicalVectors position_evolve(
 /// @param[in] drc The direction of evolution
 /// @return All branches of momentum vectors
 /// @details \f$ x_{i,j} = x_i - \frac{p_{i,j}}{m} dt \f$
-static inline ClassicalDoubleVector position_evolve(
-	const ClassicalDoubleVector& x,
-	const ClassicalDoubleVector& p,
-	const ClassicalDoubleVector& mass,
+static inline ClassicalVector<double> position_evolve(
+	const ClassicalVector<double>& x,
+	const ClassicalVector<double>& p,
+	const ClassicalVector<double>& mass,
 	const double dt,
 	const Direction drc)
 {
@@ -97,10 +97,10 @@ static inline ClassicalDoubleVector position_evolve(
 /// @brief To get the diagonal forces under adiabatic basis at given position
 /// @param[in] x Position of classical degree of freedom
 /// @return Bunches of force vectors corresponding to diagonal elements of force matrices of the whole force tensor
-static ClassicalVectors adiabatic_diagonal_forces(const ClassicalDoubleVector& x)
+static EigenVector<ClassicalVector<double>> adiabatic_diagonal_forces(const ClassicalVector<double>& x)
 {
 	const Tensor3d& force = adiabatic_force(x);
-	ClassicalVectors result;
+	EigenVector<ClassicalVector<double>> result;
 	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
 		result.push_back(tensor_slice(force, iPES, iPES));
@@ -115,18 +115,18 @@ static ClassicalVectors adiabatic_diagonal_forces(const ClassicalDoubleVector& x
 /// @param[in] drc The direction of evolution
 /// @return All branches of momentum vectors
 /// @details \f$ p_{i,j} = p_i - f_j(x_i) dt \f$, where \f$ f_j = \frac{f_{aa}+f_{bb}}{2} \f$
-static ClassicalVectors momentum_diagonal_branching_evolve(
-	const ClassicalVectors& x,
-	const ClassicalVectors& p,
+static EigenVector<ClassicalVector<double>> momentum_diagonal_branching_evolve(
+	const EigenVector<ClassicalVector<double>>& x,
+	const EigenVector<ClassicalVector<double>>& p,
 	const double dt,
 	const Direction drc)
 {
 	assert(x.size() == p.size());
 	const int NumPoints = x.size();
-	ClassicalVectors result;
+	EigenVector<ClassicalVector<double>> result;
 	for (int i = 0; i < NumPoints; i++)
 	{
-		const ClassicalVectors f = adiabatic_diagonal_forces(x[i]);
+		const EigenVector<ClassicalVector<double>> f = adiabatic_diagonal_forces(x[i]);
 		for (int iPES = 0; iPES < NumPES; iPES++)
 		{
 			for (int jPES = 0; jPES <= iPES; jPES++)
@@ -147,15 +147,15 @@ static ClassicalVectors momentum_diagonal_branching_evolve(
 /// @param[in] jPES The second index of density matrix
 /// @return All branches of momentum vectors
 /// @details \f$ p_{i,j} = p_i - f_j(x_i) dt \f$, where \f$ f_j = \frac{f_{aa}+f_{bb}}{2} \f$
-static ClassicalDoubleVector momentum_diagonal_nonbranch_evolve(
-	const ClassicalDoubleVector& x,
-	const ClassicalDoubleVector& p,
+static ClassicalVector<double> momentum_diagonal_nonbranch_evolve(
+	const ClassicalVector<double>& x,
+	const ClassicalVector<double>& p,
 	const double dt,
 	const Direction drc,
 	const int iPES,
 	const int jPES)
 {
-	const ClassicalVectors f = adiabatic_diagonal_forces(x);
+	const EigenVector<ClassicalVector<double>> f = adiabatic_diagonal_forces(x);
 	return p + drc * dt / 2.0 * (f[iPES] + f[jPES]);
 }
 
@@ -167,20 +167,20 @@ static ClassicalDoubleVector momentum_diagonal_nonbranch_evolve(
 /// @param[in] Couple A vector of 0 or 1, 1 for evolving dimensions and 0 for non-evolving
 /// @return All branches of momentum vectors
 /// @details \f$ p_{i,j} = p_i + n f_{01}(x_i) dt \f$, where \f$ n = -1, 0, 1 \f$ and \f$ f_{01}=(E_0-E_1)d_{01} \f$
-static ClassicalVectors momentum_offdiagonal_evolve(
-	const ClassicalVectors& x,
-	const ClassicalVectors& p,
+static EigenVector<ClassicalVector<double>> momentum_offdiagonal_evolve(
+	const EigenVector<ClassicalVector<double>>& x,
+	const EigenVector<ClassicalVector<double>>& p,
 	const double dt,
-	const ClassicalDoubleVector& Couple)
+	const ClassicalVector<double>& Couple)
 {
 	assert(x.size() == p.size());
 	if (Couple.cast<bool>().any() == true)
 	{
 		const int NumPoints = x.size();
-		ClassicalVectors result;
+		EigenVector<ClassicalVector<double>> result;
 		for (int i = 0; i < NumPoints; i++)
 		{
-			const ClassicalDoubleVector f_01 = tensor_slice(adiabatic_force(x[i]), 0, 1);
+			const ClassicalVector<double> f_01 = tensor_slice(adiabatic_force(x[i]), 0, 1);
 			result.push_back(p[i].array() - f_01.array() * dt * Couple.array());
 			result.push_back(p[i]);
 			result.push_back(p[i].array() + f_01.array() * dt * Couple.array());
@@ -193,7 +193,8 @@ static ClassicalVectors momentum_offdiagonal_evolve(
 	}
 }
 
-/// @brief To calculate sin and cos of \f$ dt(\omega(x_0)+2\omega(x_1)+\omega(x_2))/4 \f$, where \f$ \omega(x) = (E_i(x)-E_j(x))/\hbar \f$
+/// @brief To calculate sin and cos of \f$ dt(\omega(x_0)+2\omega(x_1)+\omega(x_2))/4 \f$,
+/// where \f$ \omega(x) =(E_i(x)-E_j(x))/\hbar \f$
 /// @param[in] x0 First position
 /// @param[in] x1 Second position
 /// @param[in] x2 Third position
@@ -203,18 +204,18 @@ static ClassicalVectors momentum_offdiagonal_evolve(
 /// @param[in] LargeIndex The larger index of density matrix
 /// @return sin and cos \f$ dt(\omega(x_0)+2\omega(x_1)+\omega(x_2))/4 \f$
 static inline Eigen::Vector2d calculate_omega0(
-	const ClassicalDoubleVector& x0,
-	const ClassicalDoubleVector& x1,
-	const ClassicalDoubleVector& x2,
+	const ClassicalVector<double>& x0,
+	const ClassicalVector<double>& x1,
+	const ClassicalVector<double>& x2,
 	const double dt,
 	const Direction drc,
 	const int SmallIndex,
 	const int LargeIndex)
 {
 	assert(0 <= SmallIndex && SmallIndex < LargeIndex && LargeIndex < NumPES);
-	const QuantumDoubleVector E0 = adiabatic_potential(x0), E1 = adiabatic_potential(x1), E2 = adiabatic_potential(x2);
-	const double omega = -drc * dt / 4.0 / hbar * (E0[SmallIndex] - E0[LargeIndex]
-		+ 2.0 * (E1[SmallIndex] - E1[LargeIndex]) + E2[SmallIndex] - E2[LargeIndex]);
+	const QuantumVector<double> E0 = adiabatic_potential(x0), E1 = adiabatic_potential(x1), E2 = adiabatic_potential(x2);
+	const double omega = -drc * dt / 4.0 / hbar
+		* (E0[SmallIndex] - E0[LargeIndex] + 2.0 * (E1[SmallIndex] - E1[LargeIndex]) + E2[SmallIndex] - E2[LargeIndex]);
 	Eigen::Vector2d result;
 	result << std::sin(omega), std::cos(omega);
 	return result;
@@ -223,14 +224,14 @@ static inline Eigen::Vector2d calculate_omega0(
 /// @brief To expand x so that x and p have same number of vectors
 /// @param[inout] x Positions
 /// @param[in] p Momenta
-void expand(ClassicalVectors& x, const ClassicalVectors& p)
+void expand(EigenVector<ClassicalVector<double>>& x, const EigenVector<ClassicalVector<double>>& p)
 {
 	assert(p.size() % x.size() == 0);
 	if (x.size() != p.size())
 	{
 		const int repeat = p.size() / x.size() - 1;
 		x.reserve(p.size());
-		for (ClassicalVectors::const_iterator iter = x.cbegin(); iter != x.cend(); ++iter)
+		for (auto iter = x.cbegin(); iter != x.cend(); ++iter)
 		{
 			iter = x.insert(iter, repeat, *iter) + repeat;
 		}
@@ -246,9 +247,9 @@ void expand(ClassicalVectors& x, const ClassicalVectors& p)
 /// @param[in] iPES The first index of density matrix
 /// @param[in] jPES The second index of density matrix
 static inline void adiabatic_evolve(
-	ClassicalDoubleVector& x,
-	ClassicalDoubleVector& p,
-	const ClassicalDoubleVector& mass,
+	ClassicalVector<double>& x,
+	ClassicalVector<double>& p,
+	const ClassicalVector<double>& mass,
 	const double dt,
 	const Direction drc,
 	const int iPES,
@@ -260,15 +261,15 @@ static inline void adiabatic_evolve(
 }
 
 /// @details If the point is not in the coupling region, evolve it adiabatically;
-/// 
+///
 /// Otherwise, branch the point with non-adiabatic dynamics, then
 /// calculate exact density at the new point, and select with monte carlo
 void evolve(
-	EvolvingDensity& density,
+	EigenVector<PhaseSpacePoint>& density,
 	const int NumPoints,
-	const ClassicalDoubleVector& mass,
+	const ClassicalVector<double>& mass,
 	const double dt,
-	const QuantumBoolMatrix IsSmall,
+	const QuantumMatrix<bool> IsSmall,
 	const Optimization& optimizer)
 {
 	using namespace std::literals::complex_literals;
@@ -285,20 +286,20 @@ void evolve(
 			{
 				auto& [x, p, rho] = density[iPoint];
 				// evolve the not-coupled degree adiabatically
-				const ClassicalBoolVector IsCouple = is_coupling(x, p, mass);
+				const ClassicalVector<bool> IsCouple = is_coupling(x, p, mass);
 				if (IsCouple.any() == true)
 				{
 					// for coupled cases, the exact density is calculated by back propagate
 					// first, evolve adiabatically for dt/2
 					adiabatic_evolve(x, p, mass, dt / 2, drc, iPES, jPES);
 					// second, branch with the off-diagonal force
-					const ClassicalDoubleVector Couple = IsCouple.cast<double>();
-					ClassicalVectors x_branch = { x }, p_branch = momentum_offdiagonal_evolve(x_branch, { p }, dt, Couple);
+					const ClassicalVector<double> Couple = IsCouple.cast<double>();
+					EigenVector<ClassicalVector<double>> x_branch = {x}, p_branch = momentum_offdiagonal_evolve(x_branch, {p}, dt, Couple);
 					expand(x_branch, p_branch);
 					// finally, evolve adiabatically again for dt/2
 					// then predict its exact density matrix and corresponding weight
 					const int NBranch = x_branch.size();
-					std::vector<QuantumComplexMatrix, Eigen::aligned_allocator<QuantumComplexMatrix>> predicts;
+					std::vector<QuantumMatrix<std::complex<double>>, Eigen::aligned_allocator<QuantumMatrix<std::complex<double>>>> predicts;
 					predicts.reserve(NBranch);
 					std::vector<double> weight;
 					weight.reserve(NBranch);
@@ -333,9 +334,9 @@ void evolve(
 				{
 					// evolve
 					// To calculate phase later, every half-step positions are needed
-					const ClassicalDoubleVector x1 = position_evolve(x, p, mass, dt / 2.0, drc);
-					const ClassicalDoubleVector p1 = momentum_diagonal_nonbranch_evolve(x1, p, dt, drc, iPES, jPES);
-					const ClassicalDoubleVector x2 = position_evolve(x1, p1, mass, dt / 2.0, drc);
+					const ClassicalVector<double> x1 = position_evolve(x, p, mass, dt / 2.0, drc);
+					const ClassicalVector<double> p1 = momentum_diagonal_nonbranch_evolve(x1, p, dt, drc, iPES, jPES);
+					const ClassicalVector<double> x2 = position_evolve(x1, p1, mass, dt / 2.0, drc);
 					// then change phase
 					if (iPES != jPES)
 					{
@@ -357,11 +358,12 @@ void evolve(
 /// @param[in] x4 Final position
 /// @param[in] dt Time interval
 /// @param[in] drc The direction of evolution
-/// @return sin and cos \f$ dt(\omega(x_2^{\gamma})+2\omega(x_{3,n}^{\gamma})+\omega(x_{4,n}^{\gamma,\gamma^{\prime}}))/4 \f$, where \f$ \omega(x) = (E_0(x)-E_1(x))/\hbar \f$
+/// @return sin and cos \f$ dt(\omega(x_2^{\gamma})+2\omega(x_{3,n}^{\gamma})+\omega(x_{4,n}^{\gamma,\gamma^{\prime}}))/4 \f$,
+/// where \f$ \omega(x) = (E_0(x)-E_1(x))/\hbar \f$
 static Eigen::MatrixXd calculate_omega1_of_2_level(
-	const ClassicalVectors& x2,
-	const ClassicalVectors& x3,
-	const ClassicalVectors& x4,
+	const EigenVector<ClassicalVector<double>>& x2,
+	const EigenVector<ClassicalVector<double>>& x3,
+	const EigenVector<ClassicalVector<double>>& x4,
 	const double dt,
 	const Direction drc)
 {
@@ -385,9 +387,9 @@ static Eigen::MatrixXd calculate_omega1_of_2_level(
 /// @param[in] dt Time interval
 /// @return sin and cos \f$ \frac{\vec{P}\cdot\vec{d}_{01}}{M}dt \f$ for each input (x,p) pairs
 static Eigen::MatrixXd calculate_phi_of_2_level(
-	const ClassicalVectors& x,
-	const ClassicalVectors& p,
-	const ClassicalDoubleVector& mass,
+	const EigenVector<ClassicalVector<double>>& x,
+	const EigenVector<ClassicalVector<double>>& p,
+	const ClassicalVector<double>& mass,
 	const double dt)
 {
 	assert(p.size() % x.size() == 0);
@@ -395,7 +397,7 @@ static Eigen::MatrixXd calculate_phi_of_2_level(
 	Eigen::MatrixXd result(p.size(), 2);
 	for (int i = 0; i < NumPoints; i++)
 	{
-		const ClassicalDoubleVector& d01 = tensor_slice(adiabatic_coupling(x[i]), 0, 1);
+		const ClassicalVector<double>& d01 = tensor_slice(adiabatic_coupling(x[i]), 0, 1);
 		for (int j = 0; j < NumBranch; j++)
 		{
 			const int Index = i * NumBranch + j;
@@ -413,9 +415,9 @@ static Eigen::MatrixXd calculate_phi_of_2_level(
 /// @param[in] optimizer The predictor that predicts original density matrix elements
 /// @return All the density matrix elements required for prediction
 static Eigen::MatrixXd calculate_non_adiabatic_rho_elements(
-	const ClassicalVectors& x4,
-	const ClassicalVectors& p3,
-	const QuantumBoolMatrix& IsSmall,
+	const EigenVector<ClassicalVector<double>>& x4,
+	const EigenVector<ClassicalVector<double>>& p3,
+	const QuantumMatrix<bool>& IsSmall,
 	const Optimization& optimizer)
 {
 	const int NBranch = x4.size() / 3;
@@ -427,16 +429,16 @@ static Eigen::MatrixXd calculate_non_adiabatic_rho_elements(
 			const int ElmIdx = iPES * NumPES + jPES;
 			result.col(ElmIdx) = optimizer.predict_elements(
 				IsSmall,
-				ClassicalVectors(x4.begin() + ElmIdx * NBranch, x4.begin() + (ElmIdx + 1) * NBranch),
-				ClassicalVectors(p3.begin() + ElmIdx * NBranch, p3.begin() + (ElmIdx + 1) * NBranch),
+				EigenVector<ClassicalVector<double>>(x4.begin() + ElmIdx * NBranch, x4.begin() + (ElmIdx + 1) * NBranch),
+				EigenVector<ClassicalVector<double>>(p3.begin() + ElmIdx * NBranch, p3.begin() + (ElmIdx + 1) * NBranch),
 				ElmIdx);
 			if (iPES != jPES)
 			{
 				const int SymElmIdx = jPES * NumPES + iPES;
 				result.col(SymElmIdx) = optimizer.predict_elements(
 					IsSmall,
-					ClassicalVectors(x4.begin() + ElmIdx * NBranch, x4.begin() + (ElmIdx + 1) * NBranch),
-					ClassicalVectors(p3.begin() + ElmIdx * NBranch, p3.begin() + (ElmIdx + 1) * NBranch),
+					EigenVector<ClassicalVector<double>>(x4.begin() + ElmIdx * NBranch, x4.begin() + (ElmIdx + 1) * NBranch),
+					EigenVector<ClassicalVector<double>>(p3.begin() + ElmIdx * NBranch, p3.begin() + (ElmIdx + 1) * NBranch),
 					SymElmIdx);
 			}
 		}
@@ -486,36 +488,36 @@ static inline double calculate_2_level_element(
 		+ Coe1 * ((1.0 - phi(2, 0)) * rho(2, 0) - 2.0 * phi(2, 1) * omega1(2, 1) * rho(2, 1) + 2.0 * phi(2, 1) * omega1(2, 0) * rho(2, 2) + (1.0 + phi(2, 0)) * rho(2, 3));
 }
 
-QuantumComplexMatrix non_adiabatic_evolve_predict(
-	const ClassicalDoubleVector& x,
-	const ClassicalDoubleVector& p,
-	const ClassicalDoubleVector& mass,
+QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
+	const ClassicalVector<double>& x,
+	const ClassicalVector<double>& p,
+	const ClassicalVector<double>& mass,
 	const double dt,
-	const QuantumBoolMatrix IsSmall,
+	const QuantumMatrix<bool> IsSmall,
 	const Optimization& optimizer)
 {
 	using namespace std::literals::complex_literals;
 	static Direction drc = Direction::Backward;
-	QuantumComplexMatrix result;
+	QuantumMatrix<std::complex<double>> result;
 	if (NumPES == 2)
 	{
 		// 2-level system
-		const ClassicalBoolVector IsCouple = is_coupling(x, p, mass);
-		const ClassicalDoubleVector Couple = IsCouple.cast<double>();
+		const ClassicalVector<bool> IsCouple = is_coupling(x, p, mass);
+		const ClassicalVector<double> Couple = IsCouple.cast<double>();
 		// x_i and p_{i-1} have same number of elements, and p_i is branching
 		if (IsCouple.any() == true)
 		{
 			// 17 steps
-			const ClassicalDoubleVector x1 = position_evolve(x, p, mass, dt / 4.0, drc);
+			const ClassicalVector<double> x1 = position_evolve(x, p, mass, dt / 4.0, drc);
 			// index: {00, 10, 11}
-			const ClassicalVectors p1 = momentum_diagonal_branching_evolve({ x1 }, { p }, dt / 2.0, drc);
-			const ClassicalVectors x2 = position_evolve({ x1 }, p1, mass, dt / 4.0, drc);
+			const EigenVector<ClassicalVector<double>> p1 = momentum_diagonal_branching_evolve({x1}, {p}, dt / 2.0, drc);
+			const EigenVector<ClassicalVector<double>> x2 = position_evolve({x1}, p1, mass, dt / 4.0, drc);
 			// index: {00, 10, 11}, {-1, 0, 1}
-			const ClassicalVectors p2 = momentum_offdiagonal_evolve(x2, p1, dt, Couple);
-			const ClassicalVectors x3 = position_evolve(x2, p2, mass, dt / 4.0, drc);
+			const EigenVector<ClassicalVector<double>> p2 = momentum_offdiagonal_evolve(x2, p1, dt, Couple);
+			const EigenVector<ClassicalVector<double>> x3 = position_evolve(x2, p2, mass, dt / 4.0, drc);
 			// index: {00, 10, 11}, {-1, 0, 1}, {00, 10, 11}
-			const ClassicalVectors p3 = momentum_diagonal_branching_evolve(x3, p2, dt / 2.0, drc);
-			const ClassicalVectors x4 = position_evolve(x3, p3, mass, dt / 4.0, drc);
+			const EigenVector<ClassicalVector<double>> p3 = momentum_diagonal_branching_evolve(x3, p2, dt / 2.0, drc);
+			const EigenVector<ClassicalVector<double>> x4 = position_evolve(x3, p3, mass, dt / 4.0, drc);
 			// prepare: evolved elements, phi, omega0, omega1
 			const Eigen::Vector2d omega0 = calculate_omega0(x, x1, x2[1], dt / 2.0, drc, 0, 1);
 			const Eigen::MatrixXd omega1 = calculate_omega1_of_2_level(x2, x3, x4, dt / 2.0, drc);
@@ -530,15 +532,15 @@ QuantumComplexMatrix non_adiabatic_evolve_predict(
 				(1.0 - phi(1, 0)) / 4.0,
 				phi(1, 1) / 2.0,
 				(1.0 + phi(1, 0)) / 4.0);
-			result(1, 0) = (calculate_2_level_element(
-				phi.block(NBranch, 0, NBranch, phi.cols()),
-				omega1.block(NBranch, 0, NBranch, omega1.cols()),
-				rho_predict.block(NBranch, 0, NBranch, rho_predict.cols()),
-				phi(1 + NBranch, 1) / 4.0,
-				phi(1 + NBranch, 0) / 2.0,
-				-phi(1 + NBranch, 1) / 4.0)
-				+ 1.0i * (omega1(1 + NBranch, 0) * rho_predict(1 + NBranch, 1) + omega1(1 + NBranch, 1) * rho_predict(1 + NBranch, 2)))
-				* (omega0[1] + 1.0i * omega0[0]);
+			result(1, 0) = (omega0[1] + 1.0i * omega0[0])
+				* (1.0i * (omega1(1 + NBranch, 0) * rho_predict(1 + NBranch, 1) + omega1(1 + NBranch, 1) * rho_predict(1 + NBranch, 2))
+					+ calculate_2_level_element(
+						phi.block(NBranch, 0, NBranch, phi.cols()),
+						omega1.block(NBranch, 0, NBranch, omega1.cols()),
+						rho_predict.block(NBranch, 0, NBranch, rho_predict.cols()),
+						phi(1 + NBranch, 1) / 4.0,
+						phi(1 + NBranch, 0) / 2.0,
+						-phi(1 + NBranch, 1) / 4.0));
 			result(1, 1) = calculate_2_level_element(
 				phi.block(2.0 * NBranch, 0, NBranch, phi.cols()),
 				omega1.block(2.0 * NBranch, 0, NBranch, omega1.cols()),
@@ -551,9 +553,9 @@ QuantumComplexMatrix non_adiabatic_evolve_predict(
 		{
 			// evolve backward adiabatically
 			// 7 steps
-			const ClassicalDoubleVector x1 = position_evolve(x, p, mass, dt / 2.0, drc);
-			const ClassicalVectors p1 = momentum_diagonal_branching_evolve({ x1 }, { p }, dt, drc);
-			const ClassicalVectors x2 = position_evolve({ x1 }, p1, mass, dt / 2.0, drc);
+			const ClassicalVector<double> x1 = position_evolve(x, p, mass, dt / 2.0, drc);
+			const EigenVector<ClassicalVector<double>> p1 = momentum_diagonal_branching_evolve({x1}, {p}, dt, drc);
+			const EigenVector<ClassicalVector<double>> x2 = position_evolve({x1}, p1, mass, dt / 2.0, drc);
 			const Eigen::Vector2d omega = calculate_omega0(x, x1, x2[1], dt, drc, 0, 1);
 			const double re = optimizer.predict_element(IsSmall, x2[1], p1[1], 1), im = optimizer.predict_element(IsSmall, x2[1], p1[1], 2);
 			result(0, 0) = optimizer.predict_element(IsSmall, x2[0], p1[0], 0);
@@ -564,7 +566,7 @@ QuantumComplexMatrix non_adiabatic_evolve_predict(
 	else
 	{
 		assert(!"NO INSTANTATION OF MORE THAN TWO LEVEL SYSTEM NOW\n");
-		// const ClassicalBoolVector IsCoupling = is_coupling(x, p, mass);
+		// const ClassicalVector<bool> IsCoupling = is_coupling(x, p, mass);
 	}
 	return result.selfadjointView<Eigen::Lower>();
 }

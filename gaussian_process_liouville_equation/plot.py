@@ -192,7 +192,7 @@ def plot_average(DIM, t, ave_file, ave_pic, diff_pic):
 
 def plot_param(DIM, t, param_file, pic_file):
 	NUM_VAR = 2 + DIM * 2 # noise, magnitude, characteristic lengths
-	Y_LABEL = ['Noise', 'log2(Magnitude)']
+	Y_LABEL = ['Noise', 'Magnitude']
 	for i in range(DIM):
 		Y_LABEL.append(r'$x_{%d}$' % i)
 	for i in range(DIM):

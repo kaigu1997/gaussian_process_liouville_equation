@@ -1,5 +1,6 @@
 /// @file mc.h
-/// @brief Interface of functions related to Monte Carlo (MC) procedure, including MC, weight function, and density matrix generation
+/// @brief Interface of functions related to Monte Carlo (MC) procedure,
+/// including MC, weight function, and densitymatrix generation
 
 #ifndef MC_H
 #define MC_H
@@ -18,7 +19,7 @@ using AutoCorrelations = std::array<Eigen::VectorXd, NumElements>;
 /// If the index corresponds to lower triangular elements, gives imaginary part.
 ///
 /// If the index corresponds to diagonal elements, gives the original value.
-inline double get_density_matrix_element(const QuantumComplexMatrix& DensityMatrix, const int ElementIndex)
+inline double get_density_matrix_element(const QuantumMatrix<std::complex<double>>& DensityMatrix, const int ElementIndex)
 {
 	const int iPES = ElementIndex / NumPES, jPES = ElementIndex % NumPES;
 	if (iPES <= jPES)
@@ -33,8 +34,9 @@ inline double get_density_matrix_element(const QuantumComplexMatrix& DensityMatr
 
 /// @brief To check if all elements are very small or not
 /// @param[in] density The density matrices at known points
-/// @return A matrix of boolean type and same size as density matrix, containing each element of density matrix is small or not
-QuantumBoolMatrix is_very_small(const EvolvingDensity& density);
+/// @return A matrix of boolean type and same size as density matrix,
+/// containing each element of density matrix is smallor not
+QuantumMatrix<bool> is_very_small(const EigenVector<PhaseSpacePoint>& density);
 
 /// @brief To generate initial adiabatic PWTDM at the given place
 /// @param[in] Params Parameters objects containing all the required information (r0, sigma0, mass)
@@ -42,14 +44,14 @@ QuantumBoolMatrix is_very_small(const EvolvingDensity& density);
 /// @param[in] x Position of classical degree of freedom
 /// @param[in] p Momentum of classical degree of freedom
 /// @return The initial density matrix at the give phase point under adiabatic basis
-QuantumComplexMatrix initial_distribution(
+QuantumMatrix<std::complex<double>> initial_distribution(
 	const Parameters& Params,
 	const std::array<double, NumPES>& InitialPopulation,
-	const ClassicalDoubleVector& x,
-	const ClassicalDoubleVector& p);
+	const ClassicalVector<double>& x,
+	const ClassicalVector<double>& p);
 
-/// To store the parameters used in MC process
-class MCParameters
+/// @brief To store the parameters used in MC process
+class MCParameters final
 {
 	int NumPoints, NOMC;
 	double displacement;
@@ -116,8 +118,8 @@ void monte_carlo_selection(
 	const Parameters& Params,
 	const MCParameters& MCParams,
 	const DistributionFunction& distribution,
-	const QuantumBoolMatrix& IsSmall,
-	EvolvingDensity& density,
+	const QuantumMatrix<bool>& IsSmall,
+	EigenVector<PhaseSpacePoint>& density,
 	const bool IsToBeEvolved = false);
 
 /// @brief To optimize the number of the monte carlo steps by autocorrelation
@@ -129,8 +131,8 @@ void monte_carlo_selection(
 AutoCorrelations autocorrelation_optimize_steps(
 	MCParameters& MCParams,
 	const DistributionFunction& distribution,
-	const QuantumBoolMatrix& IsSmall,
-	const EvolvingDensity& density);
+	const QuantumMatrix<bool>& IsSmall,
+	const EigenVector<PhaseSpacePoint>& density);
 
 /// @brief To optimize the number of the monte carlo steps by autocorrelation
 /// @param[inout] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
@@ -141,13 +143,13 @@ AutoCorrelations autocorrelation_optimize_steps(
 AutoCorrelations autocorrelation_optimize_displacement(
 	MCParameters& MCParams,
 	const DistributionFunction& distribution,
-	const QuantumBoolMatrix& IsSmall,
-	const EvolvingDensity& density);
+	const QuantumMatrix<bool>& IsSmall,
+	const EigenVector<PhaseSpacePoint>& density);
 
 /// @brief To select points for new elements of density matrix
 /// @param density The selected density matrices, new ones will also be put here
 /// @param IsNew The matrix that saves whether the element is newly populated or not
 /// @param NumPoints The number of points for each element
-void new_element_point_selection(EvolvingDensity& density, const QuantumBoolMatrix& IsNew, const int NumPoints);
+void new_element_point_selection(EigenVector<PhaseSpacePoint>& density, const QuantumMatrix<bool>& IsNew, const int NumPoints);
 
 #endif // !MC_H

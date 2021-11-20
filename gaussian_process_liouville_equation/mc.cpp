@@ -8,11 +8,9 @@
 #include "pes.h"
 
 /// The array containing the maximum elements of each of the density matrix element
-using Maximums = std::array<EvolvingDensity, NumElements>;
+using Maximums = std::array<EigenVector<PhaseSpacePoint>, NumElements>;
 /// All the distributions of displacements of position OR momentum
 using Displacements = std::array<std::uniform_real_distribution<double>, Dim>;
-/// A collection of phase space coordinates vectors
-using ClassicalPhaseVectors = std::vector<ClassicalPhaseVector, Eigen::aligned_allocator<ClassicalPhaseVector>>;
 
 /// @brief The weight function for sorting / MC selection
 /// @param x The input variable
@@ -22,14 +20,20 @@ static inline double weight_function(const double x)
 	return x * x;
 }
 
-QuantumBoolMatrix is_very_small(const EvolvingDensity& density)
+QuantumMatrix<bool> is_very_small(const EigenVector<PhaseSpacePoint>& density)
 {
 	// value below this are regarded as 0
 	static const double epsilon = 1e-2;
-	QuantumBoolMatrix result;
+	QuantumMatrix<bool> result;
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		result(iElement / NumPES, iElement % NumPES) = std::all_of(density.begin(), density.end(), [=](const PhaseSpacePoint& psp) -> bool { return get_density_matrix_element(std::get<2>(psp), iElement) < epsilon; });
+		result(iElement / NumPES, iElement % NumPES) = std::all_of(
+			density.begin(),
+			density.end(),
+			[=](const PhaseSpacePoint& psp) -> bool
+			{
+				return get_density_matrix_element(std::get<2>(psp), iElement) < epsilon;
+			});
 	}
 	return result;
 }
@@ -42,18 +46,19 @@ QuantumBoolMatrix is_very_small(const EvolvingDensity& density)
 /// \f]
 ///
 /// where i goes over all direction in the classical DOF
-QuantumComplexMatrix initial_distribution(
+QuantumMatrix<std::complex<double>> initial_distribution(
 	const Parameters& Params,
 	const std::array<double, NumPES>& InitialPopulation,
-	const ClassicalDoubleVector& x,
-	const ClassicalDoubleVector& p)
+	const ClassicalVector<double>& x,
+	const ClassicalVector<double>& p)
 {
-	QuantumComplexMatrix result = QuantumComplexMatrix::Zero(NumPES, NumPES);
-	const ClassicalDoubleVector& x0 = Params.get_x0();
-	const ClassicalDoubleVector& p0 = Params.get_p0();
-	const ClassicalDoubleVector& SigmaX0 = Params.get_sigma_x0();
-	const ClassicalDoubleVector& SigmaP0 = Params.get_sigma_p0();
-	const double GaussWeight = std::exp(-(((x - x0).array() / SigmaX0.array()).abs2().sum() + ((p - p0).array() / SigmaP0.array()).abs2().sum()) / 2.0) / (std::pow(2.0 * M_PI, Dim) * SigmaX0.prod() * SigmaP0.prod());
+	QuantumMatrix<std::complex<double>> result = QuantumMatrix<std::complex<double>>::Zero(NumPES, NumPES);
+	const ClassicalVector<double>& x0 = Params.get_x0();
+	const ClassicalVector<double>& p0 = Params.get_p0();
+	const ClassicalVector<double>& SigmaX0 = Params.get_sigma_x0();
+	const ClassicalVector<double>& SigmaP0 = Params.get_sigma_p0();
+	const double GaussWeight = std::exp(-(((x - x0).array() / SigmaX0.array()).abs2().sum() + ((p - p0).array() / SigmaP0.array()).abs2().sum()) / 2.0)
+		/ (std::pow(2.0 * M_PI, Dim) * SigmaX0.prod() * SigmaP0.prod());
 	const double SumWeight = std::accumulate(InitialPopulation.begin(), InitialPopulation.end(), 0.);
 	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
@@ -64,8 +69,9 @@ QuantumComplexMatrix initial_distribution(
 
 const double MCParameters::AboveMinFactor = 1.1; ///< choose the minimal step or max displacement whose autocor < factor*min{autocor}
 
-MCParameters::MCParameters(const Parameters& Params, const int NOMC_):
-	NumPoints(Params.get_number_of_selected_points()), NOMC(NOMC_),
+MCParameters::MCParameters(const Parameters& Params, const int NOMC_) :
+	NumPoints(Params.get_number_of_selected_points()),
+	NOMC(NOMC_),
 	displacement(std::min(Params.get_sigma_x0().minCoeff(), Params.get_sigma_p0().minCoeff()))
 {
 }
@@ -82,11 +88,11 @@ static Maximums get_maximums(
 	const Parameters& Params,
 	const MCParameters& MCParams,
 	const DistributionFunction& distribution,
-	const QuantumBoolMatrix& IsSmall,
-	const EvolvingDensity& density)
+	const QuantumMatrix<bool>& IsSmall,
+	const EigenVector<PhaseSpacePoint>& density)
 {
 	// alias names
-	static const ClassicalDoubleVector& mass = Params.get_mass();
+	static const ClassicalVector<double>& mass = Params.get_mass();
 	static const double dt = Params.get_dt();
 	const int NumPoints = MCParams.get_num_points();
 	Maximums maxs;
@@ -123,8 +129,8 @@ static Maximums get_maximums(
 /// @details The points are at their original places.
 static Maximums get_maximums(
 	const MCParameters& MCParams,
-	const QuantumBoolMatrix& IsSmall,
-	const EvolvingDensity& density)
+	const QuantumMatrix<bool>& IsSmall,
+	const EigenVector<PhaseSpacePoint>& density)
 {
 	const int NumPoints = MCParams.get_num_points();
 	Maximums maxs;
@@ -177,24 +183,24 @@ static std::pair<Displacements, Displacements>& generate_displacements(MCParamet
 /// @param[in] p The initial momentum
 /// @param[in] weight The initial weight
 /// @return A vector containing the phase space coordinates of all grids
-static ClassicalPhaseVectors monte_carlo_chain(
+static EigenVector<ClassicalPhaseVector> monte_carlo_chain(
 	const MCParameters& MCParams,
 	const DistributionFunction& distribution,
 	Displacements& XDispl,
 	Displacements& PDispl,
 	const int ElementIndex,
-	const ClassicalDoubleVector& x,
-	const ClassicalDoubleVector& p,
+	const ClassicalVector<double>& x,
+	const ClassicalVector<double>& p,
 	const double weight)
 {
 	// set parameters
 	static std::mt19937 engine(std::chrono::system_clock::now().time_since_epoch().count()); // Random number generator, using merseen twister with seed from time
 	static std::uniform_real_distribution<double> mc_selection(0.0, 1.0);					 // for whether pick or not
-	ClassicalDoubleVector x_old, x_new, p_old, p_new;
+	ClassicalVector<double> x_old, x_new, p_old, p_new;
 	double weight_old = weight;
 	x_old = x;
 	p_old = p;
-	ClassicalPhaseVectors r_all(MCParams.get_num_MC_steps() + 1);
+	EigenVector<ClassicalPhaseVector> r_all(MCParams.get_num_MC_steps() + 1);
 	r_all[0] << x_old, p_old;
 	// going the chain
 	for (int iIter = 1; iIter <= MCParams.get_num_MC_steps(); iIter++)
@@ -229,15 +235,16 @@ void monte_carlo_selection(
 	const Parameters& Params,
 	const MCParameters& MCParams,
 	const DistributionFunction& distribution,
-	const QuantumBoolMatrix& IsSmall,
-	EvolvingDensity& density,
+	const QuantumMatrix<bool>& IsSmall,
+	EigenVector<PhaseSpacePoint>& density,
 	const bool IsToBeEvolved)
 {
 	// parameters needed for MC
 	const int NumPoints = MCParams.get_num_points(); // The number of threads in MC
 	// get maximum, then evolve the points adiabatically
-	Maximums maxs = IsToBeEvolved == true ? get_maximums(Params, MCParams, distribution, IsSmall, density)
-										  : get_maximums(MCParams, IsSmall, density);
+	Maximums maxs = IsToBeEvolved == true
+		? get_maximums(Params, MCParams, distribution, IsSmall, density)
+		: get_maximums(MCParams, IsSmall, density);
 	density.clear();
 
 	// moving random number generator and MC random number generator
@@ -254,7 +261,7 @@ void monte_carlo_selection(
 			for (auto& [x, p, rho] : maxs[iElement])
 			{
 				// do MC
-				const ClassicalPhaseVectors WholeChain = monte_carlo_chain(
+				const EigenVector<ClassicalPhaseVector> WholeChain = monte_carlo_chain(
 					MCParams,
 					distribution,
 					displacements.first,
@@ -269,12 +276,12 @@ void monte_carlo_selection(
 			}
 			// after MC, the new point is at the original place
 			// TODO: then update the number of MC steps
-			// after all points updated, insert into the EvolvingDensity
+			// after all points updated, insert into the EigenVector<PhaseSpacePoint>
 			density.insert(density.end(), maxs[iElement].cbegin(), maxs[iElement].cend());
 		}
 		else
 		{
-			density.insert(density.end(), NumPoints, std::make_tuple(ClassicalDoubleVector::Zero(), ClassicalDoubleVector::Zero(), QuantumComplexMatrix::Zero()));
+			density.insert(density.end(), NumPoints, std::make_tuple(ClassicalVector<double>::Zero(), ClassicalVector<double>::Zero(), QuantumMatrix<std::complex<double>>::Zero()));
 		}
 	}
 }
@@ -286,7 +293,7 @@ void monte_carlo_selection(
 /// \f[
 /// \langle R_{i+j} R_i\rangle=\frac{1}{N-j}\sum_{i=1}^{N-j}R_{i+j}R_i-|\overline{r}|^2
 /// \f]
-static Eigen::VectorXd calculate_autocorrelation(const ClassicalPhaseVectors& r)
+static Eigen::VectorXd calculate_autocorrelation(const EigenVector<ClassicalPhaseVector>& r)
 {
 	const int NSteps = r.size();
 	Eigen::VectorXd result(NSteps / 2);
@@ -309,7 +316,7 @@ static Eigen::VectorXd calculate_autocorrelation(const ClassicalPhaseVectors& r)
 /// @param[in] r The phase space coordinates on the thread
 /// @param[in] AutoCorSteps The given autocorrelation steps
 /// @return The autocorrelation
-static double calculate_autocorrelation(const ClassicalPhaseVectors& r, const int AutoCorSteps)
+static double calculate_autocorrelation(const EigenVector<ClassicalPhaseVector>& r, const int AutoCorSteps)
 {
 	const int NSteps = r.size();
 	const ClassicalPhaseVector Ave = std::accumulate(r.begin(), r.end(), ClassicalPhaseVector(ClassicalPhaseVector::Zero())) / NSteps;
@@ -324,8 +331,8 @@ static double calculate_autocorrelation(const ClassicalPhaseVectors& r, const in
 AutoCorrelations autocorrelation_optimize_steps(
 	MCParameters& MCParams,
 	const DistributionFunction& distribution,
-	const QuantumBoolMatrix& IsSmall,
-	const EvolvingDensity& density)
+	const QuantumMatrix<bool>& IsSmall,
+	const EigenVector<PhaseSpacePoint>& density)
 {
 	// parameters needed for MC
 	static const int MaxNOMC = PhaseDim * 400; // The number of monte carlo steps (including head and tail)
@@ -337,7 +344,7 @@ AutoCorrelations autocorrelation_optimize_steps(
 
 	AutoCorrelations result; // save the return value, the autocorrelations
 	result.fill(Eigen::VectorXd::Zero(MaxAutoCorStep));
-	std::array<int, NumElements> BestMCSteps = { 0 };
+	std::array<int, NumElements> BestMCSteps = {0};
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
@@ -390,11 +397,11 @@ AutoCorrelations autocorrelation_optimize_steps(
 AutoCorrelations autocorrelation_optimize_displacement(
 	MCParameters& MCParams,
 	const DistributionFunction& distribution,
-	const QuantumBoolMatrix& IsSmall,
-	const EvolvingDensity& density)
+	const QuantumMatrix<bool>& IsSmall,
+	const EigenVector<PhaseSpacePoint>& density)
 {
 	// parameters needed for MC
-	static const std::vector<double> PossibleDisplacement = { 1e-3, 2e-3, 5e-3, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5 };
+	static const std::vector<double> PossibleDisplacement = {1e-3, 2e-3, 5e-3, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5};
 	static const int NPossibleDisplacement = PossibleDisplacement.size();
 	const Maximums maxs = get_maximums(MCParams, IsSmall, density);
 
@@ -460,14 +467,14 @@ AutoCorrelations autocorrelation_optimize_displacement(
 
 /// @details This function fills the newly populated density matrix element
 /// with density matrices of the greatest weight.
-void new_element_point_selection(EvolvingDensity& density, const QuantumBoolMatrix& IsNew, const int NumPoints)
+void new_element_point_selection(EigenVector<PhaseSpacePoint>& density, const QuantumMatrix<bool>& IsNew, const int NumPoints)
 {
 	if (IsNew.all() == false)
 	{
 		return;
 	}
 	assert(static_cast<unsigned>(NumElements * NumPoints) == density.size());
-	EvolvingDensity density_copy = density;
+	EigenVector<PhaseSpacePoint> density_copy = density;
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		if (IsNew(iElement / NumPES, iElement % NumPES) == true)
@@ -478,7 +485,10 @@ void new_element_point_selection(EvolvingDensity& density, const QuantumBoolMatr
 				density_copy.begin(),
 				density_copy.begin() + NumPoints,
 				density_copy.end(),
-				[ElementIndex = iElement](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool { return weight_function(get_density_matrix_element(std::get<2>(psp1), ElementIndex)) > weight_function(get_density_matrix_element(std::get<2>(psp2), ElementIndex)); });
+				[ElementIndex = iElement](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool
+				{
+					return weight_function(get_density_matrix_element(std::get<2>(psp1), ElementIndex)) > weight_function(get_density_matrix_element(std::get<2>(psp2), ElementIndex));
+				});
 			// then copy to the right place
 			std::copy(
 				std::execution::par_unseq,

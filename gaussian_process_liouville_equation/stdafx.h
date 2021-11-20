@@ -21,7 +21,9 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <numeric>
+#include <optional>
 #include <random>
 #include <string>
 #include <tuple>
@@ -46,29 +48,25 @@ const int Dim = 1;										  ///< The dimension of the system, half the dimensi
 const int PhaseDim = Dim * 2;							  ///< The dimension of the phase space, twice the dimension of the system
 
 // typedefs
-/// Judge if all grids of certain density matrix element are very small or not
-using QuantumBoolMatrix = Eigen::Matrix<bool, NumPES, NumPES>;
-/// The vector used in quantum system (e.g. H.diag(), rho.diag()) with double values
-using QuantumDoubleVector = Eigen::Matrix<double, NumPES, 1>;
-/// The matrix used in quantum system (e.g. H, rho) with double values
-using QuantumDoubleMatrix = Eigen::Matrix<double, NumPES, NumPES>;
-/// The matrix used in quantum system (e.g. H, rho) with complex<double> values
-using QuantumComplexMatrix = Eigen::Matrix<std::complex<double>, NumPES, NumPES>;
-/// The vector used in classical degree with bool values
-using ClassicalBoolVector = Eigen::Matrix<bool, Dim, 1>;
-/// The vector used in classical degree (e.g. mass, x0, p0) with double values
-using ClassicalDoubleVector = Eigen::Matrix<double, Dim, 1>;
+/// Matrices used for quantum degree
+template <typename T>
+using QuantumMatrix = Eigen::Matrix<T, NumPES, NumPES>;
+/// Vectors used for quantum degree
+template <typename T>
+using QuantumVector = Eigen::Matrix<T, NumPES, 1>;
+/// Vectors used for classical degree
+template <typename T>
+using ClassicalVector = Eigen::Matrix<T, Dim, 1>;
+/// std::vector with eigen allocator
+template <typename T>
+using EigenVector = std::vector<T, Eigen::aligned_allocator<T>>;
 /// The vector to depict a phase space point (i.e. coordinate)
 using ClassicalPhaseVector = Eigen::Matrix<double, 2 * Dim, 1>;
 /// 3d tensor type for Force and NAC, based on Matrix with extra dimenstion from classical degree
-using Tensor3d = Eigen::Matrix<QuantumDoubleMatrix, Dim, 1>;
-/// The vector containing branched classical position/momentum
-using ClassicalVectors = std::vector<ClassicalDoubleVector, Eigen::aligned_allocator<ClassicalDoubleVector>>;
+using Tensor3d = ClassicalVector<QuantumMatrix<double>>;
 /// The type for phase space point, first being x, second being p, third being the partial wigner-transformed density matrix
-using PhaseSpacePoint = std::tuple<ClassicalDoubleVector, ClassicalDoubleVector, QuantumComplexMatrix>;
-/// All selected density matrices for evolution; eigen-related type need special allocator
-using EvolvingDensity = std::vector<PhaseSpacePoint, Eigen::aligned_allocator<PhaseSpacePoint>>;
+using PhaseSpacePoint = std::tuple<ClassicalVector<double>, ClassicalVector<double>, QuantumMatrix<std::complex<double>>>;
 /// The function prototype to do MC selection
-using DistributionFunction = std::function<QuantumComplexMatrix(const ClassicalDoubleVector&, const ClassicalDoubleVector&)>;
+using DistributionFunction = std::function<QuantumMatrix<std::complex<double>>(const ClassicalVector<double>&, const ClassicalVector<double>&)>;
 
 #endif // !STDAFX_H

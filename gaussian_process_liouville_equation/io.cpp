@@ -9,7 +9,7 @@
 /// @param[inout] is The input stream (could be input file stream)
 /// @param[inout] param The variable waiting to be written
 /// @details The content would be: "[Descriptor]:\n[Value]\n", so need buffer to read descriptor and newline
-template<typename T>
+template <typename T>
 static void read_param(std::istream& is, T& param)
 {
 	std::string buffer;
@@ -21,10 +21,11 @@ static void read_param(std::istream& is, T& param)
 /// @brief Read a vector in Parameter from input stream
 /// @param[inout] is The input stream (could be input file stream)
 /// @param[inout] vec The vector waiting to be written
-/// @details This is the specialization of read_param() function for ClassicalDoubleVector.
+/// @details This is the specialization of read_param() function for ClassicalVector<double>.
+///
 /// The content would be: "[Descriptor]:\n[Values]\n", so need buffer to read descriptor and newline
-template<>
-void read_param<ClassicalDoubleVector>(std::istream& is, ClassicalDoubleVector& vec)
+template <>
+void read_param<ClassicalVector<double>>(std::istream& is, ClassicalVector<double>& vec)
 {
 	std::string buffer;
 	std::getline(is, buffer);
@@ -65,7 +66,7 @@ Parameters::Parameters(const std::string& input_file_name)
 #pragma omp parallel for
 	for (int iPoint = 0; iPoint < PhasePoints.cols(); iPoint++)
 	{
-		ClassicalDoubleVector xPoint = xmin, pPoint = pmin;
+		ClassicalVector<double> xPoint = xmin, pPoint = pmin;
 		int NextIndex = iPoint;
 		for (int idx = Dim - 1; idx >= 0; idx--)
 		{
@@ -96,7 +97,7 @@ std::ostream& print_time(std::ostream& os)
 	return os << std::put_time(std::localtime(&CurrentTime), "%F %T %Z");
 }
 
-Eigen::MatrixXd print_point(const EvolvingDensity& density, const int NumPoints)
+Eigen::MatrixXd print_point(const EigenVector<PhaseSpacePoint>& density, const int NumPoints)
 {
 	assert(static_cast<unsigned>(NumElements * NumPoints) == density.size());
 	Eigen::MatrixXd result(PhaseDim * NumElements, NumPoints);

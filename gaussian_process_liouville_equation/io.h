@@ -6,15 +6,12 @@
 
 #include "stdafx.h"
 
-/// The vector used in classical degree (e.g. number of grids on x/p) with int values
-using ClassicalIntVector = Eigen::Matrix<int, Dim, 1>;
-
-/// parameters from input file or calculated directly
+/// @brief Parameters from or calculated directly from input file
 class Parameters final
 {
 private:
-	ClassicalDoubleVector mass, x0, xmin, xmax, dx, p0, pmin, pmax, dp, SigmaX0, SigmaP0;
-	ClassicalIntVector xNumGrids, pNumGrids;
+	ClassicalVector<double> mass, x0, xmin, xmax, dx, p0, pmin, pmax, dp, SigmaX0, SigmaP0;
+	ClassicalVector<int> xNumGrids, pNumGrids;
 	Eigen::MatrixXd PhasePoints;
 	double OutputTime, ReoptimizationTime, dt;
 	int NumberOfSelectedPoints;
@@ -24,94 +21,94 @@ public:
 	/// @param[in] input_file_name The input file name
 	Parameters(const std::string& input_file_name);
 
-	// interface for data accessing, inline will make them faster
+	// The interface for data accessing, inline will make them faster
 	/// @brief To get classical mass(es)
 	/// @return Classical mass(es)
-	const ClassicalDoubleVector& get_mass(void) const
+	const ClassicalVector<double>& get_mass(void) const
 	{
 		return mass;
 	}
 
 	/// @brief To get initial position(s)
 	/// @return Initial position(s)
-	const ClassicalDoubleVector& get_x0(void) const
+	const ClassicalVector<double>& get_x0(void) const
 	{
 		return x0;
 	}
 
 	/// @brief To get minimum position(s) possible
 	/// @return Minimum position(s) possible
-	const ClassicalDoubleVector& get_xmin(void) const
+	const ClassicalVector<double>& get_xmin(void) const
 	{
 		return xmin;
 	}
 
 	/// @brief To get maximum position(s) possible
 	/// @return Maximum position(s) possible
-	const ClassicalDoubleVector& get_xmax(void) const
+	const ClassicalVector<double>& get_xmax(void) const
 	{
 		return xmax;
 	}
 
 	/// @brief To get maximum replacement in position(s) in MC
 	/// @return Maximum repalcement in position(s) in MC
-	const ClassicalDoubleVector& get_dx(void) const
+	const ClassicalVector<double>& get_dx(void) const
 	{
 		return dx;
 	}
 
 	/// @brief To get initial position variance(s)
 	/// @return Initial position variance(s)
-	const ClassicalDoubleVector& get_sigma_x0(void) const
+	const ClassicalVector<double>& get_sigma_x0(void) const
 	{
 		return SigmaX0;
 	}
 
 	/// @brief To get the number of grids of each dimension of x
 	/// @return The number of grids of each x dimension
-	const ClassicalIntVector& get_num_grids_on_x(void) const
+	const ClassicalVector<int>& get_num_grids_on_x(void) const
 	{
 		return xNumGrids;
 	}
 
 	/// @brief To get initial momentum/momenta
 	/// @return Initial momentum/momenta
-	const ClassicalDoubleVector& get_p0(void) const
+	const ClassicalVector<double>& get_p0(void) const
 	{
 		return p0;
 	}
 
 	/// @brief To get minimum momentum/momenta possible
 	/// @return Minimum momentum/momenta possible
-	const ClassicalDoubleVector& get_pmin(void) const
+	const ClassicalVector<double>& get_pmin(void) const
 	{
 		return pmin;
 	}
 
 	/// @brief To get maximum momentum/momenta possible
 	/// @return Maximum momentum/momenta possible
-	const ClassicalDoubleVector& get_pmax(void) const
+	const ClassicalVector<double>& get_pmax(void) const
 	{
 		return pmax;
 	}
 
 	/// @brief To get maximum replacement in momentum/momenta in MC
 	/// @return Maximum repalcement in momentum/momenta in MC
-	const ClassicalDoubleVector& get_dp(void) const
+	const ClassicalVector<double>& get_dp(void) const
 	{
 		return dp;
 	}
 
 	/// @brief To get initial momentum variance(s)
 	/// @return Initial momentum variance(s)
-	const ClassicalDoubleVector& get_sigma_p0(void) const
+	const ClassicalVector<double>& get_sigma_p0(void) const
 	{
 		return SigmaP0;
 	}
 
 	/// @brief To get the number of grids of each dimension of p
 	/// @return The number of grids of each p dimension
-	const ClassicalIntVector& get_num_grids_on_p(void) const
+	const ClassicalVector<int>& get_num_grids_on_p(void) const
 	{
 		return pNumGrids;
 	}
@@ -174,6 +171,6 @@ std::ostream& print_time(std::ostream& os);
 /// @param[in] density The vector of selected points with its density matrix
 /// @return A PhaseDim-by-N matrix, N the number of points
 /// @param NumPoints The number of points for each element
-Eigen::MatrixXd print_point(const EvolvingDensity& density, const int NumPoints);
+Eigen::MatrixXd print_point(const EigenVector<PhaseSpacePoint>& density, const int NumPoints);
 
 #endif // !IO_H

@@ -29,26 +29,26 @@ const Model TestModel = DAC; ///< The model to use
 /// @param[in] x Position of classical degree of freedom
 /// @return The adiabatic potential matrix at this position, which is real diagonal
 /// @see adiabatic_force(), adiabatic_coupling()
-QuantumDoubleVector adiabatic_potential(const ClassicalDoubleVector& x);
+QuantumVector<double> adiabatic_potential(const ClassicalVector<double>& x);
 
 /// @brief To calculate the Non-Adiabatic Coupling (NAC) under the adiabatic basis
 /// @param[in] x Position of classical degree of freedom
 /// @return The NAC tensor at this position, whose each element is real-symmetric
 /// @see adiabatic_potential(), adiabatic_force()
-Tensor3d adiabatic_coupling(const ClassicalDoubleVector& x);
+Tensor3d adiabatic_coupling(const ClassicalVector<double>& x);
 
 /// @brief To calculate the forces (-dH/dR) under the adiabatic basis
 /// @param[in] x Position of classical degree of freedom
 /// @return The force tensor of each direction
 /// @see adiabatic_potential(), adiabatic_coupling()
-Tensor3d adiabatic_force(const ClassicalDoubleVector& x);
+Tensor3d adiabatic_force(const ClassicalVector<double>& x);
 
 /// @brief To get a slice of the tensor
 /// @param[in] tensor The tensor which the slice is from
 /// @param[in] row The row index of the tensor
 /// @param[in] col The column index of the tensor
 /// @return A vector, that is tensor(0, row, col) to tensor(idx1_max, row, col)
-ClassicalDoubleVector tensor_slice(const Tensor3d& tensor, const int row, const int col);
+ClassicalVector<double> tensor_slice(const Tensor3d& tensor, const int row, const int col);
 
 /// @brief To transform density matrix from one basis to another
 /// @param[in] rho The PWTDM, a self-adjoint complex matrix
@@ -56,15 +56,15 @@ ClassicalDoubleVector tensor_slice(const Tensor3d& tensor, const int row, const 
 /// @param[in] idx_from The index indicating the representation rho in
 /// @param[in] idx_to The index indicating the representation the return value in
 /// @return Another self-adjoint denstiy matrix, in the representation indicated by the parameter
-QuantumComplexMatrix basis_transform(
-	const QuantumComplexMatrix& rho,
-	const ClassicalDoubleVector& x,
+QuantumMatrix<std::complex<double>> basis_transform(
+	const QuantumMatrix<std::complex<double>>& rho,
+	const ClassicalVector<double>& x,
 	const int idx_from,
 	const int idx_to);
 
 /// @brief To make the complex matrix self-adjoint
 /// @param[inout] mat The matrix
-inline void make_self_adjoint(QuantumComplexMatrix& mat)
+inline void make_self_adjoint(QuantumMatrix<std::complex<double>>& mat)
 {
 	mat.diagonal() = mat.diagonal().real();
 	mat = mat.selfadjointView<Eigen::Lower>();
