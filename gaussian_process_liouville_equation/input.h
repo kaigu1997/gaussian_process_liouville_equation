@@ -1,8 +1,8 @@
-/// @file io.h
-/// @brief Interface of input/output functions
+/// @file input.h
+/// @brief Interface of input functions
 
-#ifndef IO_H
-#define IO_H
+#ifndef INPUT_H
+#define INPUT_H
 
 #include "stdafx.h"
 
@@ -162,15 +162,4 @@ public:
 	}
 };
 
-/// @brief To print current time in "yyyy-mm-dd hh:mm:ss time_zone" mode
-/// @param[inout] os The output stream
-/// @return The same output stream
-std::ostream& print_time(std::ostream& os);
-
-/// @brief To format the selected phase points for printing
-/// @param[in] density The vector of selected points with its density matrix
-/// @return A PhaseDim-by-N matrix, N the number of points
-/// @param NumPoints The number of points for each element
-Eigen::MatrixXd print_point(const EigenVector<PhaseSpacePoint>& density, const int NumPoints);
-
-#endif // !IO_H
+#endif // !INPUT_H

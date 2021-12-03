@@ -5,22 +5,21 @@
 
 #include "opt.h"
 
+#include "input.h"
 #include "kernel.h"
 #include "mc.h"
-#include "pes.h"
+#include "mc_ave.h"
 
 /// The type for the loose function; whether it is LOOCV or LMLL
 using LooseFunction = std::function<double(const Kernel&, ParameterVector&)>;
-/// The training set for parameter optimization of one element of density matrix
-/// passed as parameter to the optimization function.
-/// First is feature, second is label
-using ElementTrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd>;
 /// The training set for diagonal elements and population constraint,
 /// which is an array of training set for each diagonal element
-using DiagonalTrainingSet = std::array<ElementTrainingSet, NumDiagonalElements>;
+using DiagonalTrainingSet = std::array<ElementTrainingSet, NumPES>;
+/// The energy for each PES and the total energy (last term in array)
+using AllEnergy = std::array<double, NumPES + 1>;
 /// The parameters used for energy conservation, including the diagonal training set
 /// and the energy for each PES and the total energy (last term in array)
-using EnergyConstraintParam = std::tuple<DiagonalTrainingSet, std::array<double, NumDiagonalElements + 1>>;
+using EnergyConstraintParam = std::tuple<DiagonalTrainingSet, AllEnergy>;
 /// The parameters used for purity conservation,
 /// including the elementwise training set and the initial purity
 template <typename TrainingSet>
@@ -29,22 +28,45 @@ using PurityConstraintParam = std::tuple<TrainingSet, double>;
 /// Notice that the diagonal element is also included for easier element accessing
 using OffDiagonalTrainingSet = std::array<ElementTrainingSet, NumElements>;
 
-const double Optimization::Tolerance = 1e-5;
+/// @brief To construct the training set for single element
+/// @param[in] density The vector containing all known density matrix
+/// @param[in] ElementIndex The index of the element in density matrix
+/// @return The training set of the corresponding element in density matrix
+ElementTrainingSet construct_element_training_set(const EigenVector<PhaseSpacePoint>& density, const int ElementIndex)
+{
+	assert(density.size() % NumElements == 0);
+	const int NumPoints = density.size() / NumElements;
+	ElementTrainingSet result;
+	const int BeginIndex = ElementIndex * NumPoints;
+	// construct training feature (PhaseDim*N) and training labels (N*1)
+	auto& [feature, label] = result;
+	feature.resize(PhaseDim, NumPoints);
+	label.resize(NumPoints);
+	for (int iPoint = 0; iPoint < NumPoints; iPoint++)
+	{
+		const auto& [x, p, rho] = density[BeginIndex + iPoint];
+		feature.col(iPoint) << x, p;
+		label[iPoint] = get_density_matrix_element(rho, ElementIndex);
+	}
+	return result;
+}
 
 Optimization::Optimization(
 	const Parameters& Params,
 	const nlopt::algorithm LocalAlgorithm,
-	const nlopt::algorithm GlobalAlgorithm) :
+	const nlopt::algorithm ConstraintAlgorithm,
+	const nlopt::algorithm GlobalAlgorithm,
+	const nlopt::algorithm GlobalSubAlgorithm) :
 	NumPoints(Params.get_number_of_selected_points()),
 	InitialParameter(Kernel::set_initial_parameters(Params.get_sigma_x0(), Params.get_sigma_p0()))
 {
 	static const double InitialStepSize = 0.5; // Initial step size in optimization
-	static const int PointsPerDimension = 10;  // The number of points to search per parameter
+	static const double Tolerance = 1e-5;	   // Relative tolerance
 	// set up bounds
 	const auto& [LowerBound, UpperBound] = Kernel::set_parameter_bounds(Params.get_xmax() - Params.get_xmin(), Params.get_pmax() - Params.get_pmin());
 
 	// set up parameters and minimizers
-	ParameterVector LowerBounds = LowerBound, UpperBounds = UpperBound;
+	ParameterVector LowerBounds = LowerBound, UpperBounds = UpperBound; // bounds for setting. It is changed latter
 	auto set_optimizer = [&](nlopt::opt& optimizer) -> void
 	{
 		optimizer.set_lower_bounds(LowerBounds);
@@ -68,6 +90,15 @@ Optimization::Optimization(
 			break;
 		}
 	};
+	// set up a local optimizer using given algorithm
+	auto set_local_optimizer = [&](nlopt::opt& optimizer, const nlopt::algorithm Algorithm) -> void
+	{
+		nlopt::opt result(Algorithm, optimizer.get_dimension());
+		set_optimizer(result);
+		optimizer.set_local_optimizer(result);
+	};
+
+	// minimizer for each element
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		ParameterVectors[iElement] = InitialParameter;
@@ -83,44 +114,34 @@ Optimization::Optimization(
 		case nlopt::algorithm::G_MLSL_LDS:
 		case nlopt::algorithm::GN_MLSL_LDS:
 		case nlopt::algorithm::GD_MLSL_LDS:
-			NLOptGlobalMinimizers.back().set_local_optimizer(NLOptLocalMinimizers.back());
-			[[fallthrough]];
-		case nlopt::algorithm::GN_CRS2_LM:
-		case nlopt::algorithm::GN_ISRES:
-			NLOptGlobalMinimizers.back().set_population(PointsPerDimension * Kernel::NumTotalParameters);
+			set_local_optimizer(NLOptGlobalMinimizers.back(), GlobalSubAlgorithm);
 			break;
 		default:
 			break;
 		}
 	}
 	// minimizer for all diagonal elements with regularization (population + energy + purity)
-	auto set_local_optimizer = [&](nlopt::opt& optimizer, const nlopt::algorithm& Algorithm) -> void
-	{
-		nlopt::opt result(Algorithm, optimizer.get_dimension());
-		set_optimizer(result);
-		optimizer.set_local_optimizer(result);
-	};
-	for (int iPES = 1; iPES < NumDiagonalElements; iPES++)
+	for (int iPES = 1; iPES < NumPES; iPES++)
 	{
 		LowerBounds.insert(LowerBounds.cend(), LowerBound.cbegin(), LowerBound.cend());
 		UpperBounds.insert(UpperBounds.cend(), UpperBound.cbegin(), UpperBound.cend());
 	}
-	NLOptLocalMinimizers.push_back(nlopt::opt(nlopt::algorithm::AUGLAG_EQ, Kernel::NumTotalParameters * NumDiagonalElements));
+	NLOptLocalMinimizers.push_back(nlopt::opt(nlopt::algorithm::AUGLAG_EQ, Kernel::NumTotalParameters * NumPES));
 	set_optimizer(NLOptLocalMinimizers.back());
-	set_local_optimizer(NLOptLocalMinimizers.back(), LocalAlgorithm);
+	set_local_optimizer(NLOptLocalMinimizers.back(), ConstraintAlgorithm);
 	// minimizer for all off-diagonal elements with regularization (purity)
 	// the dimension is set to be all elements, but the diagonal elements have no effect
-	// this is for simpler code, while the memory cost is small
+	// this is for simpler code, while the memory cost is larger but acceptable
 	if (NumPES != 1)
 	{
-		for (int iElement = NumDiagonalElements; iElement < NumElements; iElement++)
+		for (int iElement = NumPES; iElement < NumElements; iElement++)
 		{
 			LowerBounds.insert(LowerBounds.cend(), LowerBound.cbegin(), LowerBound.cend());
 			UpperBounds.insert(UpperBounds.cend(), UpperBound.cbegin(), UpperBound.cend());
 		}
 		NLOptLocalMinimizers.push_back(nlopt::opt(nlopt::algorithm::AUGLAG_EQ, Kernel::NumTotalParameters * NumElements));
 		set_optimizer(NLOptLocalMinimizers.back());
-		set_local_optimizer(NLOptLocalMinimizers.back(), LocalAlgorithm);
+		set_local_optimizer(NLOptLocalMinimizers.back(), ConstraintAlgorithm);
 	}
 }
 
@@ -139,7 +160,7 @@ Optimization::Optimization(
 {
 	const Eigen::VectorXd& Label = kernel.get_label();
 	const Eigen::VectorXd& InvLbl = kernel.get_inverse_label();
-	if (grad.empty() == false)
+	if (!grad.empty())
 	{
 		const auto& NegInvDerivInvLbl = kernel.get_negative_inv_deriv_inv_lbl();
 		const auto& InvDeriv = kernel.get_inv_deriv();
@@ -166,7 +187,7 @@ Optimization::Optimization(
 {
 	const auto& InvLbl = kernel.get_inverse_label().array();
 	const auto& InvDiag = kernel.get_inverse().diagonal().array();
-	if (grad.empty() == false)
+	if (!grad.empty())
 	{
 		const auto& NegInvDerivInvVec = kernel.get_negative_inv_deriv_inv();
 		const auto& NegInvDerivInvLblVec = kernel.get_negative_inv_deriv_inv_lbl();
@@ -192,49 +213,44 @@ static double loose_function(const ParameterVector& x, ParameterVector& grad, vo
 	const auto& TrainingSet = *static_cast<ElementTrainingSet*>(params);
 	const auto& [TrainingFeature, TrainingLabel] = TrainingSet;
 	// construct the kernel, then pass it to the error function
-	const Kernel k(x, TrainingFeature, TrainingFeature, TrainingLabel, false, grad.empty() == false);
-	return erf(k, grad);
-}
-
-/// @brief To construct the training set for single element
-/// @param[in] density The vector containing all known density matrix
-/// @param[in] ElementIndex The index of the element in density matrix
-/// @param[in] NumPoints The number of points selected for parameter optimization
-/// @return The training set of the corresponding element in density matrix
-static ElementTrainingSet construct_element_training_set(
-	const EigenVector<PhaseSpacePoint>& density,
-	const int ElementIndex,
-	const int NumPoints)
-{
-	ElementTrainingSet result;
-	const int BeginIndex = ElementIndex * NumPoints;
-	// construct training feature (PhaseDim*N) and training labels (N*1)
-	auto& [feature, label] = result;
-	feature.resize(PhaseDim, NumPoints);
-	label.resize(NumPoints);
-	for (int iPoint = 0; iPoint < NumPoints; iPoint++)
+	const Kernel k(x, TrainingFeature, TrainingFeature, TrainingLabel, false, !grad.empty());
+	double result = erf(k, grad);
+	// if the value is abnormal (inf, nan, etc), set it to be the maximum double
+	if (!std::isfinite(result))
 	{
-		const auto& [x, p, rho] = density[BeginIndex + iPoint];
-		feature.col(iPoint) << x, p;
-		label[iPoint] = get_density_matrix_element(rho, ElementIndex);
+		result = std::numeric_limits<double>::max();
+	}
+	for (double& d : grad)
+	{
+		if (!std::isfinite(d))
+		{
+			d = std::numeric_limits<double>::max();
+		}
 	}
 	return result;
 }
 
-std::vector<int> Optimization::optimize_elementwise(
-	const EigenVector<PhaseSpacePoint>& density,
+/// @brief To optimize parameters of each density matrix element based on the given density
+/// @param[in] TrainingSets The training features and labels of all elements
+/// @param[in] IsSmall The matrix that saves whether each element is small or not
+/// @param[inout] minimizers The minimizers to use
+/// @param[inout] ParameterVectors The parameters for all elements of density matrix
+/// @return The total error and the optimization steps of each element
+static Optimization::Result optimize_elementwise(
+	const QuantumArray<ElementTrainingSet>& TrainingSets,
 	const QuantumMatrix<bool>& IsSmall,
-	std::vector<nlopt::opt>& minimizers)
+	std::vector<nlopt::opt>& minimizers,
+	std::array<ParameterVector, NumElements>& ParameterVectors)
 {
-	static const LooseFunction& lf = leave_one_out_cross_validation;
-	std::vector<int> result(NumElements, 0);
+	double total_error = 0.0;
+	std::vector<int> num_steps(NumElements, 0);
 	// optimize element by element
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		// first, check if all points are very small or not
-		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
+		if (!IsSmall(iElement / NumPES, iElement % NumPES))
 		{
-			ElementTrainingSet ets = construct_element_training_set(density, iElement, NumPoints);
+			ElementTrainingSet ets = TrainingSets[iElement];
 			minimizers[iElement].set_min_objective(loose_function, static_cast<void*>(&ets));
 			double err = 0.0;
 			try
@@ -248,16 +264,14 @@ std::vector<int> Optimization::optimize_elementwise(
 #else
 			catch (std::exception& e)
 			{
-				std::cerr << e.what() << " at " << print_time << std::endl;
+				spdlog::error("Optimization of rho[{}][{}] failed by {}", iElement / NumPES, iElement % NumPES, e.what());
 			}
 #endif
-			result[iElement] = minimizers[iElement].get_numevals();
-			const auto& [feature, label] = ets;
-			TrainingFeatures[iElement] = feature;
-			Kernels[iElement] = std::make_shared<const Kernel>(ParameterVectors[iElement], feature, feature, label, true);
+			total_error += err;
+			num_steps[iElement] = minimizers[iElement].get_numevals();
 		}
 	}
-	return result;
+	return std::make_tuple(total_error, num_steps);
 }
 
 /// @brief To calculate the overall loose for diagonal elements
@@ -277,9 +291,9 @@ static double diagonal_loose(const ParameterVector& x, ParameterVector& grad, vo
 		if (feature.size() != 0)
 		{
 			const ParameterVector x_element(x.cbegin() + BeginIndex, x.cbegin() + EndIndex);
-			ParameterVector grad_element = (grad.empty() == false ? ParameterVector(Kernel::NumTotalParameters) : ParameterVector());
+			ParameterVector grad_element = (!grad.empty() ? ParameterVector(Kernel::NumTotalParameters) : ParameterVector());
 			err += loose_function(x_element, grad_element, static_cast<void*>(const_cast<ElementTrainingSet*>(&TrainingSets[iPES])));
-			if (grad.empty() == false)
+			if (!grad.empty())
 			{
 				std::copy(grad_element.cbegin(), grad_element.cend(), grad.begin() + BeginIndex);
 			}
@@ -287,7 +301,7 @@ static double diagonal_loose(const ParameterVector& x, ParameterVector& grad, vo
 		else
 		{
 			// element is small while gradient is needed, set gradient 0
-			if (grad.empty() == false)
+			if (!grad.empty())
 			{
 				std::fill(grad.begin() + BeginIndex, grad.begin() + EndIndex, 0.0);
 			}
@@ -314,9 +328,9 @@ static double population_constraint(const ParameterVector& x, ParameterVector& g
 		{
 			const ParameterVector x_element(x.cbegin() + BeginIndex, x.cbegin() + EndIndex);
 			// construct the kernel
-			const Kernel k(x_element, feature, feature, label, true, grad.empty() == false);
+			const Kernel k(x_element, feature, feature, label, true, !grad.empty());
 			ppl += k.get_population();
-			if (grad.empty() == false)
+			if (!grad.empty())
 			{
 				const ParameterVector& PplGrad = k.get_population_derivative();
 				std::copy(PplGrad.cbegin(), PplGrad.cend(), grad.begin() + BeginIndex);
@@ -325,7 +339,7 @@ static double population_constraint(const ParameterVector& x, ParameterVector& g
 		else
 		{
 			// element is small while gradient is needed, set gradient 0
-			if (grad.empty() == false)
+			if (!grad.empty())
 			{
 				std::fill(grad.begin() + BeginIndex, grad.begin() + EndIndex, 0.0);
 			}
@@ -343,6 +357,7 @@ static double energy_constraint(const ParameterVector& x, ParameterVector& grad,
 {
 	const auto& [TrainingSets, Energies] = *static_cast<EnergyConstraintParam*>(params);
 	double eng = 0.0;
+	double ppl = 0.0;
 	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
 		const auto& [feature, label] = TrainingSets[iPES];
@@ -352,9 +367,10 @@ static double energy_constraint(const ParameterVector& x, ParameterVector& grad,
 		{
 			const ParameterVector x_element(x.cbegin() + BeginIndex, x.cbegin() + EndIndex);
 			// construct the kernel
-			const Kernel k(x_element, feature, feature, label, true, grad.empty() == false);
+			const Kernel k(x_element, feature, feature, label, true, !grad.empty());
 			eng += k.get_population() * Energies[iPES];
-			if (grad.empty() == false)
+			ppl += k.get_population();
+			if (!grad.empty())
 			{
 				const ParameterVector& PplGrad = k.get_population_derivative();
 				for (std::size_t iParam = 0; iParam < Kernel::NumTotalParameters; iParam++)
@@ -366,19 +382,19 @@ static double energy_constraint(const ParameterVector& x, ParameterVector& grad,
 		else
 		{
 			// element is small while gradient is needed, set gradient 0
-			if (grad.empty() == false)
+			if (!grad.empty())
 			{
 				std::fill(grad.begin() + BeginIndex, grad.begin() + EndIndex, 0.0);
 			}
 		}
 	}
-	return eng - Energies[NumPES];
+	return eng / ppl - Energies[NumPES];
 };
 
 /// @brief To calculate the error on purity conservation constraint
 /// @param[in] x The input parameters, need to calculate the function value and gradient at this point
 /// @param[out] grad The gradient at the given point
-/// @param[in] params Other parameters. Here it is the diagonal training sets and energies
+/// @param[in] params Other parameters. Here it is the diagonal training sets and purity
 /// @return \f$ \langle\rho^2\rangle - \langle\rho^2\rangle_{t=0} \f$
 static double diagonal_purity_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
 {
@@ -393,9 +409,9 @@ static double diagonal_purity_constraint(const ParameterVector& x, ParameterVect
 		{
 			const ParameterVector x_element(x.cbegin() + BeginIndex, x.cbegin() + EndIndex);
 			// construct the kernel
-			const Kernel k(x_element, feature, feature, label, true, grad.empty() == false);
+			const Kernel k(x_element, feature, feature, label, true, !grad.empty());
 			prt += k.get_purity();
-			if (grad.empty() == false)
+			if (!grad.empty())
 			{
 				const ParameterVector& PrtGrad = k.get_purity_derivative();
 				std::copy(PrtGrad.cbegin(), PrtGrad.cend(), grad.begin() + BeginIndex);
@@ -404,7 +420,7 @@ static double diagonal_purity_constraint(const ParameterVector& x, ParameterVect
 		else
 		{
 			// element is small while gradient is needed, set gradient 0
-			if (grad.empty() == false)
+			if (!grad.empty())
 			{
 				std::fill(grad.begin() + BeginIndex, grad.begin() + EndIndex, 0.0);
 			}
@@ -413,13 +429,21 @@ static double diagonal_purity_constraint(const ParameterVector& x, ParameterVect
 	return prt - Purity;
 };
 
-std::tuple<double, int> Optimization::optimize_diagonal(
-	const EigenVector<PhaseSpacePoint>& density,
-	const ClassicalVector<double>& mass,
-	const double TotalEnergy,
+/// @brief To optimize parameters of diagonal elements based on the given density and constraint regularizations
+/// @param[in] TrainingSets The training features and labels of all elements
+/// @param[in] Energies The energy of each surfaces and the total energy
+/// @param[in] Purity The purity of the partial Wigner transformed density matrix
+/// @param[in] IsSmall The matrix that saves whether each element is small or not
+/// @param[inout] minimizer The minimizer to use
+/// @param[inout] ParameterVectors The parameters for all elements of density matrix
+/// @return The total error and the number of steps
+static Optimization::Result optimize_diagonal(
+	const QuantumArray<ElementTrainingSet>& TrainingSets,
+	const AllEnergy& Energies,
 	const double Purity,
 	const QuantumMatrix<bool>& IsSmall,
-	nlopt::opt& minimizer)
+	nlopt::opt& minimizer,
+	std::array<ParameterVector, NumElements>& ParameterVectors)
 {
 	// construct training set
 	DiagonalTrainingSet dts;
@@ -427,9 +451,9 @@ std::tuple<double, int> Optimization::optimize_diagonal(
 	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
 		const int ElementIndex = iPES * (NumPES + 1);
-		if (IsSmall(iPES, iPES) == false)
+		if (!IsSmall(iPES, iPES))
 		{
-			dts[iPES] = construct_element_training_set(density, ElementIndex, NumPoints);
+			dts[iPES] = TrainingSets[ElementIndex];
 		}
 		DiagonalParameters.insert(
 			DiagonalParameters.cend(),
@@ -438,30 +462,13 @@ std::tuple<double, int> Optimization::optimize_diagonal(
 	}
 	minimizer.set_min_objective(diagonal_loose, static_cast<void*>(&dts));
 	// set up constraints
-	minimizer.add_equality_constraint(population_constraint, static_cast<void*>(&dts), Tolerance);
-	EnergyConstraintParam ecp;
-	auto& [dts_ecp, eng] = ecp;
-	dts_ecp = dts;
-	eng[NumPES] = TotalEnergy;
-	for (int iPES = 0; iPES < NumPES; iPES++)
-	{
-		if (IsSmall(iPES, iPES) == false)
-		{
-			eng[iPES] = calculate_kinetic_average(density, iPES, mass) + calculate_potential_average(density, iPES);
-		}
-		else
-		{
-			eng[iPES] = 0.0;
-		}
-	}
-	minimizer.add_equality_constraint(energy_constraint, static_cast<void*>(&ecp), TotalEnergy * Tolerance);
-	PurityConstraintParam<DiagonalTrainingSet> pcp; // definition must be out of if, or memory will be released
+	minimizer.add_equality_constraint(population_constraint, static_cast<void*>(&dts));
+	EnergyConstraintParam ecp = std::make_tuple(dts, Energies);
+	minimizer.add_equality_constraint(energy_constraint, static_cast<void*>(&ecp));
+	PurityConstraintParam<DiagonalTrainingSet> pcp = std::make_tuple(dts, Purity); // definition must be out of if, or memory will be released
 	if (Purity > 0)
 	{
-		auto& [dts_pcp, prt] = pcp;
-		dts_pcp = dts;
-		prt = Purity;
-		minimizer.add_equality_constraint(diagonal_purity_constraint, static_cast<void*>(&pcp), Purity * Tolerance);
+		minimizer.add_equality_constraint(diagonal_purity_constraint, static_cast<void*>(&pcp));
 	}
 	// optimize
 	double err = 0.0;
@@ -476,26 +483,29 @@ std::tuple<double, int> Optimization::optimize_diagonal(
 #else
 	catch (std::exception& e)
 	{
-		std::cerr << e.what() << " at " << print_time << std::endl;
+		spdlog::error("Diagonal elements optimization failed by {}", e.what());
 	}
 #endif
 	minimizer.remove_equality_constraints();
 	// set up kernels
 	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
-		if (IsSmall(iPES, iPES) == false)
+		if (!IsSmall(iPES, iPES))
 		{
-			const auto& [feature, label] = dts[iPES];
 			const int ElementIndex = iPES * (NumPES + 1);
 			const int ParamBeginIndex = iPES * Kernel::NumTotalParameters;
 			const int ParamEndIndex = ParamBeginIndex + Kernel::NumTotalParameters;
 			ParameterVector(DiagonalParameters.cbegin() + ParamBeginIndex, DiagonalParameters.cbegin() + ParamEndIndex).swap(ParameterVectors[ElementIndex]);
-			Kernels[ElementIndex] = std::make_shared<const Kernel>(ParameterVectors[ElementIndex], feature, feature, label, true);
 		}
 	}
-	return std::make_tuple(err, minimizer.get_numevals());
+	return std::make_tuple(err, std::vector<int>(1, minimizer.get_numevals()));
 }
 
+/// @brief To calculate the overall loose for off-diagonal elements
+/// @param[in] x The input parameters, need to calculate the function value and gradient at this point
+/// @param[out] grad The gradient at the given point
+/// @param[in] params Other parameters. Here it is the off-diagonal training sets
+/// @return The off-diagonal errors
 static double offdiagonal_loose(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	double err = 0.0;
@@ -510,14 +520,14 @@ static double offdiagonal_loose(const ParameterVector& x, ParameterVector& grad,
 		{
 			// for non-zero off-diagonal element, calculate its error and gradient if needed
 			const ParameterVector x_element(x.cbegin() + BeginIndex, x.cbegin() + EndIndex);
-			ParameterVector grad_element = (grad.empty() == false ? ParameterVector(Kernel::NumTotalParameters) : ParameterVector());
+			ParameterVector grad_element = (!grad.empty() ? ParameterVector(Kernel::NumTotalParameters) : ParameterVector());
 			err += loose_function(x_element, grad_element, static_cast<void*>(const_cast<ElementTrainingSet*>(&TrainingSets[iElement])));
-			if (grad.empty() == false)
+			if (!grad.empty())
 			{
 				std::copy(grad_element.cbegin(), grad_element.cend(), grad.begin() + BeginIndex);
 			}
 		}
-		else if (grad.empty() == false)
+		else if (!grad.empty())
 		{
 			// for any other case that gradient is needed, fill with 0
 			std::fill(grad.begin() + BeginIndex, grad.begin() + EndIndex, 0.0);
@@ -526,6 +536,11 @@ static double offdiagonal_loose(const ParameterVector& x, ParameterVector& grad,
 	return err;
 };
 
+/// @brief To calculate the error on purity conservation constraint
+/// @param[in] x The input parameters, need to calculate the function value and gradient at this point
+/// @param[out] grad The gradient at the given point
+/// @param[in] params Other parameters. Here it is the off-diagonal training sets and purity
+/// @return \f$ \langle\rho^2\rangle - \langle\rho^2\rangle_{t=0} \f$
 static double purity_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	const auto& [TrainingSets, Purity] = *static_cast<PurityConstraintParam<OffDiagonalTrainingSet>*>(params);
@@ -542,9 +557,9 @@ static double purity_constraint(const ParameterVector& x, ParameterVector& grad,
 			if (iPES != jPES)
 			{
 				// for non-zero off-diagonal element, calculate its error and gradient if needed
-				const Kernel k(x_element, feature, feature, label, true, grad.empty() == false);
+				const Kernel k(x_element, feature, feature, label, true, !grad.empty());
 				prt += 2.0 * k.get_purity();
-				if (grad.empty() == false)
+				if (!grad.empty())
 				{
 					const ParameterVector& PrtGrad = k.get_purity_derivative();
 					for (std::size_t iParam = 0; iParam < Kernel::NumTotalParameters; iParam++)
@@ -558,13 +573,13 @@ static double purity_constraint(const ParameterVector& x, ParameterVector& grad,
 				// for non-zero diagonal element, calculate its purity, and set gradient 0 if needed
 				const Kernel k(x_element, feature, feature, label, true);
 				prt += k.get_purity();
-				if (grad.empty() == false)
+				if (!grad.empty())
 				{
 					std::fill(grad.begin() + BeginIndex, grad.begin() + EndIndex, 0.0);
 				}
 			}
 		}
-		else if (grad.empty() == false)
+		else if (!grad.empty())
 		{
 			// for any other case that gradient is needed, fill with 0
 			std::fill(grad.begin() + BeginIndex, grad.begin() + EndIndex, 0.0);
@@ -573,34 +588,34 @@ static double purity_constraint(const ParameterVector& x, ParameterVector& grad,
 	return prt - Purity;
 };
 
-std::tuple<double, int> Optimization::optimize_offdiagonal(
-	const EigenVector<PhaseSpacePoint>& density,
+/// @brief To optimize parameters of off-diagonal element based on the given density and purity
+/// @param[in] TrainingSets The training features and labels of all elements
+/// @param[in] Purity The purity of the partial Wigner transformed density matrix, which should conserve
+/// @param[in] IsSmall The matrix that saves whether each element is small or not
+/// @param[inout] minimizer The minimizer to use
+/// @param[inout] ParameterVectors The parameters for all elements of density matrix
+/// @return The total error (MSE, log likelihood, etc, including regularizations) of all off-diagonal elements of density matrix
+Optimization::Result optimize_offdiagonal(
+	const QuantumArray<ElementTrainingSet>& TrainingSets,
 	const double Purity,
 	const QuantumMatrix<bool>& IsSmall,
-	nlopt::opt& minimizer)
+	nlopt::opt& minimizer,
+	std::array<ParameterVector, NumElements>& ParameterVectors)
 {
 	// construct training set
-	OffDiagonalTrainingSet odts;
+	OffDiagonalTrainingSet odts = TrainingSets;
 	ParameterVector Parameters;
-	for (int iElement = 0, iOffDiagElement = 0; iElement < NumElements; iElement++)
+	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
-		{
-			odts[iElement] = construct_element_training_set(density, iElement, NumPoints);
-		}
 		Parameters.insert(
 			Parameters.cend(),
 			ParameterVectors[iElement].cbegin(),
 			ParameterVectors[iElement].cend());
-		iOffDiagElement++;
 	}
 	minimizer.set_min_objective(offdiagonal_loose, static_cast<void*>(&odts));
 	// setup constraint
-	PurityConstraintParam<OffDiagonalTrainingSet> pcp;
-	auto& [ts, prt] = pcp;
-	ts = odts;
-	prt = Purity;
-	minimizer.add_equality_constraint(purity_constraint, &pcp, Purity * Tolerance);
+	PurityConstraintParam<OffDiagonalTrainingSet> pcp = std::make_tuple(odts, Purity);
+	minimizer.add_equality_constraint(purity_constraint, &pcp);
 	// optimize
 	double err = 0.0;
 	try
@@ -614,7 +629,7 @@ std::tuple<double, int> Optimization::optimize_offdiagonal(
 #else
 	catch (std::exception& e)
 	{
-		std::cerr << e.what() << " at " << print_time << std::endl;
+		spdlog::error("Off-diagonal elements optimization failed by {}", e.what());
 	}
 #endif
 	minimizer.remove_equality_constraints();
@@ -622,57 +637,122 @@ std::tuple<double, int> Optimization::optimize_offdiagonal(
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		const int iPES = iElement / NumPES, jPES = iElement % NumPES;
-		if (iPES != jPES && IsSmall(iPES, jPES) == false)
+		if (iPES != jPES && !IsSmall(iPES, jPES))
 		{
-			const auto& [feature, label] = odts[iElement];
 			const int BeginIndex = iElement * Kernel::NumTotalParameters;
 			const int EndIndex = BeginIndex + Kernel::NumTotalParameters;
 			ParameterVector(Parameters.cbegin() + BeginIndex, Parameters.cbegin() + EndIndex).swap(ParameterVectors[iElement]);
-			Kernels[iElement] = std::make_shared<const Kernel>(ParameterVectors[iElement], feature, feature, label, true);
 		}
 	}
-	return std::make_tuple(err, minimizer.get_numevals());
+	return std::make_tuple(err, std::vector<int>(1, minimizer.get_numevals()));
 }
 
-/// @details This function calculates the average position and momentum of each surfaces
-/// by parameters and by MC average and compares them to judge the reoptimization.
-bool Optimization::is_reoptimize(const EigenVector<PhaseSpacePoint>& density, const QuantumMatrix<bool>& IsSmall)
+/// @brief To determine whether the optimization result is satisfy or not
+/// @param[in] Optimizer It Gives the parameters
+/// @param[in] TrainingSets The training features and labels of all elements
+/// @param[in] density The vector containing all known density matrix
+/// @param[in] Energies The energy of each surfaces and the total energy
+/// @param[in] Purity The purity of the partial Wigner transformed density matrix
+/// @param[in] IsSmall The matrix that saves whether each element is small or not
+/// @return Whether to redo the optimization or not
+/// @details This functions compares the parameter average of <x> and <p> with
+/// monte carlo average, and the total population, energy and purity. If any of
+/// the things listed above deviates far, the function returns true.
+static bool is_reoptimize(
+	const Optimization& Optimizer,
+	const QuantumArray<ElementTrainingSet>& TrainingSets,
+	const EigenVector<PhaseSpacePoint>& density,
+	const AllEnergy& Energies,
+	const double Purity,
+	const QuantumMatrix<bool>& IsSmall)
 {
 	static const double AbsoluteTolerance = 0.2;
 	static const double RelativeTolerance = 0.1;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	static auto is_tolerant = [](const double calc, const double ref) -> bool
 	{
-		if (IsSmall(iPES, iPES) == false)
+		static const double AverageTolerance = 1e-2;
+		return std::abs((calc / ref) - 1.0) < AverageTolerance;
+	};
+	// first order average
+	double ppl = 0.0;
+	double eng = 0.0;
+	double prt = 0.0;
+	for (int iElement = 0; iElement < NumElements; iElement++)
+	{
+		const int iPES = iElement / NumPES, jPES = iElement % NumPES;
+		if (!IsSmall(iPES, jPES))
 		{
-			const int ElementIndex = iPES * (NumPES + 1);
-			const ClassicalPhaseVector r_mc = ::calculate_1st_order_average(density, iPES);
-			const auto& r_prm = Kernels[ElementIndex]->get_first_order_average() / Kernels[ElementIndex]->get_population();
-			if (((r_prm - r_mc).array() / r_mc.array() > RelativeTolerance).any()
-				&& ((r_prm - r_mc).array().abs() > AbsoluteTolerance).any())
+			// construct a kernel to calculate averages
+			const auto& [feature, label] = TrainingSets[iElement];
+			const Kernel k(Optimizer.get_parameter(iElement), feature, feature, label, true);
+			if (iPES == jPES)
 			{
-				return true;
+				const ClassicalPhaseVector r_mc = calculate_1st_order_average(density, iPES);
+				const ClassicalPhaseVector& r_prm = k.get_1st_order_average();
+				if (((r_prm - r_mc).array() / r_mc.array() > RelativeTolerance).any()
+					&& ((r_prm - r_mc).array().abs() > AbsoluteTolerance).any())
+				{
+					return true;
+				}
+				ppl += k.get_population();
+				eng += k.get_population() * Energies[iPES];
+				prt += k.get_purity();
+			}
+			else
+			{
+				prt += 2.0 * k.get_purity();
 			}
 		}
+	}
+	// averages
+	if (!is_tolerant(ppl, 1.0) || !is_tolerant(eng, Energies[NumPES]) || !is_tolerant(prt, Purity))
+	{
+		return true;
 	}
 	return false;
 }
 
 /// @details Using Gaussian Process Regression (GPR) to depict phase space distribution.
 /// First optimize elementwise, then optimize the diagonal with normalization and energy conservation
-std::tuple<double, std::vector<int>> Optimization::optimize(
+Optimization::Result Optimization::optimize(
 	const EigenVector<PhaseSpacePoint>& density,
 	const ClassicalVector<double>& mass,
 	const double TotalEnergy,
 	const double Purity,
 	const QuantumMatrix<bool>& IsSmall)
 {
+	// construct training sets
+	const QuantumArray<ElementTrainingSet> TrainingSets = [&](void) -> QuantumArray<ElementTrainingSet>
+	{
+		QuantumArray<ElementTrainingSet> result;
+		for (int iElement = 0; iElement < NumElements; iElement++)
+		{
+			result[iElement] = construct_element_training_set(density, iElement);
+		}
+		return result;
+	}();
+	// calculate energies
+	const AllEnergy Energies = [&](void) -> AllEnergy
+	{
+		AllEnergy result = {0.0};
+		for (int iPES = 0; iPES < NumPES; iPES++)
+		{
+			if (!IsSmall(iPES, iPES))
+			{
+				result[iPES] = calculate_total_energy_average(density, iPES, mass);
+			}
+		}
+		result[NumPES] = TotalEnergy;
+		return result;
+	}();
+
 	// any offdiagonal element is not small
 	const bool OffDiagonalOptimization = [&](void) -> bool
 	{
 		for (int iElement = 0; iElement < NumElements; iElement++)
 		{
 			const int iPES = iElement / NumPES, jPES = iElement % NumPES;
-			if (iPES != jPES && IsSmall(iPES, jPES) == false)
+			if (iPES != jPES && !IsSmall(iPES, jPES))
 			{
 				return true;
 			}
@@ -681,25 +761,24 @@ std::tuple<double, std::vector<int>> Optimization::optimize(
 	}();
 
 	// construct a function for code reuse
-	auto core_steps = [&](void) -> std::tuple<double, std::vector<int>>
+	auto core_steps = [&](void) -> Optimization::Result
 	{
-		std::tuple<double, std::vector<int>> result;
+		Optimization::Result result = optimize_elementwise(TrainingSets, IsSmall, NLOptLocalMinimizers, ParameterVectors);
 		auto& [err, steps] = result;
-		steps = optimize_elementwise(density, IsSmall, NLOptLocalMinimizers);
-		if (OffDiagonalOptimization == true)
+		if (OffDiagonalOptimization)
 		{
 			// do not add purity condition for diagonal, so give a negative purity to indicate no necessity
-			const auto& [DiagonalError, DiagonalStep] = optimize_diagonal(density, mass, TotalEnergy, -Purity, IsSmall, NLOptLocalMinimizers[NumElements]);
-			const auto& [OffDiagonalError, OffDiagonalStep] = optimize_offdiagonal(density, Purity, IsSmall, NLOptLocalMinimizers[NumElements + 1]);
+			const auto& [DiagonalError, DiagonalStep] = optimize_diagonal(TrainingSets, Energies, -Purity, IsSmall, NLOptLocalMinimizers[NumElements], ParameterVectors);
+			const auto& [OffDiagonalError, OffDiagonalStep] = optimize_offdiagonal(TrainingSets, Purity, IsSmall, NLOptLocalMinimizers[NumElements + 1], ParameterVectors);
 			err = DiagonalError + OffDiagonalError;
-			steps.push_back(DiagonalStep);
-			steps.push_back(OffDiagonalStep);
+			steps.insert(steps.cend(), DiagonalStep.cbegin(), DiagonalStep.cend());
+			steps.insert(steps.cend(), OffDiagonalStep.cbegin(), OffDiagonalStep.cend());
 		}
 		else
 		{
-			const auto& [DiagonalError, DiagonalStep] = optimize_diagonal(density, mass, TotalEnergy, Purity, IsSmall, NLOptLocalMinimizers[NumElements]);
+			const auto& [DiagonalError, DiagonalStep] = optimize_diagonal(TrainingSets, Energies, Purity, IsSmall, NLOptLocalMinimizers[NumElements], ParameterVectors);
 			err = DiagonalError;
-			steps.push_back(DiagonalStep);
+			steps.insert(steps.cend(), DiagonalStep.cbegin(), DiagonalStep.cend());
 			steps.push_back(0);
 		}
 		return result;
@@ -707,8 +786,9 @@ std::tuple<double, std::vector<int>> Optimization::optimize(
 
 	std::tuple<double, std::vector<int>> result = core_steps();
 	// next, check if the averages meet; otherwise, reopt with initial parameter
-	if (is_reoptimize(density, IsSmall) == true)
+	if (is_reoptimize(*this, TrainingSets, density, Energies, Purity, IsSmall))
 	{
+		spdlog::warn("Local optimization with previous parameters failed. Retry with initial parameters.");
 		for (int iElement = 0; iElement < NumElements; iElement++)
 		{
 			ParameterVectors[iElement] = InitialParameter;
@@ -717,217 +797,33 @@ std::tuple<double, std::vector<int>> Optimization::optimize(
 	}
 	else
 	{
+		spdlog::info("Local optimization with previous parameters succeeded.");
 		return result;
 	}
-	// // if the initial parameter does not work either, go to global optimizers
-	// if (is_reoptimize(density, IsSmall) == true)
-	// {
-	// 	for (int iElement = 0; iElement < NumElements; iElement++)
-	// 	{
-	// 		ParameterVectors[iElement] = InitialParameter;
-	// 	}
-	// 	optimize_elementwise(density, IsSmall, NLOptGlobalMinimizers);
-	// 	result = core_steps();
-	// }
-	return result;
-}
-
-/// @details First, calculate the total population before normalization by analytical integration.
-///
-/// Then, divide the whole density matrix over the total population to normalize
-double Optimization::normalize(EigenVector<PhaseSpacePoint>& density, const QuantumMatrix<bool>& IsSmall) const
-{
-	double population = 0.0;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	// if the initial parameter does not work either, go to global optimizers
+	if (is_reoptimize(*this, TrainingSets, density, Energies, Purity, IsSmall))
 	{
-		if (IsSmall(iPES, iPES) == false)
+		spdlog::warn("Local optimization with initial parameters failed. Retry with global optimization.");
+		for (int iElement = 0; iElement < NumElements; iElement++)
 		{
-			const int ElementIndex = iPES * (NumPES + 1);
-			population += Kernels[ElementIndex]->get_population();
+			ParameterVectors[iElement] = InitialParameter;
 		}
-	}
-	for (auto& [x, p, rho] : density)
-	{
-		rho /= population;
-	}
-	return population;
-}
-
-void Optimization::update_training_set(const EigenVector<PhaseSpacePoint>& density, const QuantumMatrix<bool>& IsSmall)
-{
-	for (int iElement = 0; iElement < NumElements; iElement++)
-	{
-		// first, check if all points are very small or not
-		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
-		{
-			const int BeginIndex = iElement * NumPoints;
-			Eigen::MatrixXd feature(PhaseDim, NumPoints);
-			Eigen::VectorXd label(NumPoints);
-			for (int iPoint = 0; iPoint < NumPoints; iPoint++)
-			{
-				const auto& [x, p, rho] = density[BeginIndex + iPoint];
-				label[iPoint] = get_density_matrix_element(rho, iElement);
-				feature.col(iPoint) << x, p;
-			}
-			// set up kernels
-			TrainingFeatures[iElement] = feature;
-			Kernels[iElement] = std::make_shared<const Kernel>(ParameterVectors[iElement], feature, feature, label, true);
-		}
-	}
-}
-
-/// @details Using Gaussian Process Regression to predict by
-///
-/// \f[
-/// E[p(\mathbf{f}_*|X_*,X,\mathbf{y})]=K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}\mathbf{y}
-/// \f]
-///
-/// where \f$ X_* \f$ is the test features, \f$ X \f$ is the training features,
-/// and \f$ \mathbf{y} \f$ is the training labels.
-///
-/// Warning: must call optimize() first before callings of this function!
-double Optimization::predict_element(
-	const QuantumMatrix<bool>& IsSmall,
-	const ClassicalVector<double>& x,
-	const ClassicalVector<double>& p,
-	const int ElementIndex) const
-{
-	if (IsSmall(ElementIndex / NumPES, ElementIndex % NumPES) == false)
-	{
-		// not small, have something to do
-		Eigen::MatrixXd test_feat(PhaseDim, 1);
-		test_feat << x, p;
-		Kernel k(ParameterVectors[ElementIndex], test_feat, TrainingFeatures[ElementIndex]);
-		return (k.get_kernel() * Kernels[ElementIndex]->get_inverse_label()).value();
+		optimize_elementwise(TrainingSets, IsSmall, NLOptGlobalMinimizers, ParameterVectors);
+		result = core_steps();
 	}
 	else
 	{
-		return 0.;
+		spdlog::info("Local optimization with initial parameters succeeded.");
+		return result;
 	}
-}
-
-QuantumMatrix<std::complex<double>> Optimization::predict_matrix(
-	const QuantumMatrix<bool>& IsSmall,
-	const ClassicalVector<double>& x,
-	const ClassicalVector<double>& p) const
-{
-	using namespace std::literals::complex_literals;
-	assert(x.size() == p.size());
-	QuantumMatrix<std::complex<double>> result = QuantumMatrix<std::complex<double>>::Zero();
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	// after global optimization, check if it works or not
+	if (is_reoptimize(*this, TrainingSets, density, Energies, Purity, IsSmall))
 	{
-		const int iPES = iElement / NumPES, jPES = iElement % NumPES;
-		const double ElementValue = predict_element(IsSmall, x, p, iElement);
-		if (iPES <= jPES)
-		{
-			result(jPES, iPES) += ElementValue;
-		}
-		else
-		{
-			result(iPES, jPES) += 1.0i * ElementValue;
-		}
-	}
-	return result.selfadjointView<Eigen::Lower>();
-}
-
-Eigen::VectorXd Optimization::predict_elements(
-	const QuantumMatrix<bool>& IsSmall,
-	const EigenVector<ClassicalVector<double>>& x,
-	const EigenVector<ClassicalVector<double>>& p,
-	const int ElementIndex) const
-{
-	assert(x.size() == p.size());
-	const int NumPoints = x.size();
-	if (IsSmall(ElementIndex / NumPES, ElementIndex % NumPES) == false)
-	{
-		// not small, have something to do
-		Eigen::MatrixXd test_feat(PhaseDim, NumPoints);
-		for (int i = 0; i < NumPoints; i++)
-		{
-			test_feat.col(i) << x[i], p[i];
-		}
-		Kernel k(ParameterVectors[ElementIndex], test_feat, TrainingFeatures[ElementIndex]);
-		return k.get_kernel() * Kernels[ElementIndex]->get_inverse_label();
+		spdlog::warn("Global optimization failed.");
 	}
 	else
 	{
-		return Eigen::VectorXd::Zero(NumPoints);
-	}
-}
-
-Eigen::VectorXd Optimization::print_element(const QuantumMatrix<bool>& IsSmall, const Eigen::MatrixXd& PhaseGrids, const int ElementIndex) const
-{
-	if (IsSmall(ElementIndex / NumPES, ElementIndex % NumPES) == false)
-	{
-		Kernel k(ParameterVectors[ElementIndex], PhaseGrids, TrainingFeatures[ElementIndex]);
-		return k.get_kernel() * Kernels[ElementIndex]->get_inverse_label();
-	}
-	else
-	{
-		return Eigen::VectorXd::Zero(PhaseGrids.cols());
-	}
-}
-
-/// @details The global purity is the weighted sum of purity of all elements, with weight 1 for diagonal and 2 for off-diagonal
-double Optimization::calculate_purity(const QuantumMatrix<bool>& IsSmall) const
-{
-	double result = 0.0;
-	for (int iElement = 0; iElement < NumElements; iElement++)
-	{
-		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
-		{
-			if (iElement / NumPES == iElement % NumPES)
-			{
-				result += Kernels[iElement]->get_purity();
-			}
-			else
-			{
-				result += 2.0 * Kernels[iElement]->get_purity();
-			}
-		}
+		spdlog::info("Global optimization succeeded.");
 	}
 	return result;
-}
-
-ClassicalPhaseVector calculate_1st_order_average(const EigenVector<PhaseSpacePoint>& density, const int PESIndex)
-{
-	const int NumPoints = density.size() / NumElements;
-	const int BeginIndex = PESIndex * (NumPES + 1) * NumPoints;
-	ClassicalPhaseVector r = ClassicalPhaseVector::Zero();
-	for (int iPoint = BeginIndex; iPoint < BeginIndex + NumPoints; iPoint++)
-	{
-		const auto& [x, p, rho] = density[iPoint];
-		for (int iDim = 0; iDim < Dim; iDim++)
-		{
-			r[iDim] += x[iDim];
-			r[iDim + Dim] += p[iDim];
-		}
-	}
-	return r / NumPoints;
-}
-
-double calculate_kinetic_average(const EigenVector<PhaseSpacePoint>& density, const int PESIndex, const ClassicalVector<double>& mass)
-{
-	const int NumPoints = density.size() / NumElements;
-	const int BeginIndex = PESIndex * (NumPES + 1) * NumPoints;
-	double T = 0.0;
-	for (int iPoint = BeginIndex; iPoint < BeginIndex + NumPoints; iPoint++)
-	{
-		const auto& [x, p, rho] = density[iPoint];
-		T += p.dot((p.array() / mass.array()).matrix()) / 2.0;
-	}
-	return T / NumPoints;
-}
-
-double calculate_potential_average(const EigenVector<PhaseSpacePoint>& density, const int PESIndex)
-{
-	const int NumPoints = density.size() / NumElements;
-	const int BeginIndex = PESIndex * (NumPES + 1) * NumPoints;
-	double V = 0.0;
-	for (int iPoint = BeginIndex; iPoint < BeginIndex + NumPoints; iPoint++)
-	{
-		const auto& [x, p, rho] = density[iPoint];
-		V += adiabatic_potential(x)[PESIndex];
-	}
-	return V / NumPoints;
 }

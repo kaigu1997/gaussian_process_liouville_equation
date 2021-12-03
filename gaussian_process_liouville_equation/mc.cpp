@@ -5,10 +5,11 @@
 
 #include "mc.h"
 
+#include "input.h"
 #include "pes.h"
 
 /// The array containing the maximum elements of each of the density matrix element
-using Maximums = std::array<EigenVector<PhaseSpacePoint>, NumElements>;
+using Maximums = QuantumArray<EigenVector<PhaseSpacePoint>>;
 /// All the distributions of displacements of position OR momentum
 using Displacements = std::array<std::uniform_real_distribution<double>, Dim>;
 
@@ -99,7 +100,7 @@ static Maximums get_maximums(
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		const int iPES = iElement / NumPES, jPES = iElement % NumPES;
-		if (IsSmall(iPES, jPES) == false)
+		if (!IsSmall(iPES, jPES))
 		{
 			const int BeginIndex = iElement * NumPoints;
 			// with evolution
@@ -136,7 +137,7 @@ static Maximums get_maximums(
 	Maximums maxs;
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
+		if (!IsSmall(iElement / NumPES, iElement % NumPES))
 		{
 			// no evolution, just the original ones
 			maxs[iElement].insert(
@@ -242,7 +243,7 @@ void monte_carlo_selection(
 	// parameters needed for MC
 	const int NumPoints = MCParams.get_num_points(); // The number of threads in MC
 	// get maximum, then evolve the points adiabatically
-	Maximums maxs = IsToBeEvolved == true
+	Maximums maxs = IsToBeEvolved
 		? get_maximums(Params, MCParams, distribution, IsSmall, density)
 		: get_maximums(MCParams, IsSmall, density);
 	density.clear();
@@ -254,7 +255,7 @@ void monte_carlo_selection(
 	std::array<Eigen::VectorXd, NumElements> result;
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
+		if (!IsSmall(iElement / NumPES, iElement % NumPES))
 		{
 			// begin from an old point
 #pragma omp parallel for
@@ -347,7 +348,7 @@ AutoCorrelations autocorrelation_optimize_steps(
 	std::array<int, NumElements> BestMCSteps = {0};
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
+		if (!IsSmall(iElement / NumPES, iElement % NumPES))
 		{
 #pragma omp parallel
 			{
@@ -414,7 +415,7 @@ AutoCorrelations autocorrelation_optimize_displacement(
 	BestDisplacement.fill(std::numeric_limits<int>::max());
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		if (IsSmall(iElement / NumPES, iElement % NumPES) == false)
+		if (!IsSmall(iElement / NumPES, iElement % NumPES))
 		{
 #pragma omp parallel
 			{
@@ -469,7 +470,7 @@ AutoCorrelations autocorrelation_optimize_displacement(
 /// with density matrices of the greatest weight.
 void new_element_point_selection(EigenVector<PhaseSpacePoint>& density, const QuantumMatrix<bool>& IsNew, const int NumPoints)
 {
-	if (IsNew.all() == false)
+	if (!IsNew.all())
 	{
 		return;
 	}
@@ -477,7 +478,7 @@ void new_element_point_selection(EigenVector<PhaseSpacePoint>& density, const Qu
 	EigenVector<PhaseSpacePoint> density_copy = density;
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		if (IsNew(iElement / NumPES, iElement % NumPES) == true)
+		if (IsNew(iElement / NumPES, iElement % NumPES))
 		{
 			// rearrange to find the points with the largest weight
 			std::nth_element(

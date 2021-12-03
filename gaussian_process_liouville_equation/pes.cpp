@@ -5,8 +5,8 @@
 
 #include "pes.h"
 
-/// Sign function: return -1 for negative, 1 for positive, and 0 for 0
-/// @param val A value of any type that have '<' and '>' and could construct 0.0
+/// @brief Sign function: return -1 for negative, 1 for positive, and 0 for 0
+/// @param[in] val A value of any type that have '<' and '>' and could construct 0.0
 /// @return The sign of the value
 template <typename valtype>
 static inline int sgn(const valtype& val)
@@ -33,10 +33,9 @@ static const double ECR_B = 0.10; ///< B in ECR model
 static const double ECR_C = 0.90; ///< C in ECR model
 
 /// @brief Subsystem diabatic Hamiltonian, being the potential of the bath
-/// @param x Position of classical degree of freedom
+/// @param[in] x Position of classical degree of freedom
 /// @return The potential matrix, which is real symmetric
-/// @see diabatic_force(), diabatic_hessian(), diabatic_coupling(),
-/// @see potential, adiabatic_potential(), force_basis_potential()
+/// @see diabatic_force()
 static QuantumMatrix<double> diabatic_potential(const ClassicalVector<double>& x)
 {
 	QuantumMatrix<double> Potential;
@@ -62,10 +61,9 @@ static QuantumMatrix<double> diabatic_potential(const ClassicalVector<double>& x
 }
 
 /// @brief Diabatic force, the analytical derivative (F=-dH/dR=-dV/dR)
-/// @param x Position of classical degree of freedom
+/// @param[in] x Position of classical degree of freedom
 /// @return The force tensor, which is real symmetric for each element
-/// @see diabatic_potential(), diabatic_hessian(), diabatic_coupling(),
-/// @see force, adiabatic_force(), force_basis_force()
+/// @see diabatic_potential()
 static Tensor3d diabatic_force(const ClassicalVector<double>& x)
 {
 	Tensor3d Force;
@@ -92,20 +90,21 @@ static Tensor3d diabatic_force(const ClassicalVector<double>& x)
 
 // Adiabatic representation
 /// @brief Transformation matrix from diabatic representation to adiabatic one
-/// @param x Position of classical degree of freedom
+/// @param[in] x Position of classical degree of freedom
 /// @return The transformation matrix at this position, the C matrix, which is real orthogonal
-/// @see basis_transform, diabatic_to_force_basis_matrix(),
+/// @see adiabatic_to_force_basis_matrix(),
 /// @see adiabatic_potential(), adiabatic_force(), adiabatic_coupling()
-/// @details The return Matrix C following C^T*M(dia)*C=M(adia),
+/// @details The return Matrix \f$ C \f$ following
+/// \f$ C^{\mathsf{T}}M_{\mathrm{dia}}C=M_{\mathrm{adia}} \f$,
 /// which diagonalizes the subsystem Hamiltonian (PES) only
-/// and is the transformation matrix at a certain position \vec{x}.
+/// and is the transformation matrix at a certain position x.
 static QuantumMatrix<double> diabatic_to_adiabatic_matrix(const ClassicalVector<double>& x)
 {
 	const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(diabatic_potential(x));
 	return solver.eigenvectors();
 }
 
-/// @see diabatic_to_adiabatic_matrix, diabatic_potential()
+/// @see diabatic_to_adiabatic_matrix(), diabatic_potential()
 /// @details Calculate from the diabatic potential by calculating the eigenvalues as the diagonal elements
 QuantumVector<double> adiabatic_potential(const ClassicalVector<double>& x)
 {
@@ -113,8 +112,10 @@ QuantumVector<double> adiabatic_potential(const ClassicalVector<double>& x)
 	return solver.eigenvalues();
 }
 
-/// @see diabatic_to_adiabatic_matrix(), diabatic_force()
-/// @details Calculate from diabatic force. On each direction, F(adia)=C^T*F(dia)^C, C the transformation matrix
+/// @see diabatic_to_adiabatic_matrix(), diabatic_force(), adiabatic_potential()
+/// @details Calculate from diabatic force. On each direction,
+/// \f$ F_{\mathrm{adia}}=C^{\mathsf{T}}F_{\mathrm{dia}}C \f$,
+/// where C is the transformation matrix
 Tensor3d adiabatic_force(const ClassicalVector<double>& x)
 {
 	Tensor3d AdiaForce;
@@ -127,6 +128,7 @@ Tensor3d adiabatic_force(const ClassicalVector<double>& x)
 	return AdiaForce;
 }
 
+/// @see adiabatic_potential(), adiabatic_coupling()
 /// @details Calculate the D matrix, whose element is \f$ d^{\alpha}_{ij}=F^{\alpha}_{ij}/(E_i-E_j) \f$
 /// where \f$ F^{\alpha} \f$ is the force on the alpha classical dimension, and E the potential
 Tensor3d adiabatic_coupling(const ClassicalVector<double>& x)
@@ -161,23 +163,23 @@ ClassicalVector<double> tensor_slice(const Tensor3d& tensor, const int row, cons
 
 // off-diagonal force basis
 /// @brief Transformation matrix from diabatic representation to force basis
-/// @param x Position of classical degree of freedom
-/// @paran idx The index of the classical dimension where the force matrix is diagonal
+/// @param[in] x Position of classical degree of freedom
+/// @param[in] idx The index of the classical dimension where the force matrix is diagonal
 /// @return The transformation matrix at this position, the C matrix, which is real orthogonal
-/// @see basis_transform, diabatic_to_adiabatic_matrix(),
-/// @see force_basis_potential(), force_basis_force(), force_basis_hessian()
-/// @details The return Matrix C following C^T*M(adia)*C=M(force), which diagonalizes force on the first direction
-/// and is the transformation matrix at a certain position \vec{x}.
+/// @see basis_transform(), diabatic_to_adiabatic_matrix(), force_basis_force()
+/// @details The return Matrix \f$ C \f$ following
+/// \f$ C^{\mathsf{T}}M_{\mathrm{adia}}C=M_{\mathrm{force }i} \f$,
+/// which diagonalizes force on the idx-th direction,
+/// and is the transformation matrix at a certain position x.
 static QuantumMatrix<double> adiabatic_to_force_basis_matrix(const ClassicalVector<double>& x, const int idx)
 {
 	const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(adiabatic_force(x)[idx]);
 	return solver.eigenvectors();
 }
 
-/// @see diabatic_force(), adiabatic_force()
-///
-/// Calculate by diagonalize the first element of the diabatic force.
-/// On other directions, F(force)=C^T*F(dia)*C, C thetransformation matrix
+/// @see adiabatic_force(), adiabatic_to_force_basis_matrix()
+/// @details This function calculates the force of the given direction by
+/// diagonalization of the corresponding (idx) direction of the adiabatic force.
 QuantumVector<double> force_basis_force(const ClassicalVector<double>& x, const int idx)
 {
 	const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(adiabatic_force(x)[idx]);

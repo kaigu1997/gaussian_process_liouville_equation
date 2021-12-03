@@ -6,8 +6,8 @@
 #include "evolve.h"
 
 #include "mc.h"
-#include "opt.h"
 #include "pes.h"
+#include "predict.h"
 
 static const double CouplingCriterion = 0.01; ///< Criteria of whether have coupling or not
 
@@ -174,7 +174,7 @@ static EigenVector<ClassicalVector<double>> momentum_offdiagonal_evolve(
 	const ClassicalVector<double>& Couple)
 {
 	assert(x.size() == p.size());
-	if (Couple.cast<bool>().any() == true)
+	if (Couple.cast<bool>().any())
 	{
 		const int NumPoints = x.size();
 		EigenVector<ClassicalVector<double>> result;
@@ -269,8 +269,7 @@ void evolve(
 	const int NumPoints,
 	const ClassicalVector<double>& mass,
 	const double dt,
-	const QuantumMatrix<bool> IsSmall,
-	const Optimization& optimizer)
+	const Predictions& Predictors)
 {
 	using namespace std::literals::complex_literals;
 	static std::mt19937 engine(std::chrono::system_clock::now().time_since_epoch().count()); // Random number generator, using merseen twister with seed from time
@@ -279,7 +278,7 @@ void evolve(
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
 		const int iPES = iElement / NumPES, jPES = iElement % NumPES;
-		if (IsSmall(iPES, jPES) == false)
+		if (Predictors[iElement].has_value())
 		{
 #pragma omp parallel for
 			for (int iPoint = iElement * NumPoints; iPoint < (iElement + 1) * NumPoints; iPoint++)
@@ -287,7 +286,7 @@ void evolve(
 				auto& [x, p, rho] = density[iPoint];
 				// evolve the not-coupled degree adiabatically
 				const ClassicalVector<bool> IsCouple = is_coupling(x, p, mass);
-				if (IsCouple.any() == true)
+				if (IsCouple.any())
 				{
 					// for coupled cases, the exact density is calculated by back propagate
 					// first, evolve adiabatically for dt/2
@@ -311,8 +310,7 @@ void evolve(
 							p_branch[iBranch],
 							mass,
 							dt,
-							IsSmall,
-							optimizer));
+							Predictors));
 						weight.push_back(std::abs(get_density_matrix_element(*(predicts.cend()), iElement)));
 					}
 					// select one of them with monte carlo
@@ -412,34 +410,34 @@ static Eigen::MatrixXd calculate_phi_of_2_level(
 /// @param[in] x4 Final position
 /// @param[in] p3 Final momentum
 /// @param[in] IsSmall The matrix that saves whether each element is small or not
-/// @param[in] optimizer The predictor that predicts original density matrix elements
+/// @param[in] Predictors An array of predictors for prediction, whose size is NumElements
 /// @return All the density matrix elements required for prediction
 static Eigen::MatrixXd calculate_non_adiabatic_rho_elements(
 	const EigenVector<ClassicalVector<double>>& x4,
 	const EigenVector<ClassicalVector<double>>& p3,
-	const QuantumMatrix<bool>& IsSmall,
-	const Optimization& optimizer)
+	const Predictions& Predictors)
 {
 	const int NBranch = x4.size() / 3;
-	Eigen::MatrixXd result(NBranch, NumElements);
+	Eigen::MatrixXd result = Eigen::MatrixXd::Zero(NBranch, NumElements);
 	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
 		for (int jPES = 0; jPES <= iPES; jPES++)
 		{
 			const int ElmIdx = iPES * NumPES + jPES;
-			result.col(ElmIdx) = optimizer.predict_elements(
-				IsSmall,
+			const Eigen::MatrixXd TrainingFeature = construct_training_feature(
 				EigenVector<ClassicalVector<double>>(x4.begin() + ElmIdx * NBranch, x4.begin() + (ElmIdx + 1) * NBranch),
-				EigenVector<ClassicalVector<double>>(p3.begin() + ElmIdx * NBranch, p3.begin() + (ElmIdx + 1) * NBranch),
-				ElmIdx);
+				EigenVector<ClassicalVector<double>>(p3.begin() + ElmIdx * NBranch, p3.begin() + (ElmIdx + 1) * NBranch));
+			if (Predictors[ElmIdx].has_value())
+			{
+				result.col(ElmIdx) = Predictors[ElmIdx]->predict_elements(TrainingFeature);
+			}
 			if (iPES != jPES)
 			{
 				const int SymElmIdx = jPES * NumPES + iPES;
-				result.col(SymElmIdx) = optimizer.predict_elements(
-					IsSmall,
-					EigenVector<ClassicalVector<double>>(x4.begin() + ElmIdx * NBranch, x4.begin() + (ElmIdx + 1) * NBranch),
-					EigenVector<ClassicalVector<double>>(p3.begin() + ElmIdx * NBranch, p3.begin() + (ElmIdx + 1) * NBranch),
-					SymElmIdx);
+				if (Predictors[SymElmIdx].has_value())
+				{
+					result.col(SymElmIdx) = Predictors[SymElmIdx]->predict_elements(TrainingFeature);
+				}
 			}
 		}
 	}
@@ -493,19 +491,18 @@ QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 	const ClassicalVector<double>& p,
 	const ClassicalVector<double>& mass,
 	const double dt,
-	const QuantumMatrix<bool> IsSmall,
-	const Optimization& optimizer)
+	const Predictions& Predictors)
 {
 	using namespace std::literals::complex_literals;
-	static Direction drc = Direction::Backward;
-	QuantumMatrix<std::complex<double>> result;
+	static const Direction drc = Direction::Backward;
+	QuantumMatrix<std::complex<double>> result = QuantumMatrix<std::complex<double>>::Zero();
 	if (NumPES == 2)
 	{
 		// 2-level system
 		const ClassicalVector<bool> IsCouple = is_coupling(x, p, mass);
 		const ClassicalVector<double> Couple = IsCouple.cast<double>();
 		// x_i and p_{i-1} have same number of elements, and p_i is branching
-		if (IsCouple.any() == true)
+		if (IsCouple.any())
 		{
 			// 17 steps
 			const ClassicalVector<double> x1 = position_evolve(x, p, mass, dt / 4.0, drc);
@@ -522,7 +519,7 @@ QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 			const Eigen::Vector2d omega0 = calculate_omega0(x, x1, x2[1], dt / 2.0, drc, 0, 1);
 			const Eigen::MatrixXd omega1 = calculate_omega1_of_2_level(x2, x3, x4, dt / 2.0, drc);
 			const Eigen::MatrixXd phi = calculate_phi_of_2_level(x2, p2, mass, dt);
-			const Eigen::MatrixXd rho_predict = calculate_non_adiabatic_rho_elements(x4, p3, IsSmall, optimizer);
+			const Eigen::MatrixXd rho_predict = calculate_non_adiabatic_rho_elements(x4, p3, Predictors);
 			// calculate
 			const int NBranch = 3; // the availability of n (off-diagonal momentum evolution branches)
 			result(0, 0) = calculate_2_level_element(
@@ -557,10 +554,21 @@ QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 			const EigenVector<ClassicalVector<double>> p1 = momentum_diagonal_branching_evolve({x1}, {p}, dt, drc);
 			const EigenVector<ClassicalVector<double>> x2 = position_evolve({x1}, p1, mass, dt / 2.0, drc);
 			const Eigen::Vector2d omega = calculate_omega0(x, x1, x2[1], dt, drc, 0, 1);
-			const double re = optimizer.predict_element(IsSmall, x2[1], p1[1], 1), im = optimizer.predict_element(IsSmall, x2[1], p1[1], 2);
-			result(0, 0) = optimizer.predict_element(IsSmall, x2[0], p1[0], 0);
-			result(1, 0) = (re + 1.0i * im) * (omega[1] + 1.0i * omega[0]);
-			result(1, 1) = optimizer.predict_element(IsSmall, x2[2], p1[2], 3);
+			if (Predictors[0].has_value())
+			{
+				result(0, 0) = Predictors[0]->predict_elements(construct_training_feature({x2[0]}, {p1[0]})).value();
+			}
+			if (Predictors[1].has_value() || Predictors[2].has_value())
+			{
+				const Eigen::MatrixXd TrainingFeature = construct_training_feature({x2[1]}, {p1[1]});
+				const double re = Predictors[1].has_value() ? Predictors[1]->predict_elements(TrainingFeature).value() : 0.0;
+				const double im = Predictors[2].has_value() ? Predictors[2]->predict_elements(TrainingFeature).value() : 0.0;
+				result(1, 0) = (re + 1.0i * im) * (omega[1] + 1.0i * omega[0]);
+			}
+			if (Predictors[3].has_value())
+			{
+				result(1, 1) = Predictors[3]->predict_elements(construct_training_feature({x2[2]}, {p1[2]})).value();
+			}
 		}
 	}
 	else

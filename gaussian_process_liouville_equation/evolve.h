@@ -4,7 +4,9 @@
 #ifndef EVOLVE_H
 #define EVOLVE_H
 
-#include "opt.h"
+#include "stdafx.h"
+
+#include "predict.h"
 
 /// @brief To judge if current point have large coupling in case of 2-level system
 /// @param[in] x Position of classical degree of freedom
@@ -22,14 +24,13 @@ ClassicalVector<bool> is_coupling(
 /// @param[in] mass Mass of classical degree of freedom
 /// @param[in] dt Time interval
 /// @param[in] IsSmall The matrix that saves whether each element is small or not
-/// @param[in] optimizer The predictor that predicts original density matrix elements
+/// @param[in] Predictors An array of predictors for prediction, whose size is NumElements
 void evolve(
 	EigenVector<PhaseSpacePoint>& density,
 	const int NumPoints,
 	const ClassicalVector<double>& mass,
 	const double dt,
-	const QuantumMatrix<bool> IsSmall,
-	const Optimization& optimizer);
+	const Predictions& Predictors);
 
 /// @brief To predict the density matrix of the given point after evolving 1 time step
 /// @param[in] x Position of classical degree of freedom
@@ -37,14 +38,13 @@ void evolve(
 /// @param[in] mass Mass of classical degree of freedom
 /// @param[in] dt Time interval
 /// @param[in] IsSmall The matrix that saves whether each element is small or not
-/// @param[in] optimizer The predictor that predicts original density matrix elements
+/// @param[in] Predictors An array of predictors for prediction, whose size is NumElements
 /// @return The density matrix at the given point after evolving
 QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 	const ClassicalVector<double>& x,
 	const ClassicalVector<double>& p,
 	const ClassicalVector<double>& mass,
 	const double dt,
-	const QuantumMatrix<bool> IsSmall,
-	const Optimization& optimizer);
+	const Predictions& Predictors);
 
 #endif // !EVOLVE_H

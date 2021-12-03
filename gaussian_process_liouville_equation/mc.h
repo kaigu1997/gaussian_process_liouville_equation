@@ -5,10 +5,12 @@
 #ifndef MC_H
 #define MC_H
 
-#include "io.h"
+#include "stdafx.h"
+
+#include "input.h"
 
 /// The type for saving all autocorrelations
-using AutoCorrelations = std::array<Eigen::VectorXd, NumElements>;
+using AutoCorrelations = QuantumArray<Eigen::VectorXd>;
 
 /// @brief To get the element of density matrix
 /// @param[in] DensityMatrix The density matrix
@@ -112,7 +114,7 @@ public:
 /// @param[in] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
 /// @param[in] distribution The function object to generate the distribution
 /// @param[in] IsSmall The matrix that saves whether each element is small or not
-/// @param[out] density The selected density matrices
+/// @param[inout] density The selected density matrices
 /// @param[in] IsToBeEvolved Whether the points are at evolved places or original places
 void monte_carlo_selection(
 	const Parameters& Params,

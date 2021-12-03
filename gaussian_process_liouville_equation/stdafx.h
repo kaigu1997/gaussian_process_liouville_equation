@@ -8,12 +8,21 @@
 #define EIGEN_USE_MKL_ALL
 #endif // !EIGEN_USE_MKL_ALL
 
+#ifndef SPDLOG_ACTIVE_LEVEL
+#ifdef NDEBUG
+#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_OFF
+#else
+#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
+#endif // !NDEBUG
+#endif // !SPDLOG_ACTIVE_LEVEL
+
 #include <algorithm>
 #include <array>
 #include <cassert>
 #include <chrono>
 #include <cmath>
 #include <complex>
+#include <cstddef>
 #include <execution>
 #include <fstream>
 #include <functional>
@@ -33,19 +42,21 @@
 #include <Eigen/Eigen>
 #include <Eigen/StdVector>
 #include <nlopt.hpp>
+#include <spdlog/fmt/ostr.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
 
 #include <mkl.h>
+#include <omp.h>
 
 // mathmatical/physical constants
 const double hbar = 1.0; ///< Reduced Planck constant in a.u.
 
 // DOF constants
-const int NumPES = 2;									  ///< The number of quantum degree (potential energy surfaces)
-const int NumElements = NumPES * NumPES;				  ///< The number of elements of matrices in quantum degree (e.g. H, rho)
-const int NumDiagonalElements = NumPES;					  ///< The number of diagonal elements
-const int NumOffDiagonalElements = NumPES * (NumPES - 1); ///< The number of off-diagonal elements; overall numpes^2 elements
-const int Dim = 1;										  ///< The dimension of the system, half the dimension of the phase space
-const int PhaseDim = Dim * 2;							  ///< The dimension of the phase space, twice the dimension of the system
+const int NumPES = 2;					 ///< The number of quantum degree (potential energy surfaces)
+const int NumElements = NumPES * NumPES; ///< The number of elements of matrices in quantum degree (e.g. H, rho)
+const int Dim = 1;						 ///< The dimension of the system, half the dimension of the phase space
+const int PhaseDim = Dim * 2;			 ///< The dimension of the phase space, twice the dimension of the system
 
 // typedefs
 /// Matrices used for quantum degree
@@ -60,6 +71,9 @@ using ClassicalVector = Eigen::Matrix<T, Dim, 1>;
 /// std::vector with eigen allocator
 template <typename T>
 using EigenVector = std::vector<T, Eigen::aligned_allocator<T>>;
+/// std::array of quantum degree
+template <typename T>
+using QuantumArray = std::array<T, NumElements>;
 /// The vector to depict a phase space point (i.e. coordinate)
 using ClassicalPhaseVector = Eigen::Matrix<double, 2 * Dim, 1>;
 /// 3d tensor type for Force and NAC, based on Matrix with extra dimenstion from classical degree

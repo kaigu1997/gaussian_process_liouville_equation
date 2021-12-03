@@ -5,6 +5,66 @@
 
 #include "kernel.h"
 
+const std::size_t Kernel::NumTotalParameters = 1 + 1 + PhaseDim;
+static const double InitialNoise = 1.0;			 ///< The initial weight for noise
+static const double InitialGaussianWeight = 1e4; ///< The initial weight for Gaussian kernel
+
+ParameterVector Kernel::set_initial_parameters(const ClassicalVector<double>& xSigma, const ClassicalVector<double>& pSigma)
+{
+	ParameterVector result(Kernel::NumTotalParameters);
+	std::size_t iParam = 0;
+	// first, noise
+	result[iParam++] = InitialNoise; // diagonal weight is fixed at 1.0
+	// second, Gaussian
+	result[iParam++] = InitialGaussianWeight;
+	for (int iDim = 0; iDim < Dim; iDim++)
+	{
+		result[iParam++] = xSigma[iDim];
+	}
+	// dealing with p
+	for (int iDim = 0; iDim < Dim; iDim++)
+	{
+		result[iParam++] = pSigma[iDim];
+	}
+	return result;
+}
+
+std::array<ParameterVector, 2> Kernel::set_parameter_bounds(
+	const ClassicalVector<double>& xSize,
+	const ClassicalVector<double>& pSize)
+{
+	static const double GaussKerMinCharLength = 1.0 / 100.0; // Minimal characteristic length for Gaussian kernel
+	std::array<ParameterVector, 2> result;
+	auto& [LowerBound, UpperBound] = result;
+	{
+		std::size_t iParam = 0;
+		// first, noise
+		// diagonal weight is fixed
+		LowerBound.push_back(InitialNoise);
+		UpperBound.push_back(InitialNoise);
+		iParam++;
+		// second, Gaussian
+		LowerBound.push_back(InitialNoise);
+		UpperBound.push_back(std::pow(InitialGaussianWeight, 2) / InitialNoise);
+		iParam++;
+		// dealing with x
+		for (int iDim = 0; iDim < Dim; iDim++)
+		{
+			LowerBound.push_back(GaussKerMinCharLength);
+			UpperBound.push_back(xSize[iDim]);
+			iParam++;
+		}
+		// dealing with p
+		for (int iDim = 0; iDim < Dim; iDim++)
+		{
+			LowerBound.push_back(GaussKerMinCharLength);
+			UpperBound.push_back(pSize[iDim]);
+			iParam++;
+		}
+	}
+	return result;
+}
+
 /// @brief To unpack the parameters to components
 /// @param[in] Parameter All the parameters
 /// @return The unpacked parameters
@@ -43,7 +103,7 @@ static Eigen::MatrixXd gaussian_kernel(
 	if (LeftFeature.data() == RightFeature.data())
 	{
 		// training set, the matrix is symmetric
-		if (static_cast<bool>(result.IsRowMajor) == true)
+		if (static_cast<bool>(result.IsRowMajor))
 		{
 #pragma omp parallel for
 			for (int iRow = 1; iRow < Rows; iRow++)
@@ -72,7 +132,7 @@ static Eigen::MatrixXd gaussian_kernel(
 	}
 	else
 	{
-		if (static_cast<bool>(result.IsRowMajor) == true)
+		if (static_cast<bool>(result.IsRowMajor))
 		{
 #pragma omp parallel for
 			for (int iRow = 0; iRow < Rows; iRow++)
@@ -226,7 +286,7 @@ static EigenVector<Eigen::MatrixXd> gaussian_derivative_over_char_length(
 {
 	EigenVector<Eigen::MatrixXd> result(PhaseDim, GaussianKernelMatrix);
 	const int Rows = Feature.cols();
-	if (static_cast<bool>(GaussianKernelMatrix.IsRowMajor) == true)
+	if (static_cast<bool>(GaussianKernelMatrix.IsRowMajor))
 	{
 #pragma omp parallel for
 		for (int iRow = 1; iRow < Rows; iRow++)
@@ -416,66 +476,6 @@ static ParameterVector purity_derivatives(
 	return result;
 }
 
-const std::size_t Kernel::NumTotalParameters = 1 + 1 + PhaseDim;
-static const double InitialNoise = 1.0;			 ///< The initial weight for noise
-static const double InitialGaussianWeight = 1e4; ///< The initial weight for Gaussian kernel
-
-ParameterVector Kernel::set_initial_parameters(const ClassicalVector<double>& xSigma, const ClassicalVector<double>& pSigma)
-{
-	ParameterVector result(Kernel::NumTotalParameters);
-	std::size_t iParam = 0;
-	// first, noise
-	result[iParam++] = InitialNoise; // diagonal weight is fixed at 1.0
-	// second, Gaussian
-	result[iParam++] = InitialGaussianWeight;
-	for (int iDim = 0; iDim < Dim; iDim++)
-	{
-		result[iParam++] = xSigma[iDim];
-	}
-	// dealing with p
-	for (int iDim = 0; iDim < Dim; iDim++)
-	{
-		result[iParam++] = pSigma[iDim];
-	}
-	return result;
-}
-
-std::array<ParameterVector, 2> Kernel::set_parameter_bounds(
-	const ClassicalVector<double>& xSize,
-	const ClassicalVector<double>& pSize)
-{
-	static const double GaussKerMinCharLength = 1.0 / 100.0; // Minimal characteristic length for Gaussian kernel
-	std::array<ParameterVector, 2> result;
-	auto& [LowerBound, UpperBound] = result;
-	{
-		std::size_t iParam = 0;
-		// first, noise
-		// diagonal weight is fixed
-		LowerBound.push_back(InitialNoise);
-		UpperBound.push_back(InitialNoise);
-		iParam++;
-		// second, Gaussian
-		LowerBound.push_back(InitialNoise);
-		UpperBound.push_back(std::pow(InitialGaussianWeight, 2) / InitialNoise);
-		iParam++;
-		// dealing with x
-		for (int iDim = 0; iDim < Dim; iDim++)
-		{
-			LowerBound.push_back(GaussKerMinCharLength);
-			UpperBound.push_back(xSize[iDim]);
-			iParam++;
-		}
-		// dealing with p
-		for (int iDim = 0; iDim < Dim; iDim++)
-		{
-			LowerBound.push_back(GaussKerMinCharLength);
-			UpperBound.push_back(pSize[iDim]);
-			iParam++;
-		}
-	}
-	return result;
-}
-
 /// @details To calculate the kernel matrix based on the given features.
 ///
 /// If this is the kernel for training set by compare the two features,
@@ -498,38 +498,38 @@ Kernel::Kernel(
 	KernelMatrix(get_kernel_matrix(KernelParams, left_feature, right_feature)),
 	// calculations only for training set
 	IsTrainingSet(left_feature.size() != 0 && left_feature.data() == right_feature.data()),
-	Label(IsTrainingSet == true ? label : std::nullopt),
-	DecompOfKernel(IsTrainingSet == true
+	Label(IsTrainingSet ? label : std::nullopt),
+	DecompOfKernel(IsTrainingSet
 			? decltype(DecompOfKernel)(std::in_place, KernelMatrix)
 			: std::nullopt),
-	LogDeterminant(IsTrainingSet == true
+	LogDeterminant(IsTrainingSet
 			? decltype(LogDeterminant)(2.0 * Eigen::MatrixXd(DecompOfKernel->matrixL()).diagonal().array().log().sum())
 			: std::nullopt),
-	Inverse(IsTrainingSet == true
+	Inverse(IsTrainingSet
 			? decltype(Inverse)(DecompOfKernel->solve(Eigen::MatrixXd::Identity(KernelMatrix.rows(), KernelMatrix.cols())))
 			: std::nullopt),
-	InvLbl(Label.has_value() == true ? decltype(InvLbl)(DecompOfKernel->solve(Label.value())) : std::nullopt),
+	InvLbl(Label.has_value() ? decltype(InvLbl)(DecompOfKernel->solve(Label.value())) : std::nullopt),
 	// calculation only for averages (which is training set only too)
-	IsAverageCalculated(InvLbl.has_value() == true && IsCalculateAverage == true),
-	Population(IsAverageCalculated == true ? decltype(Population)(calculate_population(KernelParams, InvLbl.value())) : std::nullopt),
-	FirstOrderAverage(IsAverageCalculated == true
-			? decltype(FirstOrderAverage)(calculate_1st_order_average(KernelParams, LeftFeature, InvLbl.value()))
+	IsAverageCalculated(InvLbl.has_value() && IsCalculateAverage),
+	Population(IsAverageCalculated ? decltype(Population)(calculate_population(KernelParams, InvLbl.value())) : std::nullopt),
+	FirstOrderAverage(IsAverageCalculated
+			? decltype(FirstOrderAverage)(calculate_1st_order_average(KernelParams, LeftFeature, InvLbl.value()) / Population.value())
 			: std::nullopt),
-	Purity(IsAverageCalculated == true ? decltype(Purity)(calculate_purity(KernelParams, LeftFeature, InvLbl.value())) : std::nullopt),
+	Purity(IsAverageCalculated ? decltype(Purity)(calculate_purity(KernelParams, LeftFeature, InvLbl.value())) : std::nullopt),
 	// calculation only for derivatives (which is training set only too)
-	IsDerivativeCalculated(IsTrainingSet == true && IsCalculateDerivative == true),
-	Derivatives(IsDerivativeCalculated == true ? decltype(Derivatives)(calculate_derivatives(KernelParams, LeftFeature)) : std::nullopt),
-	InvDeriv(IsDerivativeCalculated == true ? decltype(InvDeriv)(inverse_times_derivatives(Inverse.value(), Derivatives.value())) : std::nullopt),
-	NegInvDerivInv(IsDerivativeCalculated == true ? decltype(NegInvDerivInv)(negative_inverse_derivative_inverse(InvDeriv.value(), Inverse.value())) : std::nullopt),
-	NegInvDerivInvLbl(IsDerivativeCalculated == true && Label.has_value() == true
+	IsDerivativeCalculated(IsTrainingSet && IsCalculateDerivative),
+	Derivatives(IsDerivativeCalculated ? decltype(Derivatives)(calculate_derivatives(KernelParams, LeftFeature)) : std::nullopt),
+	InvDeriv(IsDerivativeCalculated ? decltype(InvDeriv)(inverse_times_derivatives(Inverse.value(), Derivatives.value())) : std::nullopt),
+	NegInvDerivInv(IsDerivativeCalculated ? decltype(NegInvDerivInv)(negative_inverse_derivative_inverse(InvDeriv.value(), Inverse.value())) : std::nullopt),
+	NegInvDerivInvLbl(IsDerivativeCalculated && Label.has_value()
 			? decltype(NegInvDerivInvLbl)(negative_inverse_derivative_inverse_label(InvDeriv.value(), InvLbl.value()))
 			: std::nullopt),
 	// calculation for both average and derivatives
-	IsAverageDerivativeCalculated(IsAverageCalculated == true && IsDerivativeCalculated == true && Label.has_value() == true),
-	PopulationDeriv(IsAverageDerivativeCalculated == true
+	IsAverageDerivativeCalculated(IsAverageCalculated && IsDerivativeCalculated && Label.has_value()),
+	PopulationDeriv(IsAverageDerivativeCalculated
 			? decltype(PopulationDeriv)(population_derivatives(KernelParams, NegInvDerivInvLbl.value(), InvLbl.value()))
 			: std::nullopt),
-	PurityDeriv(IsAverageDerivativeCalculated == true
+	PurityDeriv(IsAverageDerivativeCalculated
 			? decltype(PopulationDeriv)(purity_derivatives(KernelParams, LeftFeature, NegInvDerivInvLbl.value(), InvLbl.value()))
 			: std::nullopt)
 {

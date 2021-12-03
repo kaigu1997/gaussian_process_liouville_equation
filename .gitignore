@@ -1,4 +1,5 @@
-# ELF files
+# ELF files and intermediates
+*.d
 *.o
 *.pchi
 *.gch
@@ -30,3 +31,7 @@ latex/
 
 # notes
 notes/
+
+# never ignore source code
+!*.c*
+!*.h*

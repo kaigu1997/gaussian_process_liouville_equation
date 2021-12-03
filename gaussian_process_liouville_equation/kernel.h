@@ -57,7 +57,7 @@ public:
 	/// @return The labels
 	const Eigen::VectorXd& get_label(void) const
 	{
-		assert(Label.has_value() == true);
+		assert(Label.has_value());
 		return Label.value();
 	}
 
@@ -65,7 +65,7 @@ public:
 	/// @return Log determinant of the kernel matrix
 	double get_log_determinant(void) const
 	{
-		assert(LogDeterminant.has_value() == true);
+		assert(LogDeterminant.has_value());
 		return LogDeterminant.value();
 	}
 
@@ -73,7 +73,7 @@ public:
 	/// @return The inverse matrix
 	const Eigen::MatrixXd& get_inverse(void) const
 	{
-		assert(Inverse.has_value() == true);
+		assert(Inverse.has_value());
 		return Inverse.value();
 	}
 
@@ -89,15 +89,15 @@ public:
 	/// @return The population
 	double get_population(void) const
 	{
-		assert(Population.has_value() == true);
+		assert(Population.has_value());
 		return Population.value();
 	}
 
 	/// @brief To get the <x> and <p> integration
 	/// @return The <x> and <p>
-	const ClassicalPhaseVector& get_first_order_average(void) const
+	const ClassicalPhaseVector& get_1st_order_average(void) const
 	{
-		assert(FirstOrderAverage.has_value() == true);
+		assert(FirstOrderAverage.has_value());
 		return FirstOrderAverage.value();
 	}
 
@@ -105,7 +105,7 @@ public:
 	/// @return The purity
 	double get_purity(void) const
 	{
-		assert(Purity.has_value() == true);
+		assert(Purity.has_value());
 		return Purity.value();
 	}
 
@@ -113,7 +113,7 @@ public:
 	/// @return The derivative of the kernel matrix over each of the parameter
 	const EigenVector<Eigen::MatrixXd>& get_derivatives(void) const
 	{
-		assert(Derivatives.has_value() == true);
+		assert(Derivatives.has_value());
 		return Derivatives.value();
 	}
 
@@ -121,7 +121,7 @@ public:
 	/// @return The product of inverse of kernel matrix times each of the derivatives
 	const EigenVector<Eigen::MatrixXd>& get_inv_deriv(void) const
 	{
-		assert(InvDeriv.has_value() == true);
+		assert(InvDeriv.has_value());
 		return InvDeriv.value();
 	}
 
@@ -129,7 +129,7 @@ public:
 	/// @return The derivative of inverse over parameters, which is the negative inverse times derivative times inverse
 	const EigenVector<Eigen::MatrixXd>& get_negative_inv_deriv_inv(void) const
 	{
-		assert(NegInvDerivInv.has_value() == true);
+		assert(NegInvDerivInv.has_value());
 		return NegInvDerivInv.value();
 	}
 

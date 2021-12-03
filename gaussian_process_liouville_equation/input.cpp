@@ -1,9 +1,9 @@
-/// @file io.cpp
-/// @brief definition of input-output functions
+/// @file input.cpp
+/// @brief Implementation of input.h
 
 #include "stdafx.h"
 
-#include "io.h"
+#include "input.h"
 
 /// @brief Read a parameter from input stream
 /// @param[inout] is The input stream (could be input file stream)
@@ -89,27 +89,4 @@ Parameters::Parameters(const std::string& input_file_name)
 	{
 		OutputTime = ReoptimizationTime;
 	}
-}
-
-std::ostream& print_time(std::ostream& os)
-{
-	const std::time_t CurrentTime = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	return os << std::put_time(std::localtime(&CurrentTime), "%F %T %Z");
-}
-
-Eigen::MatrixXd print_point(const EigenVector<PhaseSpacePoint>& density, const int NumPoints)
-{
-	assert(static_cast<unsigned>(NumElements * NumPoints) == density.size());
-	Eigen::MatrixXd result(PhaseDim * NumElements, NumPoints);
-	for (int iElement = 0; iElement < NumElements; iElement++)
-	{
-		const int StartRow = iElement * PhaseDim;
-		const int StartPoint = iElement * NumPoints;
-		for (int iPoint = 0; iPoint < NumPoints; iPoint++)
-		{
-			const auto& [x, p, rho] = density[iPoint + StartPoint];
-			result.block<PhaseDim, 1>(StartRow, iPoint) << x, p;
-		}
-	}
-	return result;
 }

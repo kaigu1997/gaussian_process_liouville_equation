@@ -35,40 +35,35 @@ def read_input(input_file):
 
 
 def plot_log(log_file, pic_file):
-	NUM_VAR = 4 + (NUM_ELM + 2) + 1 # error, population, autocor step and displacement, N**2+2 optimization steps, and time cost
-	NUM_PLOT = 4 # error + population, autocor, steps, time cost
+	NUM_VAR = 3 + (NUM_ELM + 2) + 1 # error, autocor step and displacement, N**2+2 optimization steps, and time cost
+	NUM_PLOT = 4 # error, autocor, steps, time cost
 	NUM_COL = 2 # number of columns of axis
 	NUM_ROW = NUM_PLOT // NUM_COL # number of rows of axis
 	# get data
 	data = np.loadtxt(log_file, usecols=np.linspace(0, NUM_VAR, NUM_VAR + 1, dtype=int))
-	t, err, ppl, autocor_step, autocor_displace, steps, cputime = data[:, 0], data[:, 1], data[:, 2], data[:, 3], data[:, 4], np.transpose(data[:, 5:-1]), data[:, -1]
+	t, err, autocor_step, autocor_displace, steps, cputime = data[:, 0], data[:, 1], data[:, 2], data[:, 3], np.transpose(data[:, 4:-1]), data[:, -1]
 	fig = plt.figure(figsize=(NUM_COL * FIGSIZE, NUM_ROW * FIGSIZE))
 	axs = fig.subplots(nrows=NUM_ROW, ncols=NUM_COL)
-	ax1_twin = axs[0][0].twinx()
-	ax2_twin = axs[0][1].twinx()
-	# plot error and population
-	p1, = axs[0][0].semilogy(t, err, label='Error')
-	ax1_twin.plot([], [])
-	p2, = ax1_twin.plot(t, ppl, label='Normal Factor')
+	# plot error
+	axs[0][0].semilogy(t, err, label='Error')
 	axs[0][0].set_xlabel('Time')
-	axs[0][0].set_ylabel('log(error)', color=p1.get_color())
-	ax1_twin.set_ylabel('Norm', color=p2.get_color())
+	axs[0][0].set_ylabel('log(error)')
 	axs[0][0].tick_params(axis='x')
-	axs[0][0].tick_params(axis='y', colors=p1.get_color())
-	ax1_twin.tick_params(axis='y', colors=p2.get_color())
-	axs[0][0].legend(handles=[p1, p2], loc='best')
-	axs[0][0].set_title('Error and Normalization')
+	axs[0][0].tick_params(axis='y')
+	axs[0][0].legend(loc='best')
+	axs[0][0].set_title('Error')
 	# plot autocorrelation
-	p3, = axs[0][1].plot(t, autocor_step, label='Autocorrelation Steps')
-	ax2_twin.plot([], [])
-	p4, = ax2_twin.semilogy(t, autocor_displace, label='Autocorrelation Displacement')
+	ax01_twin = axs[0][1].twinx()
+	p1, = axs[0][1].plot(t, autocor_step, label='Autocorrelation Steps')
+	ax01_twin.plot([], [])
+	p2, = ax01_twin.semilogy(t, autocor_displace, label='Autocorrelation Displacement')
 	axs[0][1].set_xlabel('Time')
-	axs[0][1].set_ylabel('Step', color=p3.get_color())
-	ax2_twin.set_ylabel('log(Displacement)', color=p4.get_color())
+	axs[0][1].set_ylabel('Step', color=p1.get_color())
+	ax01_twin.set_ylabel('log(Displacement)', color=p2.get_color())
 	axs[0][1].tick_params(axis='x')
-	axs[0][1].tick_params(axis='y', colors=p3.get_color())
-	ax2_twin.tick_params(axis='y', colors=p4.get_color())
-	axs[0][1].legend(handles=[p3, p4], loc='best')
+	axs[0][1].tick_params(axis='y', colors=p1.get_color())
+	ax01_twin.tick_params(axis='y', colors=p2.get_color())
+	axs[0][1].legend(handles=[p1, p2], loc='best')
 	axs[0][1].set_title('Autocorrelation')
 	# plot number of optimization steps
 	for i in range(NUM_ELM + 2):
