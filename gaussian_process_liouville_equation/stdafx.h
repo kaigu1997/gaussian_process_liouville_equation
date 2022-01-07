@@ -35,6 +35,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -47,7 +48,6 @@
 #include <spdlog/spdlog.h>
 
 #include <mkl.h>
-#include <omp.h>
 
 // mathmatical/physical constants
 const double hbar = 1.0; ///< Reduced Planck constant in a.u.
@@ -57,6 +57,13 @@ const int NumPES = 2;					 ///< The number of quantum degree (potential energy s
 const int NumElements = NumPES * NumPES; ///< The number of elements of matrices in quantum degree (e.g. H, rho)
 const int Dim = 1;						 ///< The dimension of the system, half the dimension of the phase space
 const int PhaseDim = Dim * 2;			 ///< The dimension of the phase space, twice the dimension of the system
+
+// other constants
+const double PurityFactor = std::pow(2.0 * M_PI * hbar, Dim); ///< The factor for purity. @f$ S=(2\pi\hbar)^D\int\mathrm{d}\Gamma\mathrm{Tr}\rho^2 @f$
+
+// formatters
+const Eigen::IOFormat VectorFormatter(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", " ", "", "", "", "");	///< Formatter for output vector
+const Eigen::IOFormat MatrixFormatter(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "", "", "", ""); ///< Formatter for output matrix
 
 // typedefs
 /// Matrices used for quantum degree
@@ -82,5 +89,26 @@ using Tensor3d = ClassicalVector<QuantumMatrix<double>>;
 using PhaseSpacePoint = std::tuple<ClassicalVector<double>, ClassicalVector<double>, QuantumMatrix<std::complex<double>>>;
 /// The function prototype to do MC selection
 using DistributionFunction = std::function<QuantumMatrix<std::complex<double>>(const ClassicalVector<double>&, const ClassicalVector<double>&)>;
+/// Sets of selected phase space points of all density matrix elements
+using AllPoints = QuantumArray<EigenVector<PhaseSpacePoint>>;
+
+// frequently used inline functions
+/// @brief Similar to range(N) in python
+/// @param[in] N The number of indices
+/// @return A vector, whose element is 0 to N-1
+inline std::vector<int> get_indices(const int N)
+{
+	std::vector<int> result(N);
+	std::iota(result.begin(), result.end(), 0);
+	return result;
+}
+
+/// @brief The weight function for sorting / MC selection
+/// @param x The input variable
+/// @return The weight of the input, which is the square of it
+static inline double weight_function(const std::complex<double>& x)
+{
+	return std::norm(x);
+}
 
 #endif // !STDAFX_H

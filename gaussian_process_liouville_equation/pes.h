@@ -28,19 +28,19 @@ const Model TestModel = DAC; ///< The model to use
 /// @brief To calculate the diagonalized subsystem Hamiltonian matrix
 /// @param[in] x Position of classical degree of freedom
 /// @return The adiabatic potential matrix at this position, which is real diagonal
-/// @see adiabatic_force(), adiabatic_coupling()
+/// @sa adiabatic_force(), adiabatic_coupling()
 QuantumVector<double> adiabatic_potential(const ClassicalVector<double>& x);
 
 /// @brief To calculate the Non-Adiabatic Coupling (NAC) under the adiabatic basis
 /// @param[in] x Position of classical degree of freedom
 /// @return The NAC tensor at this position, whose each element is real-symmetric
-/// @see adiabatic_potential(), adiabatic_force()
+/// @sa adiabatic_potential(), adiabatic_force()
 Tensor3d adiabatic_coupling(const ClassicalVector<double>& x);
 
 /// @brief To calculate the forces (-dH/dR) under the adiabatic basis
 /// @param[in] x Position of classical degree of freedom
 /// @return The force tensor of each direction
-/// @see adiabatic_potential(), adiabatic_coupling()
+/// @sa adiabatic_potential(), adiabatic_coupling()
 Tensor3d adiabatic_force(const ClassicalVector<double>& x);
 
 /// @brief To get a slice of the tensor
@@ -61,13 +61,5 @@ QuantumMatrix<std::complex<double>> basis_transform(
 	const ClassicalVector<double>& x,
 	const int idx_from,
 	const int idx_to);
-
-/// @brief To make the complex matrix self-adjoint
-/// @param[inout] mat The matrix
-inline void make_self_adjoint(QuantumMatrix<std::complex<double>>& mat)
-{
-	mat.diagonal() = mat.diagonal().real();
-	mat = mat.selfadjointView<Eigen::Lower>();
-}
 
 #endif // !PES_H

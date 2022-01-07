@@ -7,7 +7,7 @@
 #include "input.h"
 #include "kernel.h"
 #include "mc.h"
-#include "mc_ave.h"
+#include "mc_predict.h"
 #include "opt.h"
 #include "output.h"
 #include "pes.h"
@@ -29,79 +29,83 @@ int main()
 	const int ReoptFreq = Params.get_reoptimize_freq();					 // save parameter re-optimization frequency
 	const double dt = Params.get_dt();									 // save dt directly
 	const int NumPoints = Params.get_number_of_selected_points();		 // save the number of points for evolving/optimizing
-	// get initial distribution and energy
+	const int NumMCPoints = NumPoints * 5;								 // The number of points for mc integral
+	// get initial distribution
 	const std::array<double, NumPES> InitialPopulation = {0.5, 0.5};
-	EigenVector<PhaseSpacePoint> density(
-		Params.get_number_of_selected_points() * NumPoints,
-		std::make_tuple(x0, p0, initial_distribution(Params, InitialPopulation, x0, p0))); // initial density
-	QuantumMatrix<bool> IsSmall = is_very_small(density);								   // whether each element of density matrix is close to 0 everywhere or not
-	QuantumMatrix<bool> IsSmallOld = IsSmall;											   // whether each element is small at last moment
-	QuantumMatrix<bool> IsNew = IsSmallOld.array() > IsSmall.array();					   // whether some element used to be small but is not small now
-	bool IsCouple = false;																   // whether the dynamics is adiabatic or not
+	AllPoints density;
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		if (InitialPopulation[iPES] > 0.0)
+		{
+			density[iPES * NumPES + iPES] = EigenVector<PhaseSpacePoint>(NumPoints, std::make_tuple(x0, p0, initial_distribution(Params, InitialPopulation, x0, p0)));
+		}
+	}
+	QuantumMatrix<bool> IsSmall = is_very_small(density);	 // whether each element of density matrix is close to 0 everywhere or not
+	QuantumMatrix<bool> IsSmallOld = IsSmall;				 // whether each element is small at last moment; initially, not used
+	QuantumMatrix<bool> IsNew = QuantumMatrix<bool>::Zero(); // whether some element used to be small but is not small now; initially, not used
+	bool IsCouple = false;									 // whether the dynamics is adiabatic or not; initially, not used
 	MCParameters MCParams(Params);
 	const DistributionFunction initdist = std::bind(initial_distribution, Params, InitialPopulation, std::placeholders::_1, std::placeholders::_2);
-	monte_carlo_selection(Params, MCParams, initdist, IsSmall, density); // generated from MC from initial distribution
-	const double TotalEnergy = [&](void) -> double
+	monte_carlo_selection(Params, MCParams, initdist, density); // generated from MC from initial distribution
+	// calculate initial energy and purity
+	const double TotalEnergy = [&InitialPopulation, &density, &mass](void) -> double
 	{
-		const double SumWeight = std::accumulate(InitialPopulation.begin(), InitialPopulation.end(), 0.);
-		double result = 0.;
+		const double SumWeight = std::reduce(InitialPopulation.begin(), InitialPopulation.end());
+		double result = 0.0;
 		for (int iPES = 0; iPES < NumPES; iPES++)
 		{
-			result += InitialPopulation[iPES] * calculate_total_energy_average(density, iPES, mass);
+			result += InitialPopulation[iPES] * calculate_total_energy_average(density[iPES * NumPES + iPES], iPES, mass);
 		}
 		return result / SumWeight;
-	}(); // Total energy, calculated from MC average
-	const double Purity =
-		std::accumulate(
-			InitialPopulation.cbegin(),
-			InitialPopulation.cend(),
-			0.,
-			[](const double sum, const double elem) -> double
-			{
-				return sum + elem * elem;
-			})
-		/ std::pow(std::accumulate(InitialPopulation.cbegin(), InitialPopulation.cend(), 0.), 2); // Purity, sum of squared weight over square of sum weight
+	}();
+	const double Purity = QuantumVector<double>(InitialPopulation.data()).squaredNorm() / std::pow(std::reduce(InitialPopulation.cbegin(), InitialPopulation.cend()), 2);
 	spdlog::info("Initial Energy = {:>+13.6e}; Initial Purity = {:>+13.6e}", TotalEnergy, Purity);
+	// sample points for calculate MC average
+	AllPoints mc_points = mc_points_generator(density, NumMCPoints);
 	// generate initial parameters and predictors
-	Optimization optimizer(Params);
-	Predictions predictors;
-	Optimization::Result opt_result = optimizer.optimize(density, mass, TotalEnergy, Purity, IsSmall);
-	construct_predictors(predictors, optimizer, IsSmall, density);
+	Optimization optimizer(Params, TotalEnergy, Purity);
+	Optimization::Result opt_result = optimizer.optimize(density, mc_points);
+	OptionalKernels kernels;
+	construct_predictors(kernels, optimizer.get_parameters(), density);
 	const DistributionFunction& evolve_predict_distribution = std::bind(
 		non_adiabatic_evolve_predict,
 		std::placeholders::_1,
 		std::placeholders::_2,
 		mass,
 		dt,
-		std::cref(predictors)); // predict next step distribution
+		std::cref(kernels)); // predict next step distribution
 	const DistributionFunction& predict_distribution = std::bind(
 		predict_matrix,
-		std::cref(predictors),
+		std::cref(kernels),
 		std::placeholders::_1,
 		std::placeholders::_2); // predict current step distribution
 	// output: average, parameters, selected points, gridded phase space
 	std::ofstream average("ave.txt");
 	std::ofstream param("param.txt", std::ios_base::binary);
-	std::ofstream point("point.txt", std::ios_base::binary);
+	std::ofstream densel("prm_point.txt", std::ios_base::binary); // densel = density selected; prm = parameter (optimization)
+	std::ofstream mcint("mci_point.txt", std::ios_base::binary); // mcint = monte carlo integral
 	std::ofstream phase("phase.txt", std::ios_base::binary);
+	std::ofstream variance("var.txt", std::ios_base::binary);
 	std::ofstream autocor("autocor.txt", std::ios_base::binary);
 	std::ofstream logging("run.log");
 	auto output = [&](const double time, const DistributionFunction& dist) -> void
 	{
 		end = std::chrono::high_resolution_clock::now();
-		output_average(average, time, predictors, density, mass);
-		output_param(param, optimizer);
-		output_point(point, density);
-		output_phase(phase, predictors, PhaseGrids);
-		output_autocor(autocor, MCParams, dist, IsSmall, density);
+		average << time;
+		output_average(average, kernels, density, mc_points, mass);
+		output_param(param, optimizer.get_parameters());
+		output_point(densel, density);
+		output_point(mcint, mc_points);
+		output_phase(phase, variance, kernels, PhaseGrids);
+		output_autocor(autocor, MCParams, dist, density);
 		output_logging(logging, time, opt_result, MCParams, end - begin);
 		spdlog::info(
 			"T = {:>4.0f}, error = {:>+13.6e}, norm = {:>+13.6e}, energy = {:>+13.6e}, purity = {:>+13.6e}",
 			time,
 			std::get<0>(opt_result),
-			calculate_population(predictors),
-			calculate_total_energy_average(predictors, density, mass),
-			calculate_purity(predictors));
+			calculate_population(kernels, mc_points),
+			calculate_total_energy_average(kernels, mc_points, mass),
+			calculate_purity(kernels, mc_points));
 		begin = end;
 	};
 	output(0.0, initdist);
@@ -110,46 +114,48 @@ int main()
 	for (int iTick = 1; iTick <= TotalTicks; iTick++)
 	{
 		// evolve
-		evolve(density, MCParams.get_num_points(), mass, dt, predictors);
+		evolve(density, mass, dt, kernels);
 		IsSmall = is_very_small(density);
 		IsNew = IsSmallOld.array() > IsSmall.array();
-		IsCouple = std::any_of(
-			std::execution::par_unseq,
-			density.cbegin(),
-			density.cend(),
-			[&mass](const PhaseSpacePoint& psp) -> bool
-			{
-				const auto& [x, p, rho] = psp;
-				return is_coupling(x, p, mass).any();
-			});
-		// judge if it is time to re-optimize, or there are new elements having population
-		if (iTick % ReoptFreq == 0 || IsNew.any())
+		IsCouple = is_coupling(density, mass);
+		// reselect; nothing new, nothing happens
+		if (IsNew.any())
 		{
-			// reselect; nothing new, nothing happens
-			new_element_point_selection(density, IsNew, NumPoints);
+			new_element_point_selection(density, IsNew);
+			opt_result = optimizer.optimize(density, mc_points);
+			construct_predictors(kernels, optimizer.get_parameters(), density);
+			mc_points = mc_points_generator(density, NumMCPoints);
+		}
+		else
+		{
+			evolve(mc_points, mass, dt, kernels);
+		}
+		// judge if it is time to re-optimize, or there are new elements having population
+		if (iTick % ReoptFreq == 0)
+		{
 			// model training if non-adiabatic
 			if (IsCouple)
 			{
-				opt_result = optimizer.optimize(density, mass, TotalEnergy, Purity, IsSmall);
-				construct_predictors(predictors, optimizer, IsSmall, density);
+				opt_result = optimizer.optimize(density, mc_points);
+				construct_predictors(kernels, optimizer.get_parameters(), density);
 			}
 			if (iTick % OutputFreq == 0)
 			{
 				if (IsCouple)
 				{
 					// if in the coupling region, reselect points
-					monte_carlo_selection(Params, MCParams, predict_distribution, IsSmall, density);
+					monte_carlo_selection(Params, MCParams, predict_distribution, density, true);
 				}
 				else
 				{
 					// not coupled, optimize for output
-					opt_result = optimizer.optimize(density, mass, TotalEnergy, Purity, IsSmall);
-					construct_predictors(predictors, optimizer, IsSmall, density);
+					opt_result = optimizer.optimize(density, mc_points);
+					construct_predictors(kernels, optimizer.get_parameters(), density);
 				}
 				// output time
 				output(iTick * dt, predict_distribution);
 				// judge whether to finish or not: any of the dimension go over -x0
-				const ClassicalVector<double> x_tot = calculate_1st_order_average(predictors).block<Dim, 1>(0, 0);
+				const ClassicalVector<double> x_tot = calculate_1st_order_average(kernels, mc_points).block<Dim, 1>(0, 0);
 				if ((x_tot.array() > -x0.array()).any())
 				{
 					break;
@@ -159,7 +165,7 @@ int main()
 		else
 		{
 			// otherwise, update the training set for prediction
-			construct_predictors(predictors, optimizer, IsSmall, density);
+			construct_predictors(kernels, optimizer.get_parameters(), density);
 		}
 		IsSmallOld = IsSmall;
 	}
@@ -167,9 +173,10 @@ int main()
 	// finalization
 	average.close();
 	param.close();
-	point.close();
+	densel.close();
+	mcint.close();
 	phase.close();
+	variance.close();
 	autocor.close();
 	logging.close();
-	return 0;
 }

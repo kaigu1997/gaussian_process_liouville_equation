@@ -1,5 +1,6 @@
 # ELF files and intermediates
 *.d
+*.d.*
 *.o
 *.pchi
 *.gch

@@ -22,8 +22,6 @@ static void read_param(std::istream& is, T& param)
 /// @param[inout] is The input stream (could be input file stream)
 /// @param[inout] vec The vector waiting to be written
 /// @details This is the specialization of read_param() function for ClassicalVector<double>.
-///
-/// The content would be: "[Descriptor]:\n[Values]\n", so need buffer to read descriptor and newline
 template <>
 void read_param<ClassicalVector<double>>(std::istream& is, ClassicalVector<double>& vec)
 {
@@ -40,6 +38,7 @@ Parameters::Parameters(const std::string& input_file_name)
 {
 	// read input
 	std::ifstream in(input_file_name);
+	assert(in.is_open());
 	read_param(in, mass);
 	read_param(in, x0);
 	read_param(in, p0);
@@ -62,24 +61,29 @@ Parameters::Parameters(const std::string& input_file_name)
 	pNumGrids = xNumGrids;
 	dp = (pmax - pmin).array() / pNumGrids.cast<double>().array();
 	// whole phase space grids
-	PhasePoints.resize(PhaseDim, xNumGrids.prod() * pNumGrids.prod());
-#pragma omp parallel for
-	for (int iPoint = 0; iPoint < PhasePoints.cols(); iPoint++)
-	{
-		ClassicalVector<double> xPoint = xmin, pPoint = pmin;
-		int NextIndex = iPoint;
-		for (int idx = Dim - 1; idx >= 0; idx--)
+	const int NumGrids = xNumGrids.prod() * pNumGrids.prod();
+	PhasePoints.resize(PhaseDim, NumGrids);
+	const std::vector<int> indices = get_indices(NumGrids);
+	std::for_each(
+		std::execution::par_unseq,
+		indices.cbegin(),
+		indices.cend(),
+		[this](int iPoint) -> void
 		{
-			pPoint[idx] += dp[idx] * (NextIndex % pNumGrids[idx]);
-			NextIndex /= pNumGrids[idx];
-		}
-		for (int idx = Dim - 1; idx >= 0; idx--)
-		{
-			xPoint[idx] += dx[idx] * (NextIndex % xNumGrids[idx]);
-			NextIndex /= xNumGrids[idx];
-		}
-		PhasePoints.col(iPoint) << xPoint, pPoint;
-	}
+			ClassicalVector<double> xPoint = xmin, pPoint = pmin;
+			int NextIndex = iPoint;
+			for (int idx = Dim - 1; idx >= 0; idx--)
+			{
+				pPoint[idx] += dp[idx] * (NextIndex % pNumGrids[idx]);
+				NextIndex /= pNumGrids[idx];
+			}
+			for (int idx = Dim - 1; idx >= 0; idx--)
+			{
+				xPoint[idx] += dx[idx] * (NextIndex % xNumGrids[idx]);
+				NextIndex /= xNumGrids[idx];
+			}
+			PhasePoints.col(iPoint) << xPoint, pPoint;
+		});
 	// limitations on time intervals
 	if (ReoptimizationTime < dt)
 	{

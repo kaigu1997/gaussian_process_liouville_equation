@@ -152,7 +152,7 @@ public:
 
 	/// @brief To estimate the maximum time to finish and how many dt it corresponds to
 	/// @return Estimated total time in unit of dt
-	/// @details Estimate T=(|x0|-(-|x0|))/(p0/m) on each direction, choose the max one, then times 2.0 and divide dt
+	/// @details Estimate @f$ T=\frac{|x_0|-(-|x_0|)}{p_0/m} @f$ on each direction, choose the max one, then times 2.0 and divide dt
 	int calc_total_ticks(void) const
 	{
 		const auto Distance = 2.0 * x0.array().abs();

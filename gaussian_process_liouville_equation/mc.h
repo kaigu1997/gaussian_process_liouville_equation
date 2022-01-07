@@ -1,5 +1,5 @@
 /// @file mc.h
-/// @brief Interface of functions related to Monte Carlo (MC) procedure,
+/// @brief Interface of functions related to Metropolist Monte Carlo (MC) procedure,
 /// including MC, weight function, and densitymatrix generation
 
 #ifndef MC_H
@@ -12,33 +12,11 @@
 /// The type for saving all autocorrelations
 using AutoCorrelations = QuantumArray<Eigen::VectorXd>;
 
-/// @brief To get the element of density matrix
-/// @param[in] DensityMatrix The density matrix
-/// @param[in] ElementIndex The index of the element in density matrix
-/// @return The element of density matrix
-/// @details If the index corresponds to upper triangular elements, gives real part.
-///
-/// If the index corresponds to lower triangular elements, gives imaginary part.
-///
-/// If the index corresponds to diagonal elements, gives the original value.
-inline double get_density_matrix_element(const QuantumMatrix<std::complex<double>>& DensityMatrix, const int ElementIndex)
-{
-	const int iPES = ElementIndex / NumPES, jPES = ElementIndex % NumPES;
-	if (iPES <= jPES)
-	{
-		return DensityMatrix(iPES, jPES).real();
-	}
-	else
-	{
-		return DensityMatrix(iPES, jPES).imag();
-	}
-}
-
 /// @brief To check if all elements are very small or not
-/// @param[in] density The density matrices at known points
+/// @param[in] density The selected points in phase space for each element of density matrices
 /// @return A matrix of boolean type and same size as density matrix,
 /// containing each element of density matrix is smallor not
-QuantumMatrix<bool> is_very_small(const EigenVector<PhaseSpacePoint>& density);
+QuantumMatrix<bool> is_very_small(const AllPoints& density);
 
 /// @brief To generate initial adiabatic PWTDM at the given place
 /// @param[in] Params Parameters objects containing all the required information (r0, sigma0, mass)
@@ -103,55 +81,53 @@ public:
 
 	/// @brief To get the number of monte carlo steps
 	/// @return The number of monte carlo steps
-	double get_max_dispalcement(void) const
+	double get_max_displacement(void) const
 	{
 		return displacement;
 	}
 };
 
-/// @brief Using Monte Carlo to select points
+/// @brief Using Metropolis Monte Carlo to select points
 /// @param[in] Params The input parameters (mass, dt, etc)
 /// @param[in] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
 /// @param[in] distribution The function object to generate the distribution
-/// @param[in] IsSmall The matrix that saves whether each element is small or not
-/// @param[inout] density The selected density matrices
+/// @param[inout] density The selected points in phase space for each element of density matrices
 /// @param[in] IsToBeEvolved Whether the points are at evolved places or original places
 void monte_carlo_selection(
 	const Parameters& Params,
 	const MCParameters& MCParams,
 	const DistributionFunction& distribution,
-	const QuantumMatrix<bool>& IsSmall,
-	EigenVector<PhaseSpacePoint>& density,
+	AllPoints& density,
 	const bool IsToBeEvolved = false);
 
 /// @brief To optimize the number of the monte carlo steps by autocorrelation
 /// @param[inout] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
 /// @param[in] distribution The function object to generate the distribution
-/// @param[in] IsSmall The matrix that saves whether each element is small or not
-/// @param[in] density The selected density matrices
+/// @param[in] density The selected points in phase space for each element of density matrices
 /// @return The autocorrelation of all tested number of steps if the element is not small
 AutoCorrelations autocorrelation_optimize_steps(
 	MCParameters& MCParams,
 	const DistributionFunction& distribution,
-	const QuantumMatrix<bool>& IsSmall,
-	const EigenVector<PhaseSpacePoint>& density);
+	const AllPoints& density);
 
 /// @brief To optimize the number of the monte carlo steps by autocorrelation
 /// @param[inout] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
 /// @param[in] distribution The function object to generate the distribution
-/// @param[in] IsSmall The matrix that saves whether each element is small or not
-/// @param[in] density The selected density matrices
+/// @param[in] density The selected points in phase space for each element of density matrices
 /// @return The autocorrelation of all tested number of steps if the element is not small
 AutoCorrelations autocorrelation_optimize_displacement(
 	MCParameters& MCParams,
 	const DistributionFunction& distribution,
-	const QuantumMatrix<bool>& IsSmall,
-	const EigenVector<PhaseSpacePoint>& density);
+	const AllPoints& density);
+
+/// @brief To get the number of points for each elements
+/// @param[in] Points The selected points in phase space for each element of density matrices
+/// @return The number of points for non-zero element
+int get_num_points(const AllPoints& Points);
 
 /// @brief To select points for new elements of density matrix
-/// @param density The selected density matrices, new ones will also be put here
-/// @param IsNew The matrix that saves whether the element is newly populated or not
-/// @param NumPoints The number of points for each element
-void new_element_point_selection(EigenVector<PhaseSpacePoint>& density, const QuantumMatrix<bool>& IsNew, const int NumPoints);
+/// @param[inout] density The selected points in phase space for each element of density matrices
+/// @param[in] IsNew The matrix that saves whether the element is newly populated or not
+void new_element_point_selection(AllPoints& density, const QuantumMatrix<bool>& IsNew);
 
 #endif // !MC_H

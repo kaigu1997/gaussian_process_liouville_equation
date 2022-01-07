@@ -1,5 +1,5 @@
 CXX := g++
-CXXFLAGS := -Wall -Wextra -std=c++17 -Ofast -march=native -fopenmp
+CXXFLAGS := -Wall -Wextra -std=c++17 -O3 -march=native
 LDFLAGS := $(CXXFLAGS) -Wl,-fuse-ld=gold -Wl,--no-as-needed
 LDLIBS := -lspdlog -lnlopt -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -ltbb -lpthread
 sources := $(shell ls *.cpp)
@@ -38,7 +38,7 @@ distclean: clean
 CLANG_FORMAT := $(shell grep alias\ clang-format= ~/.bash_aliases | awk -F"'" '{print $$2}')
 .PHONY: format
 format:
-	@for f in *.c* *.h* ; \
+	for f in *.c* *.h* ; \
 	do \
 		$(CLANG_FORMAT) --style=file -i $${f} ; \
 	done

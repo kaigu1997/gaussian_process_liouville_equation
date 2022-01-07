@@ -9,8 +9,6 @@
 #include "pes.h"
 #include "predict.h"
 
-static const double CouplingCriterion = 0.01; ///< Criteria of whether have coupling or not
-
 /// The direction of dynamics evolving
 enum Direction
 {
@@ -23,6 +21,7 @@ ClassicalVector<bool> is_coupling(
 	[[maybe_unused]] const ClassicalVector<double>& p,
 	[[maybe_unused]] const ClassicalVector<double>& mass)
 {
+	[[maybe_unused]] static const double CouplingCriterion = 0.01; // Criteria of whether have coupling or not
 #define ADIA
 #ifdef ADIA
 	return ClassicalVector<bool>::Zero();
@@ -48,6 +47,29 @@ ClassicalVector<bool> is_coupling(
 #endif
 }
 
+bool is_coupling(const AllPoints& density, const ClassicalVector<double>& mass)
+{
+	for (int iElement = 0; iElement < NumElements; iElement++)
+	{
+		const bool IsElementCoupling =
+			std::any_of(
+				std::execution::par_unseq,
+				density[iElement].cbegin(),
+				density[iElement].cend(),
+				[&mass](const PhaseSpacePoint& psp) -> bool
+				{
+					const auto& [x, p, rho] = psp;
+					return is_coupling(x, p, mass).any();
+				})
+			&& !density[iElement].empty();
+		if (IsElementCoupling)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 /// @brief To evolve all the positions
 /// @param[in] x Position of classical degree of freedom
 /// @param[in] p Momentum of classical degree of freedom
@@ -55,7 +77,7 @@ ClassicalVector<bool> is_coupling(
 /// @param[in] dt The time interval of evolution
 /// @param[in] drc The direction of evolution
 /// @return All branches of momentum vectors
-/// @details \f$ x_{i,j} = x_i - \frac{p_{i,j}}{m} dt \f$
+/// @details @f$ x_{i,j} = x_i - \frac{p_{i,j}}{m} dt @f$
 static EigenVector<ClassicalVector<double>> position_evolve(
 	const EigenVector<ClassicalVector<double>>& x,
 	const EigenVector<ClassicalVector<double>>& p,
@@ -83,7 +105,7 @@ static EigenVector<ClassicalVector<double>> position_evolve(
 /// @param[in] dt The time interval of evolution
 /// @param[in] drc The direction of evolution
 /// @return All branches of momentum vectors
-/// @details \f$ x_{i,j} = x_i - \frac{p_{i,j}}{m} dt \f$
+/// @details @f$ x_{i,j} = x_i - \frac{p_{i,j}}{m} dt @f$
 static inline ClassicalVector<double> position_evolve(
 	const ClassicalVector<double>& x,
 	const ClassicalVector<double>& p,
@@ -114,7 +136,7 @@ static EigenVector<ClassicalVector<double>> adiabatic_diagonal_forces(const Clas
 /// @param[in] dt The time interval of evolution
 /// @param[in] drc The direction of evolution
 /// @return All branches of momentum vectors
-/// @details \f$ p_{i,j} = p_i - f_j(x_i) dt \f$, where \f$ f_j = \frac{f_{aa}+f_{bb}}{2} \f$
+/// @details @f$ p_{i,j} = p_i - f_j(x_i) dt @f$, where @f$ f_j = \frac{f_{aa}+f_{bb}}{2} @f$
 static EigenVector<ClassicalVector<double>> momentum_diagonal_branching_evolve(
 	const EigenVector<ClassicalVector<double>>& x,
 	const EigenVector<ClassicalVector<double>>& p,
@@ -146,7 +168,7 @@ static EigenVector<ClassicalVector<double>> momentum_diagonal_branching_evolve(
 /// @param[in] iPES The first index of density matrix
 /// @param[in] jPES The second index of density matrix
 /// @return All branches of momentum vectors
-/// @details \f$ p_{i,j} = p_i - f_j(x_i) dt \f$, where \f$ f_j = \frac{f_{aa}+f_{bb}}{2} \f$
+/// @details @f$ p_{i,j} = p_i - f_j(x_i) dt @f$, where @f$ f_j = \frac{f_{aa}+f_{bb}}{2} @f$
 static ClassicalVector<double> momentum_diagonal_nonbranch_evolve(
 	const ClassicalVector<double>& x,
 	const ClassicalVector<double>& p,
@@ -166,7 +188,7 @@ static ClassicalVector<double> momentum_diagonal_nonbranch_evolve(
 /// @param[in] dt The time interval of evolution
 /// @param[in] Couple A vector of 0 or 1, 1 for evolving dimensions and 0 for non-evolving
 /// @return All branches of momentum vectors
-/// @details \f$ p_{i,j} = p_i + n f_{01}(x_i) dt \f$, where \f$ n = -1, 0, 1 \f$ and \f$ f_{01}=(E_0-E_1)d_{01} \f$
+/// @details @f$ p_{i,j} = p_i + n f_{01}(x_i) dt @f$, where @f$ n = -1, 0, 1 @f$ and @f$ f_{01}=(E_0-E_1)d_{01} @f$
 static EigenVector<ClassicalVector<double>> momentum_offdiagonal_evolve(
 	const EigenVector<ClassicalVector<double>>& x,
 	const EigenVector<ClassicalVector<double>>& p,
@@ -193,8 +215,8 @@ static EigenVector<ClassicalVector<double>> momentum_offdiagonal_evolve(
 	}
 }
 
-/// @brief To calculate sin and cos of \f$ dt(\omega(x_0)+2\omega(x_1)+\omega(x_2))/4 \f$,
-/// where \f$ \omega(x) =(E_i(x)-E_j(x))/\hbar \f$
+/// @brief To calculate sin and cos of @f$ dt(\omega(x_0)+2\omega(x_1)+\omega(x_2))/4 @f$,
+/// where @f$ \omega(x) =(E_i(x)-E_j(x))/\hbar @f$
 /// @param[in] x0 First position
 /// @param[in] x1 Second position
 /// @param[in] x2 Third position
@@ -202,7 +224,7 @@ static EigenVector<ClassicalVector<double>> momentum_offdiagonal_evolve(
 /// @param[in] drc The direction of evolution
 /// @param[in] SmallIndex The smaller index of density matrix
 /// @param[in] LargeIndex The larger index of density matrix
-/// @return sin and cos \f$ dt(\omega(x_0)+2\omega(x_1)+\omega(x_2))/4 \f$
+/// @return sin and cos @f$ dt(\omega(x_0)+2\omega(x_1)+\omega(x_2))/4 @f$
 static inline Eigen::Vector2d calculate_omega0(
 	const ClassicalVector<double>& x0,
 	const ClassicalVector<double>& x1,
@@ -265,99 +287,112 @@ static inline void adiabatic_evolve(
 /// Otherwise, branch the point with non-adiabatic dynamics, then
 /// calculate exact density at the new point, and select with monte carlo
 void evolve(
-	EigenVector<PhaseSpacePoint>& density,
-	const int NumPoints,
+	AllPoints& density,
 	const ClassicalVector<double>& mass,
 	const double dt,
-	const Predictions& Predictors)
+	const OptionalKernels& Kernels)
 {
 	using namespace std::literals::complex_literals;
 	static std::mt19937 engine(std::chrono::system_clock::now().time_since_epoch().count()); // Random number generator, using merseen twister with seed from time
 	static std::uniform_real_distribution<double> mc_selection(0.0, 1.0);					 // for whether pick or not
-	static Direction drc = Direction::Forward;
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	static const Direction drc = Direction::Forward;
+	for (int iPES = 0; iPES < NumPES; iPES++)
 	{
-		const int iPES = iElement / NumPES, jPES = iElement % NumPES;
-		if (Predictors[iElement].has_value())
+		for (int jPES = 0; jPES < NumPES; jPES++)
 		{
-#pragma omp parallel for
-			for (int iPoint = iElement * NumPoints; iPoint < (iElement + 1) * NumPoints; iPoint++)
+			if (iPES <= jPES)
 			{
-				auto& [x, p, rho] = density[iPoint];
-				// evolve the not-coupled degree adiabatically
-				const ClassicalVector<bool> IsCouple = is_coupling(x, p, mass);
-				if (IsCouple.any())
+				// for row-major, visit upper triangular elements earlier
+				// so selection for the upper triangular elements
+				const int ElementIndex = iPES * NumPES + jPES;
+				if (!density[ElementIndex].empty())
 				{
-					// for coupled cases, the exact density is calculated by back propagate
-					// first, evolve adiabatically for dt/2
-					adiabatic_evolve(x, p, mass, dt / 2, drc, iPES, jPES);
-					// second, branch with the off-diagonal force
-					const ClassicalVector<double> Couple = IsCouple.cast<double>();
-					EigenVector<ClassicalVector<double>> x_branch = {x}, p_branch = momentum_offdiagonal_evolve(x_branch, {p}, dt, Couple);
-					expand(x_branch, p_branch);
-					// finally, evolve adiabatically again for dt/2
-					// then predict its exact density matrix and corresponding weight
-					const int NBranch = x_branch.size();
-					std::vector<QuantumMatrix<std::complex<double>>, Eigen::aligned_allocator<QuantumMatrix<std::complex<double>>>> predicts;
-					predicts.reserve(NBranch);
-					std::vector<double> weight;
-					weight.reserve(NBranch);
-					for (int iBranch = 0; iBranch < NBranch; iBranch++)
-					{
-						adiabatic_evolve(x_branch[iBranch], p_branch[iBranch], mass, dt / 2, drc, iPES, jPES);
-						predicts.push_back(non_adiabatic_evolve_predict(
-							x_branch[iBranch],
-							p_branch[iBranch],
-							mass,
-							dt,
-							Predictors));
-						weight.push_back(std::abs(get_density_matrix_element(*(predicts.cend()), iElement)));
-					}
-					// select one of them with monte carlo
-					const double rand = mc_selection(engine) * std::accumulate(weight.cbegin(), weight.cend(), 0.0);
-					double sum = 0;
-					for (int iBranch = 0; iBranch < NBranch; iBranch++)
-					{
-						sum += weight[iBranch];
-						if (sum > rand)
+					std::for_each(
+						std::execution::par_unseq,
+						density[ElementIndex].begin(),
+						density[ElementIndex].end(),
+						[&mass, dt, &Kernels, iPES, jPES](PhaseSpacePoint& psp) -> void
 						{
-							x = x_branch[iBranch];
-							p = p_branch[iBranch];
-							rho = predicts[iBranch];
-							break;
-						}
-					}
+							auto& [x, p, rho] = psp;
+							// evolve the not-coupled degree adiabatically
+							const ClassicalVector<bool> IsCouple = is_coupling(x, p, mass);
+							if (IsCouple.any())
+							{
+								// for coupled cases, the exact density is calculated by back propagate
+								// first, evolve adiabatically for dt/2
+								adiabatic_evolve(x, p, mass, dt / 2, drc, iPES, jPES);
+								// second, branch with the off-diagonal force
+								const ClassicalVector<double> Couple = IsCouple.cast<double>();
+								EigenVector<ClassicalVector<double>> x_branch = {x}, p_branch = momentum_offdiagonal_evolve(x_branch, {p}, dt, Couple);
+								expand(x_branch, p_branch);
+								// finally, evolve adiabatically again for dt/2
+								// then predict its exact density matrix and corresponding weight
+								const int NBranch = x_branch.size();
+								EigenVector<QuantumMatrix<std::complex<double>>> predicts(NBranch, QuantumMatrix<std::complex<double>>::Zero());
+								std::vector<double> weight(NBranch, 0.0);
+								for (int iBranch = 0; iBranch < NBranch; iBranch++)
+								{
+									adiabatic_evolve(x_branch[iBranch], p_branch[iBranch], mass, dt / 2, drc, iPES, jPES);
+									predicts[iBranch] = non_adiabatic_evolve_predict(
+										x_branch[iBranch],
+										p_branch[iBranch],
+										mass,
+										dt,
+										Kernels);
+									weight[iBranch] = weight_function(predicts[iBranch](iPES, jPES));
+								}
+								// select one of them with monte carlo
+								const double rand = mc_selection(engine) * std::reduce(weight.cbegin(), weight.cend());
+								double sum = 0;
+								for (int iBranch = 0; iBranch < NBranch; iBranch++)
+								{
+									sum += weight[iBranch];
+									if (sum > rand)
+									{
+										x = x_branch[iBranch];
+										p = p_branch[iBranch];
+										rho = predicts[iBranch];
+										break;
+									}
+								}
+							}
+							else
+							{
+								// evolve
+								// To calculate phase later, every half-step positions are needed
+								const ClassicalVector<double> x1 = position_evolve(x, p, mass, dt / 2.0, drc);
+								const ClassicalVector<double> p1 = momentum_diagonal_nonbranch_evolve(x1, p, dt, drc, iPES, jPES);
+								const ClassicalVector<double> x2 = position_evolve(x1, p1, mass, dt / 2.0, drc);
+								// then change phase
+								if (iPES != jPES)
+								{
+									const Eigen::Vector2d omega0 = calculate_omega0(x, x1, x2, dt, drc, std::min(iPES, jPES), std::max(iPES, jPES));
+									rho(std::max(iPES, jPES), std::min(iPES, jPES)) *= (omega0[0] + 1.0i * omega0[1]);
+								}
+								// finally, update the phase space coordinates
+								x = x2;
+								p = p1;
+							}
+						});
 				}
-				else
-				{
-					// evolve
-					// To calculate phase later, every half-step positions are needed
-					const ClassicalVector<double> x1 = position_evolve(x, p, mass, dt / 2.0, drc);
-					const ClassicalVector<double> p1 = momentum_diagonal_nonbranch_evolve(x1, p, dt, drc, iPES, jPES);
-					const ClassicalVector<double> x2 = position_evolve(x1, p1, mass, dt / 2.0, drc);
-					// then change phase
-					if (iPES != jPES)
-					{
-						const Eigen::Vector2d omega0 = calculate_omega0(x, x1, x2, dt, drc, std::min(iPES, jPES), std::max(iPES, jPES));
-						rho(std::max(iPES, jPES), std::min(iPES, jPES)) *= (omega0[0] + 1.0i * omega0[1]);
-					}
-					// finally, update the phase space coordinates
-					x = x2;
-					p = p1;
-				}
-			};
+			}
+			else
+			{
+				// for strict lower triangular elements, copy the upper part
+				density[iPES * NumPES + jPES] = density[jPES * NumPES + iPES];
+			}
 		}
 	}
 }
 
-/// @brief To calculate sin and cos of \f$ dt(\omega(x_2^{\gamma})+2\omega(x_{3,n}^{\gamma})+\omega(x_{4,n}^{\gamma,\gamma^{\prime}}))/4 \f$
+/// @brief To calculate sin and cos of @f$ dt(\omega(x_2^{\gamma})+2\omega(x_{3,n}^{\gamma})+\omega(x_{4,n}^{\gamma,\gamma^{\prime}}))/4 @f$
 /// @param[in] x2 Third position
 /// @param[in] x3 Fourth position
 /// @param[in] x4 Final position
 /// @param[in] dt Time interval
 /// @param[in] drc The direction of evolution
-/// @return sin and cos \f$ dt(\omega(x_2^{\gamma})+2\omega(x_{3,n}^{\gamma})+\omega(x_{4,n}^{\gamma,\gamma^{\prime}}))/4 \f$,
-/// where \f$ \omega(x) = (E_0(x)-E_1(x))/\hbar \f$
+/// @return sin and cos @f$ dt(\omega(x_2^{\gamma})+2\omega(x_{3,n}^{\gamma})+\omega(x_{4,n}^{\gamma,\gamma^{\prime}}))/4 @f$,
+/// where @f$ \omega(x) = (E_0(x)-E_1(x))/\hbar @f$
 static Eigen::MatrixXd calculate_omega1_of_2_level(
 	const EigenVector<ClassicalVector<double>>& x2,
 	const EigenVector<ClassicalVector<double>>& x3,
@@ -378,12 +413,12 @@ static Eigen::MatrixXd calculate_omega1_of_2_level(
 	return result;
 }
 
-/// @brief To calculate sin and cos of \f$ \frac{\vec{P}\cdot\vec{d}_{01}}{M}dt \f$
+/// @brief To calculate sin and cos of @f$ \frac{\vec{P}\cdot\vec{d}_{01}}{M}dt @f$
 /// @param[in] x Position of classical degree of freedom
 /// @param[in] p Momentum of classical degree of freedom
 /// @param[in] mass Mass of classical degree of freedom
 /// @param[in] dt Time interval
-/// @return sin and cos \f$ \frac{\vec{P}\cdot\vec{d}_{01}}{M}dt \f$ for each input (x,p) pairs
+/// @return sin and cos @f$ \frac{\vec{P}\cdot\vec{d}_{01}}{M}dt @f$ for each input (x,p) pairs
 static Eigen::MatrixXd calculate_phi_of_2_level(
 	const EigenVector<ClassicalVector<double>>& x,
 	const EigenVector<ClassicalVector<double>>& p,
@@ -409,13 +444,12 @@ static Eigen::MatrixXd calculate_phi_of_2_level(
 /// @brief To calculate all the required density matrix elements for non-adiabatic back propagation prediction
 /// @param[in] x4 Final position
 /// @param[in] p3 Final momentum
-/// @param[in] IsSmall The matrix that saves whether each element is small or not
-/// @param[in] Predictors An array of predictors for prediction, whose size is NumElements
+/// @param[in] Kernels An array of predictors for prediction, whose size is NumElements
 /// @return All the density matrix elements required for prediction
 static Eigen::MatrixXd calculate_non_adiabatic_rho_elements(
 	const EigenVector<ClassicalVector<double>>& x4,
 	const EigenVector<ClassicalVector<double>>& p3,
-	const Predictions& Predictors)
+	const OptionalKernels& Kernels)
 {
 	const int NBranch = x4.size() / 3;
 	Eigen::MatrixXd result = Eigen::MatrixXd::Zero(NBranch, NumElements);
@@ -427,16 +461,16 @@ static Eigen::MatrixXd calculate_non_adiabatic_rho_elements(
 			const Eigen::MatrixXd TrainingFeature = construct_training_feature(
 				EigenVector<ClassicalVector<double>>(x4.begin() + ElmIdx * NBranch, x4.begin() + (ElmIdx + 1) * NBranch),
 				EigenVector<ClassicalVector<double>>(p3.begin() + ElmIdx * NBranch, p3.begin() + (ElmIdx + 1) * NBranch));
-			if (Predictors[ElmIdx].has_value())
+			if (Kernels[ElmIdx].has_value())
 			{
-				result.col(ElmIdx) = Predictors[ElmIdx]->predict_elements(TrainingFeature);
+				result.col(ElmIdx) = predict_elements(Kernels[ElmIdx].value(), TrainingFeature);
 			}
 			if (iPES != jPES)
 			{
 				const int SymElmIdx = jPES * NumPES + iPES;
-				if (Predictors[SymElmIdx].has_value())
+				if (Kernels[SymElmIdx].has_value())
 				{
-					result.col(SymElmIdx) = Predictors[SymElmIdx]->predict_elements(TrainingFeature);
+					result.col(SymElmIdx) = predict_elements(Kernels[SymElmIdx].value(), TrainingFeature);
 				}
 			}
 		}
@@ -456,22 +490,22 @@ static Eigen::MatrixXd calculate_non_adiabatic_rho_elements(
 
 /**
  * @brief To calculate the element of 2-level system
- * @param[in] phi sin and cos of \f$ dt\phi_{\pm} \f$
- * @param[in] omega1 sin and cos of \f$ dt\omega_{1,\pm}/2 \f$
+ * @param[in] phi sin and cos of @f$ dt\phi_{\pm} @f$
+ * @param[in] omega1 sin and cos of @f$ dt\omega_{1,\pm}/2 @f$
  * @param[in] rho The predicted density matrix element
- * @param[in] Coe_1 \f$ c_{-1} \f$
- * @param[in] Coe0 \f$ c_0 \f$
- * @param[in] Coe1 \f$ c_1 \f$
+ * @param[in] Coe_1 @f$ c_{-1} @f$
+ * @param[in] Coe0 @f$ c_0 @f$
+ * @param[in] Coe1 @f$ c_1 @f$
  * @return The element
  * @details The element is given by
  *
- * \f{eqnarray*}{
+ * @f{eqnarray*}{
  * &&c_{-1}((1+\sin\phi_-)\rho_{00}+2\cos\phi_-\cos\omega_{1,-}\rho_{01}-2\cos\phi_-\sin\omega_{1,-}\rho_{10}+(1-\sin\phi_-)\rho_{11}) \\
  * +&&c_0(\cos\phi\rho_{00}-2\sin\phi\cos\omega_1\rho_{01}+2\sin\phi\sin\omega_1\rho_{10}-\cos\phi\rho_{11}) \\
  * +&&c_1((\sin\phi_+-1)\rho_{00}+2\cos\phi_+\cos\omega_{1,+}\rho_{01}-2\cos\phi_+\sin\omega_{1,+}\rho_{10}-(\sin\phi_++1)\rho_{11})
- * \f}
+ * @f}
  *
- * where \f$ \rho_{01}=\Re\rho_{10} \f$ and \f$ \rho_{10}=\Im\rho_{10} \f$.
+ * where @f$ \rho_{01}=\Re\rho_{10} @f$ and @f$ \rho_{10}=\Im\rho_{10} @f$.
  */
 static inline double calculate_2_level_element(
 	const Eigen::MatrixXd& phi,
@@ -491,7 +525,7 @@ QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 	const ClassicalVector<double>& p,
 	const ClassicalVector<double>& mass,
 	const double dt,
-	const Predictions& Predictors)
+	const OptionalKernels& Kernels)
 {
 	using namespace std::literals::complex_literals;
 	static const Direction drc = Direction::Backward;
@@ -519,7 +553,7 @@ QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 			const Eigen::Vector2d omega0 = calculate_omega0(x, x1, x2[1], dt / 2.0, drc, 0, 1);
 			const Eigen::MatrixXd omega1 = calculate_omega1_of_2_level(x2, x3, x4, dt / 2.0, drc);
 			const Eigen::MatrixXd phi = calculate_phi_of_2_level(x2, p2, mass, dt);
-			const Eigen::MatrixXd rho_predict = calculate_non_adiabatic_rho_elements(x4, p3, Predictors);
+			const Eigen::MatrixXd rho_predict = calculate_non_adiabatic_rho_elements(x4, p3, Kernels);
 			// calculate
 			const int NBranch = 3; // the availability of n (off-diagonal momentum evolution branches)
 			result(0, 0) = calculate_2_level_element(
@@ -554,20 +588,20 @@ QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 			const EigenVector<ClassicalVector<double>> p1 = momentum_diagonal_branching_evolve({x1}, {p}, dt, drc);
 			const EigenVector<ClassicalVector<double>> x2 = position_evolve({x1}, p1, mass, dt / 2.0, drc);
 			const Eigen::Vector2d omega = calculate_omega0(x, x1, x2[1], dt, drc, 0, 1);
-			if (Predictors[0].has_value())
+			if (Kernels[0].has_value())
 			{
-				result(0, 0) = Predictors[0]->predict_elements(construct_training_feature({x2[0]}, {p1[0]})).value();
+				result(0, 0) = predict_elements(Kernels[0].value(), construct_training_feature({x2[0]}, {p1[0]})).value();
 			}
-			if (Predictors[1].has_value() || Predictors[2].has_value())
+			if (Kernels[1].has_value() || Kernels[2].has_value())
 			{
 				const Eigen::MatrixXd TrainingFeature = construct_training_feature({x2[1]}, {p1[1]});
-				const double re = Predictors[1].has_value() ? Predictors[1]->predict_elements(TrainingFeature).value() : 0.0;
-				const double im = Predictors[2].has_value() ? Predictors[2]->predict_elements(TrainingFeature).value() : 0.0;
+				const double re = Kernels[1].has_value() ? predict_elements(Kernels[1].value(), TrainingFeature).value() : 0.0;
+				const double im = Kernels[2].has_value() ? predict_elements(Kernels[2].value(), TrainingFeature).value() : 0.0;
 				result(1, 0) = (re + 1.0i * im) * (omega[1] + 1.0i * omega[0]);
 			}
-			if (Predictors[3].has_value())
+			if (Kernels[3].has_value())
 			{
-				result(1, 1) = Predictors[3]->predict_elements(construct_training_feature({x2[2]}, {p1[2]})).value();
+				result(1, 1) = predict_elements(Kernels[3].value(), construct_training_feature({x2[2]}, {p1[2]})).value();
 			}
 		}
 	}

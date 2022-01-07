@@ -7,18 +7,21 @@
 #include "stdafx.h"
 
 #include "input.h"
-#include "kernel.h"
+#include "predict.h"
 
 /// The training set for parameter optimization of one element of density matrix
 /// passed as parameter to the optimization function.
 /// First is feature, second is label
 using ElementTrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd>;
 
-/// @brief To construct the training set for single element
-/// @param[in] density The vector containing all known density matrix
-/// @param[in] ElementIndex The index of the element in density matrix
-/// @return The training set of the corresponding element in density matrix
-ElementTrainingSet construct_element_training_set(const EigenVector<PhaseSpacePoint>& density, const int ElementIndex);
+/// @brief To update the kernels
+/// @param[out] kernels Array of constructed kernels
+/// @param[in] ParameterVectors The parameters for all elements of density matrix
+/// @param[in] density The selected points in phase space for each element of density matrices
+void construct_predictors(
+	OptionalKernels& kernels,
+	const QuantumArray<ParameterVector>& ParameterVectors,
+	const AllPoints& density);
 
 /// @brief To store parameters, kernels and optimization algorithms to use.
 /// And, to optimize parameters, and then predict density matrix and given point.
@@ -32,45 +35,47 @@ public:
 
 	/// @brief Constructor. Initial parameters, kernels and optimization algorithms needed
 	/// @param[in] Params Parameters object containing position, momentum, etc
-	/// @param[in] KernelTypes The vector containing all the kernel type used in optimization
+	/// @param[in] InitialTotalEnergy The total energy of the system used for energy conservation
+	/// @param[in] InitialPurity The purity of the partial Wigner transformed density matrix, used for purity conservation
 	/// @param[in] LocalAlgorithm The optimization algorithm for local optimization
+	/// @param[in] ConstraintAlgorithm The optimization algorithm for local optimization with constraints (population, energy, purity, etc)
 	/// @param[in] GlobalAlgorithm The optimization algorithm for global optimization
+	/// @param[in] GlobalSubAlgorithm The subsidiary local optimization algorithm used in global optimization if needed
 	Optimization(
 		const Parameters& Params,
+		const double InitialTotalEnergy,
+		const double InitialPurity,
 		const nlopt::algorithm LocalAlgorithm = nlopt::algorithm::LD_SLSQP,
 		const nlopt::algorithm ConstraintAlgorithm = nlopt::algorithm::LD_SLSQP,
-		const nlopt::algorithm GlobalAlgorithm = nlopt::algorithm::G_MLSL_LDS,
+		const nlopt::algorithm GlobalAlgorithm = nlopt::algorithm::GN_ISRES,
 		const nlopt::algorithm GlobalSubAlgorithm = nlopt::algorithm::LD_MMA);
 
 	/// @brief To optimize parameters based on the given density
-	/// @param[in] density The vector containing all known density matrix
-	/// @param[in] mass Mass of classical degree of freedom
-	/// @param[in] TotalEnergy The total energy of the system used for energy conservation
-	/// @param[in] Purity The purity of the partial Wigner transformed density matrix
-	/// @param[in] IsSmall The matrix that saves whether each element is small or not
-	/// @return The total error (MSE, log likelihood, etc) of all elements of density matrix
+	/// @param[in] density The selected points in phase space for each element of density matrices
+	/// @param[in] mc_points The selected points for calculating mc integration
+	/// @return The total error (MSE, log likelihood, etc) of all elements, and the optimization steps
 	Result optimize(
-		const EigenVector<PhaseSpacePoint>& density,
-		const ClassicalVector<double>& mass,
-		const double TotalEnergy,
-		const double Purity,
-		const QuantumMatrix<bool>& IsSmall);
+		const AllPoints& density,
+		const AllPoints& mc_points);
 
 	/// @brief To get the parameter of the corresponding element
-	/// @param[in] ElementIndex The index of the density matrix element
+	/// @param[in] iPES The index of the row of the density matrix element
+	/// @param[in] jPES The index of the column of the density matrix element
 	/// @return The parameters of the corresponding element of density matrix
-	const ParameterVector& get_parameter(const int ElementIndex) const
+	const QuantumArray<ParameterVector>& get_parameters(void) const
 	{
-		return ParameterVectors[ElementIndex];
+		return ParameterVectors;
 	}
 
 private:
 	// local variables
-	const int NumPoints;									   ///< The number of points selected for parameter optimization
-	const ParameterVector InitialParameter;					   ///< The initial parameter for each of the element and for reopt
-	std::vector<nlopt::opt> NLOptLocalMinimizers;			   ///< The vector containing all local NLOPT optimizers, one non-grad for each element
-	std::vector<nlopt::opt> NLOptGlobalMinimizers;			   ///< The vector containing all global NLOPT optimizers
-	std::array<ParameterVector, NumElements> ParameterVectors; ///< The parameters for all elements of density matrix
+	const double TotalEnergy;						///< The initial energy of the density matrix, and should be kept to the end
+	const double Purity;							///< The initial purity of the density matrix, and should be kept to the end
+	const ClassicalVector<double> mass;				///< The mass of classical degree of freedom
+	const ParameterVector InitialParameter;			///< The initial parameter for each of the element and for reopt
+	std::vector<nlopt::opt> NLOptLocalMinimizers;	///< The vector containing all local NLOPT optimizers, one non-grad for each element
+	std::vector<nlopt::opt> NLOptGlobalMinimizers;	///< The vector containing all global NLOPT optimizers
+	QuantumArray<ParameterVector> ParameterVectors; ///< The parameters for all elements of density matrix
 };
 
 #endif // !OPT_H
