@@ -5,7 +5,7 @@
 
 #include "kernel.h"
 
-const std::size_t Kernel::NumTotalParameters = 1 + 1 + PhaseDim;
+const std::size_t Kernel::NumTotalParameters = 1 + PhaseDim + 1;
 
 /// @brief To unpack the parameters to components
 /// @param[in] Parameter All the parameters
@@ -15,18 +15,18 @@ static Kernel::KernelParameter unpack_parameters(const ParameterVector& Paramete
 	assert(Parameter.size() == Kernel::NumTotalParameters);
 	// have all the parameters
 	Kernel::KernelParameter result;
-	auto& [noise, gaussian] = result;
-	auto& [magnitude, char_length] = gaussian;
+	auto& [magnitude, char_length, noise] = result;
 	std::size_t iParam = 0;
-	// first, noise
-	noise = Parameter[iParam++];
-	// second, Gaussian
+	// first, magnitude
 	magnitude = Parameter[iParam++];
+	// second, Gaussian
 	for (int iDim = 0; iDim < PhaseDim; iDim++)
 	{
 		char_length[iDim] = Parameter[iDim + iParam];
 	}
 	iParam += PhaseDim;
+	// third, noise
+	noise = Parameter[iParam++];
 	return result;
 }
 
@@ -129,16 +129,17 @@ static inline Eigen::MatrixXd get_kernel_matrix(
 	assert(LeftFeature.rows() == PhaseDim && RightFeature.rows() == PhaseDim);
 	const int Rows = LeftFeature.cols(), Cols = RightFeature.cols();
 	Eigen::MatrixXd result = Eigen::MatrixXd::Zero(Rows, Cols);
-	const auto& [Noise, Gaussian] = KernelParams;
-	const auto& [Magnitude, CharLength] = Gaussian;
-	// first, noise
+	const auto& [Magnitude, CharLength, Noise] = KernelParams;
+	// second, Gaussian
+	result += gaussian_kernel(CharLength, LeftFeature, RightFeature);
+	// third, noise
 	if (LeftFeature.data() == RightFeature.data())
 	{
 		// in case when it is not training feature, the diagonal kernel (working as noise) is not needed
-		result += std::pow(Noise, 2) * Eigen::MatrixXd::Identity(Rows, Cols);
+		result += Noise * Noise * Eigen::MatrixXd::Identity(Rows, Cols);
 	}
-	// second, Gaussian
-	result += std::pow(Magnitude, 2) * gaussian_kernel(CharLength, LeftFeature, RightFeature);
+	// "first", magnitude
+	result *= Magnitude * Magnitude;
 	return result;
 }
 
@@ -154,8 +155,7 @@ static inline Eigen::MatrixXd get_kernel_matrix(
 static inline double calculate_population(const Kernel::KernelParameter& KernelParams, const Eigen::VectorXd& InvLbl)
 {
 	static const double GlobalFactor = std::pow(2.0 * M_PI, Dim);
-	[[maybe_unused]] const auto& [Noise, Gaussian] = KernelParams;
-	const auto& [Magnitude, CharLength] = Gaussian;
+	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 	double ppl = 0.0;
 	ppl += GlobalFactor * std::pow(Magnitude, 2) * CharLength.prod() * InvLbl.sum();
 	return ppl;
@@ -179,8 +179,7 @@ static inline ClassicalPhaseVector calculate_1st_order_average(
 	const Eigen::VectorXd& InvLbl)
 {
 	static const double GlobalFactor = std::pow(2.0 * M_PI, Dim);
-	[[maybe_unused]] const auto& [Noise, Gaussian] = KernelParams;
-	const auto& [Magnitude, CharLength] = Gaussian;
+	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 	ClassicalPhaseVector r = ClassicalPhaseVector::Zero();
 	r += GlobalFactor * std::pow(Magnitude, 2) * CharLength.prod() * Features * InvLbl;
 	return r;
@@ -205,8 +204,7 @@ static inline double calculate_purity(
 	const Eigen::VectorXd& InvLbl)
 {
 	static const double GlobalFactor = PurityFactor * std::pow(M_PI, Dim);
-	[[maybe_unused]] const auto& [Noise, Gaussian] = KernelParams;
-	const auto& [Magnitude, CharLength] = Gaussian;
+	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 	double result = 0.0;
 	result += GlobalFactor * std::pow(Magnitude, 4) * CharLength.prod() * (InvLbl.transpose() * gaussian_kernel(M_SQRT2 * CharLength, Features, Features) * InvLbl).value();
 	return result;
@@ -214,8 +212,8 @@ static inline double calculate_purity(
 
 /// @brief To calculate the derivative of gaussian kernel over characteristic lengths
 /// @param[in] CharLegnth The characteristic length
-/// @param[in] Feature The feature
-/// @param[in] GaussianKernelMatrix The gaussian kernel matrix, for less calculation
+/// @param[in] LeftFeature The left feature
+/// @param[in] RightFeature The right feature
 /// @return The derivative of gaussian kernel over characteristic lengths
 /// @details Denote @f$ x_{mni}=\frac{[\mathbf{x}_m]_i-[\mathbf{x}_n]_i}{l_i} @f$,
 /// for the derivative of element @f$ K_{mn} @f$ over characteristic length @f$ l_j @f$
@@ -228,9 +226,9 @@ static inline double calculate_purity(
 static EigenVector<Eigen::MatrixXd> gaussian_derivative_over_char_length(
 	const ClassicalPhaseVector& CharacteristicLength,
 	const Eigen::MatrixXd& LeftFeature,
-	const Eigen::MatrixXd& RightFeature,
-	const Eigen::MatrixXd& GaussianKernelMatrix)
+	const Eigen::MatrixXd& RightFeature)
 {
+	const Eigen::MatrixXd& GaussianKernelMatrix = gaussian_kernel(CharacteristicLength, LeftFeature, RightFeature);
 	auto calculate_factor = [&CharacteristicLength, &LeftFeature, &RightFeature](const int iRow, const int iCol) -> ClassicalPhaseVector
 	{
 		const auto& diff = (LeftFeature.col(iRow) - RightFeature.col(iCol)).array() / CharacteristicLength.array();
@@ -321,51 +319,67 @@ static EigenVector<Eigen::MatrixXd> gaussian_derivative_over_char_length(
 
 /// @brief To calculate the derivatives over parameters
 /// @param[in] KernelParams The unpacked parameters for all kernels
-/// @param[in] LeftFeature The feature on the left
-/// @param[in] RightFeature The feature on the right
+/// @param[in] LeftFeature The left feature
+/// @param[in] RightFeature The right feature
+/// @param[in] KernelMatrix The kernel matrix
 /// @return The derivative of kernel matrix over parameters
 static EigenVector<Eigen::MatrixXd> calculate_derivatives(
 	const Kernel::KernelParameter& KernelParams,
 	const Eigen::MatrixXd& LeftFeature,
-	const Eigen::MatrixXd& RightFeature)
+	const Eigen::MatrixXd& RightFeature,
+	const Eigen::MatrixXd& KernelMatrix)
 {
 	assert(LeftFeature.rows() == PhaseDim && RightFeature.rows() == PhaseDim);
 	const int Rows = LeftFeature.cols(), Cols = RightFeature.cols();
-	const auto& [Noise, Gaussian] = KernelParams;
-	const auto& [Magnitude, CharLength] = Gaussian;
-	const Eigen::MatrixXd GaussianKernelMatrix = gaussian_kernel(CharLength, LeftFeature, RightFeature);
+	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 	EigenVector<Eigen::MatrixXd> result;
-	// first, noise
+	// first, magnitude
+	result.push_back(2.0 / Magnitude * KernelMatrix);
+	// second, Gaussian
+	const EigenVector<Eigen::MatrixXd> GaussianDerivOverCharLength = gaussian_derivative_over_char_length(CharLength, LeftFeature, RightFeature);
+	const double MagSquare = Magnitude * Magnitude;
+	// third, noise
+	for (const auto& Mat : GaussianDerivOverCharLength)
+	{
+		result.push_back(MagSquare * Mat);
+	}
 	if (LeftFeature.data() == RightFeature.data())
 	{
-		result.push_back(2.0 * Noise * Eigen::MatrixXd::Identity(Rows, Cols));
+		result.push_back(2.0 * MagSquare * Noise * Eigen::MatrixXd::Identity(Rows, Cols));
 	}
 	else
 	{
 		result.push_back(Eigen::MatrixXd::Zero(Rows, Cols));
 	}
-	// second, Gaussian
-	result.push_back(2.0 * Magnitude * GaussianKernelMatrix);
-	const EigenVector<Eigen::MatrixXd> GaussianDerivOverCharLength = gaussian_derivative_over_char_length(CharLength, LeftFeature, RightFeature, GaussianKernelMatrix);
-	const double MagSquare = std::pow(Magnitude, 2);
-	for (const auto& Mat : GaussianDerivOverCharLength)
-	{
-		result.push_back(MagSquare * Mat);
-	}
 	return result;
 }
 
 /// @brief To calculate the inverse of kernel times the derivatives of kernel
+/// @param[in] KernelParams The unpacked parameters for all kernels
+/// @param[in] KernelMatrix The kernel matrix
 /// @param[in] Inverse The inverse of the kernel matrix
 /// @param[in] Derivatives The derivatives of the kernel matrix over parameters
 /// @return The product
-static EigenVector<Eigen::MatrixXd> inverse_times_derivatives(const Eigen::MatrixXd& Inverse, const EigenVector<Eigen::MatrixXd>& Derivatives)
+static EigenVector<Eigen::MatrixXd> inverse_times_derivatives(
+	const Kernel::KernelParameter& KernelParams,
+	const Eigen::MatrixXd& Inverse,
+	const EigenVector<Eigen::MatrixXd>& Derivatives)
 {
+	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 	EigenVector<Eigen::MatrixXd> result(Kernel::NumTotalParameters, Inverse);
-	for (std::size_t iParam = 0; iParam < Kernel::NumTotalParameters; iParam++)
+	// first, magnitude
+	std::size_t iParam = 0;
+	result[iParam] = 2.0 / Magnitude * Eigen::MatrixXd::Identity(Inverse.rows(), Inverse.cols());
+	iParam++;
+	// second, Gaussian
+	for (int iDim = 0; iDim < PhaseDim; iDim++)
 	{
-		result[iParam] *= Derivatives[iParam];
+		result[iDim + iParam] *= Derivatives[iDim + iParam];
 	}
+	iParam += PhaseDim;
+	// third, noise
+	result[iParam] = 2 * Magnitude * Magnitude * Noise * Inverse;
+	iParam++;
 	return result;
 }
 
@@ -408,22 +422,21 @@ static ParameterVector population_derivatives(
 	const Eigen::VectorXd& InvLbl)
 {
 	static const double GlobalFactor = std::pow(2.0 * M_PI, Dim);
-	[[maybe_unused]] const auto& [Noise, Gaussian] = KernelParams;
-	const auto& [Magnitude, CharLength] = Gaussian;
-	const double ThisTimeFactor = GlobalFactor * std::pow(Magnitude, 2) * CharLength.prod();
+	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
+	const double ThisTimeFactor = GlobalFactor * Magnitude * Magnitude * CharLength.prod();
 	ParameterVector result(Kernel::NumTotalParameters);
 	std::size_t iParam = 0;
-	// first, noise
-	result[iParam] = ThisTimeFactor * NegInvDerivInvLbl[iParam].sum();
-	iParam++;
+	// first, magnitude
+	result[iParam++] = 0.0;
 	// second, Gaussian
-	result[iParam] = ThisTimeFactor * (2.0 / Magnitude * InvLbl.sum() + NegInvDerivInvLbl[iParam].sum());
-	iParam++;
 	for (int iDim = 0; iDim < PhaseDim; iDim++)
 	{
 		result[iParam] = ThisTimeFactor * (InvLbl.sum() / CharLength[iDim] + NegInvDerivInvLbl[iParam].sum());
 		iParam++;
 	}
+	// third, noise
+	result[iParam] = ThisTimeFactor * NegInvDerivInvLbl[iParam].sum();
+	iParam++;
 	return result;
 }
 
@@ -440,31 +453,24 @@ static ParameterVector purity_derivatives(
 	const Eigen::VectorXd& InvLbl)
 {
 	static const double GlobalFactor = PurityFactor * std::pow(M_PI, Dim);
-	[[maybe_unused]] const auto& [Noise, Gaussian] = KernelParams;
-	const auto& [Magnitude, CharLength] = Gaussian;
+	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 	const double ThisTimeFactor = GlobalFactor * std::pow(Magnitude, 4) * CharLength.prod();
 	ParameterVector result(Kernel::NumTotalParameters);
 	std::size_t iParam = 0;
-	const Eigen::MatrixXd ModifiedGaussianKernel = gaussian_kernel(M_SQRT2 * CharLength, Feature, Feature);
-	// first, noise
-	result[iParam] = ThisTimeFactor
-		* ((NegInvDerivInvLbl[iParam].transpose() * ModifiedGaussianKernel * InvLbl).value()
-			+ (InvLbl.transpose() * ModifiedGaussianKernel * NegInvDerivInvLbl[iParam]).value());
+	const ClassicalPhaseVector ModifiedCharLength = M_SQRT2 * CharLength;
+	const Eigen::MatrixXd ModifiedGaussianKernel = gaussian_kernel(ModifiedCharLength, Feature, Feature); // K_1 in document
+	// first, magnitude
+	result[iParam] = 0.0;
 	iParam++;
 	// second, Gaussian
-	result[iParam] = ThisTimeFactor
-		* (4.0 / Magnitude * (InvLbl.transpose() * ModifiedGaussianKernel * InvLbl).value()
-			+ (NegInvDerivInvLbl[iParam].transpose() * ModifiedGaussianKernel * InvLbl).value()
-			+ (InvLbl.transpose() * ModifiedGaussianKernel * NegInvDerivInvLbl[iParam]).value());
-	iParam++;
-	const EigenVector<Eigen::MatrixXd> ModifiedGaussianKernelDerivatives = [&Feature, &ModifiedGaussianKernel, CharLength = CharLength](void) -> EigenVector<Eigen::MatrixXd>
+	const EigenVector<Eigen::MatrixXd> ModifiedGaussianKernelDerivatives = [&Feature, &ModifiedCharLength](void) -> EigenVector<Eigen::MatrixXd>
 	{
 		// as the characteristic lengths is changed in the modified Gaussian kernel,
-		// the
-		EigenVector<Eigen::MatrixXd> result = gaussian_derivative_over_char_length(CharLength, Feature, Feature, ModifiedGaussianKernel);
+		// the result needed to multiply with the amplitude factor
+		EigenVector<Eigen::MatrixXd> result = gaussian_derivative_over_char_length(ModifiedCharLength, Feature, Feature);
 		for (Eigen::MatrixXd& deriv : result)
 		{
-			deriv /= 2.0;
+			deriv *= M_SQRT2;
 		}
 		return result;
 	}();
@@ -477,6 +483,11 @@ static ParameterVector purity_derivatives(
 				+ (InvLbl.transpose() * ModifiedGaussianKernel * NegInvDerivInvLbl[iParam]).value());
 		iParam++;
 	}
+	// third, noise
+	result[iParam] = ThisTimeFactor
+		* ((NegInvDerivInvLbl[iParam].transpose() * ModifiedGaussianKernel * InvLbl).value()
+			+ (InvLbl.transpose() * ModifiedGaussianKernel * NegInvDerivInvLbl[iParam]).value());
+	iParam++;
 	return result;
 }
 
@@ -501,12 +512,12 @@ Kernel::Kernel(
 	// calculation only for averages (which is training set only too)
 	Population(IsCalculateAverage ? decltype(Population)(calculate_population(KernelParams, InvLbl.value())) : std::nullopt),
 	FirstOrderAverage(IsCalculateAverage
-			? decltype(FirstOrderAverage)(calculate_1st_order_average(KernelParams, feature, InvLbl.value()) / Population.value())
+			? decltype(FirstOrderAverage)(calculate_1st_order_average(KernelParams, feature, InvLbl.value()))
 			: std::nullopt),
 	Purity(IsCalculateAverage ? decltype(Purity)(calculate_purity(KernelParams, feature, InvLbl.value())) : std::nullopt),
 	// calculation only for derivatives (which is training set only too)
-	Derivatives(IsCalculateDerivative ? decltype(Derivatives)(calculate_derivatives(KernelParams, feature, feature)) : std::nullopt),
-	InvDeriv(IsCalculateDerivative ? decltype(InvDeriv)(inverse_times_derivatives(Inverse.value(), Derivatives.value())) : std::nullopt),
+	Derivatives(IsCalculateDerivative ? decltype(Derivatives)(calculate_derivatives(KernelParams, feature, feature, KernelMatrix)) : std::nullopt),
+	InvDeriv(IsCalculateDerivative ? decltype(InvDeriv)(inverse_times_derivatives(KernelParams, Inverse.value(), Derivatives.value())) : std::nullopt),
 	NegInvDerivInv(IsCalculateDerivative ? decltype(NegInvDerivInv)(negative_inverse_derivative_inverse(InvDeriv.value(), Inverse.value())) : std::nullopt),
 	NegInvDerivInvLbl(IsCalculateDerivative
 			? decltype(NegInvDerivInvLbl)(negative_inverse_derivative_inverse_label(InvDeriv.value(), InvLbl.value()))
@@ -542,7 +553,7 @@ Kernel::Kernel(
 	FirstOrderAverage(std::nullopt),
 	Purity(std::nullopt),
 	// calculation only for derivatives (which is training set only too)
-	Derivatives(IsCalculateDerivative ? decltype(Derivatives)(calculate_derivatives(KernelParams, LeftFeature, RightFeature)) : std::nullopt),
+	Derivatives(IsCalculateDerivative ? decltype(Derivatives)(calculate_derivatives(KernelParams, LeftFeature, RightFeature, KernelMatrix)) : std::nullopt),
 	InvDeriv(std::nullopt),
 	NegInvDerivInv(std::nullopt),
 	NegInvDerivInvLbl(std::nullopt),

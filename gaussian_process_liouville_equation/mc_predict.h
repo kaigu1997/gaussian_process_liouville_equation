@@ -83,7 +83,7 @@ ParameterVector total_energy_derivative(
 	const AllPoints& mc_points,
 	const ClassicalVector<double>& mass);
 
-/// @brief To calculate the derivative of monte carlo integrated total energy over parameters
+/// @brief To calculate the derivative of monte carlo integrated purity over parameters
 /// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
 /// @param[in] mc_points The selected points for calculating mc integration
 /// @return The derivative of overall purity calculated by points over parameters

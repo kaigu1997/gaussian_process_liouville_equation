@@ -47,7 +47,7 @@ public:
 		const double InitialPurity,
 		const nlopt::algorithm LocalAlgorithm = nlopt::algorithm::LD_SLSQP,
 		const nlopt::algorithm ConstraintAlgorithm = nlopt::algorithm::LD_SLSQP,
-		const nlopt::algorithm GlobalAlgorithm = nlopt::algorithm::GN_ISRES,
+		const nlopt::algorithm GlobalAlgorithm = nlopt::algorithm::GN_DIRECT_L,
 		const nlopt::algorithm GlobalSubAlgorithm = nlopt::algorithm::LD_MMA);
 
 	/// @brief To optimize parameters based on the given density
@@ -58,24 +58,32 @@ public:
 		const AllPoints& density,
 		const AllPoints& mc_points);
 
-	/// @brief To get the parameter of the corresponding element
-	/// @param[in] iPES The index of the row of the density matrix element
-	/// @param[in] jPES The index of the column of the density matrix element
-	/// @return The parameters of the corresponding element of density matrix
+	/// @brief To get the parameter of the elements
+	/// @return The parameters of all the elements element of density matrix
 	const QuantumArray<ParameterVector>& get_parameters(void) const
 	{
 		return ParameterVectors;
 	}
 
+	/// @brief To get the lower bounds of the elements
+	/// @return The lower bounds of all the elements of density matrix
+	QuantumArray<ParameterVector> get_lower_bounds(void) const;
+
+	/// @brief To get the lower bounds of the elements
+	/// @return The lower bounds of all the elements of density matrix
+	QuantumArray<ParameterVector> get_upper_bounds(void) const;
+
+
 private:
 	// local variables
-	const double TotalEnergy;						///< The initial energy of the density matrix, and should be kept to the end
-	const double Purity;							///< The initial purity of the density matrix, and should be kept to the end
-	const ClassicalVector<double> mass;				///< The mass of classical degree of freedom
-	const ParameterVector InitialParameter;			///< The initial parameter for each of the element and for reopt
-	std::vector<nlopt::opt> NLOptLocalMinimizers;	///< The vector containing all local NLOPT optimizers, one non-grad for each element
-	std::vector<nlopt::opt> NLOptGlobalMinimizers;	///< The vector containing all global NLOPT optimizers
-	QuantumArray<ParameterVector> ParameterVectors; ///< The parameters for all elements of density matrix
+	const double TotalEnergy;								  ///< The initial energy of the density matrix, and should be kept to the end
+	const double Purity;									  ///< The initial purity of the density matrix, and should be kept to the end
+	const ClassicalVector<double> mass;						  ///< The mass of classical degree of freedom
+	const ParameterVector InitialParameter;					  ///< The initial parameter for each of the element and for reopt
+	const ParameterVector InitialParameterForGlobalOptimizer; ///< The initial parameter, but modified for global optimizers
+	std::vector<nlopt::opt> NLOptLocalMinimizers;			  ///< The vector containing all local NLOPT optimizers, one non-grad for each element
+	std::vector<nlopt::opt> NLOptGlobalMinimizers;			  ///< The vector containing all global NLOPT optimizers
+	QuantumArray<ParameterVector> ParameterVectors;			  ///< The parameters for all elements of density matrix
 };
 
 #endif // !OPT_H

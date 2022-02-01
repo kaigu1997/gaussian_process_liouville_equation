@@ -43,7 +43,7 @@ AllPoints mc_points_generator(const AllPoints& density, const int NumPoints)
 						result << x_max, p_max;
 						return result;
 					}();
-					const ClassicalPhaseVector stddev = calculate_standard_deviation(density[ElementIndex]);
+					const ClassicalPhaseVector stddev = 3.0 * calculate_standard_deviation_one_surface(density[ElementIndex]);
 					spdlog::info("Sampling for ({},{}) element, center at {} with width {}.", iPES, jPES, ave.format(VectorFormatter), stddev.format(VectorFormatter));
 					const double var_prod = stddev.prod();
 					for (int iDim = 0; iDim < PhaseDim; iDim++)

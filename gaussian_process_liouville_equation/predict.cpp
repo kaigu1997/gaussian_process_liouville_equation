@@ -9,7 +9,7 @@
 #include "pes.h"
 
 /// @details The reduction is not combined in return because of STUPID clang-format.
-ClassicalPhaseVector calculate_1st_order_average(const EigenVector<PhaseSpacePoint>& density)
+ClassicalPhaseVector calculate_1st_order_average_one_surface(const EigenVector<PhaseSpacePoint>& density)
 {
 	assert(!density.empty());
 	const ClassicalPhaseVector result =
@@ -29,7 +29,7 @@ ClassicalPhaseVector calculate_1st_order_average(const EigenVector<PhaseSpacePoi
 	return result / density.size();
 }
 
-ClassicalPhaseVector calculate_standard_deviation(const EigenVector<PhaseSpacePoint>& density)
+ClassicalPhaseVector calculate_standard_deviation_one_surface(const EigenVector<PhaseSpacePoint>& density)
 {
 	assert(!density.empty());
 	const ClassicalPhaseVector sum_square_r =
@@ -46,13 +46,13 @@ ClassicalPhaseVector calculate_standard_deviation(const EigenVector<PhaseSpacePo
 				result << x, p;
 				return result.array().square();
 			});
-	return (sum_square_r.array() / density.size() - calculate_1st_order_average(density).array().square()).sqrt();
+	return (sum_square_r.array() / density.size() - calculate_1st_order_average_one_surface(density).array().square()).sqrt();
 }
 
-double calculate_total_energy_average(
+double calculate_total_energy_average_one_surface(
 	const EigenVector<PhaseSpacePoint>& density,
-	const int PESIndex,
-	const ClassicalVector<double>& mass)
+	const ClassicalVector<double>& mass,
+	const int PESIndex)
 {
 	assert(!density.empty());
 	const double result =
@@ -199,6 +199,50 @@ QuantumMatrix<std::complex<double>> predict_matrix(
 	return result.selfadjointView<Eigen::Lower>();
 }
 
+double calculate_population(const OptionalKernels& Kernels)
+{
+	double result = 0.0;
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		const int ElementIndex = iPES * NumPES + iPES;
+		if (Kernels[ElementIndex].has_value())
+		{
+			result += Kernels[ElementIndex]->get_population();
+		}
+	}
+	return result;
+}
+
+ClassicalPhaseVector calculate_1st_order_average(const OptionalKernels& Kernels)
+{
+	ClassicalPhaseVector result = ClassicalPhaseVector::Zero();
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		const int ElementIndex = iPES * NumPES + iPES;
+		if (Kernels[ElementIndex].has_value())
+		{
+			result += Kernels[ElementIndex]->get_1st_order_average();
+		}
+	}
+	return result;
+}
+
+/// @details This function uses the population on each surface by analytical integral
+/// with energy calculated by averaging the energy of density
+double calculate_total_energy_average(const OptionalKernels& Kernels, const QuantumVector<double>& Energies)
+{
+	double result = 0.0;
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		const int ElementIndex = iPES * NumPES + iPES;
+		if (Kernels[ElementIndex].has_value())
+		{
+			result += Kernels[ElementIndex]->get_population() * Energies[iPES];
+		}
+	}
+	return result;
+}
+
 /// @details The global purity is the weighted sum of purity of all elements, with weight 1 for diagonal and 2 for off-diagonal
 double calculate_purity(const OptionalKernels& Kernels)
 {
@@ -218,6 +262,70 @@ double calculate_purity(const OptionalKernels& Kernels)
 				{
 					result += 2.0 * Kernels[ElementIndex]->get_purity();
 				}
+			}
+		}
+	}
+	return result;
+}
+
+ParameterVector population_derivative(const OptionalKernels& Kernels)
+{
+	ParameterVector result;
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		const int ElementIndex = iPES * NumPES + iPES;
+		if (Kernels[ElementIndex].has_value())
+		{
+			const ParameterVector& grad = Kernels[ElementIndex]->get_population_derivative();
+			result.insert(result.cend(), grad.cbegin(), grad.cend());
+		}
+		else
+		{
+			result.insert(result.cend(), Kernel::NumTotalParameters, 0.0);
+		}
+	}
+	return result;
+}
+
+ParameterVector energy_derivative(const OptionalKernels& Kernels, const QuantumVector<double>& Energies)
+{
+	ParameterVector result;
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		const int ElementIndex = iPES * NumPES + iPES;
+		if (Kernels[ElementIndex].has_value())
+		{
+			ParameterVector grad = Kernels[ElementIndex]->get_population_derivative();
+			for (ParameterVector::iterator iter = grad.begin(); iter != grad.end(); ++iter)
+			{
+				*iter *= Energies[iPES];
+			}
+			result.insert(result.cend(), grad.cbegin(), grad.cend());
+		}
+		else
+		{
+			result.insert(result.cend(), Kernel::NumTotalParameters, 0.0);
+		}
+	}
+	return result;
+}
+
+ParameterVector purity_derivative(const OptionalKernels& Kernels)
+{
+	ParameterVector result;
+	for (int iPES = 0; iPES < NumPES; iPES++)
+	{
+		for (int jPES = 0; jPES < NumPES; jPES++)
+		{
+			const int ElementIndex = iPES * NumPES + jPES;
+			if (Kernels[ElementIndex].has_value())
+			{
+				const ParameterVector& grad = Kernels[ElementIndex]->get_purity_derivative();
+				result.insert(result.cend(), grad.cbegin(), grad.cend());
+			}
+			else
+			{
+				result.insert(result.cend(), Kernel::NumTotalParameters, 0.0);
 			}
 		}
 	}

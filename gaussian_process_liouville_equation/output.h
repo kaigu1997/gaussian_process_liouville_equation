@@ -28,8 +28,8 @@ void output_average(
 
 /// @brief To output parameters
 /// @param[inout] os The output stream
-/// @param[in] Params Parameters of all elements
-void output_param(std::ostream& os, const QuantumArray<ParameterVector>& Params);
+/// @param[in] optimizer The object of opitimization class
+void output_param(std::ostream& os, const Optimization& Optimizer);
 
 /// @brief To output the selected points
 /// @param[inout] os The output stream

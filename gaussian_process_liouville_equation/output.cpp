@@ -12,6 +12,17 @@
 #include "opt.h"
 #include "predict.h"
 
+/// @brief To output std vector
+/// @param[inout] os The output stream
+/// @param[in] vec The vector
+/// @return @p os after output
+template <typename T>
+inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec)
+{
+	std::copy(vec.cbegin(), vec.cend(), std::ostream_iterator<T>(os, " "));
+	return os;
+}
+
 /// @details For each surfaces and for total, output 
 /// its <x> and <p>, population and energy calculated by
 /// analytical integral, direct averaging and monte carlo
@@ -30,8 +41,6 @@ void output_average(
 	const ClassicalVector<double>& mass)
 {
 	// average: time, population, x, p, V, T, E of each PES
-	double ppl_prm_all = 0.;
-	ClassicalPhaseVector r_prm_all = ClassicalPhaseVector::Zero();
 	ClassicalPhaseVector r_ave_all = ClassicalPhaseVector::Zero();
 	double e_ave_all = 0.0;
 	for (int iPES = 0; iPES < NumPES; iPES++)
@@ -40,20 +49,19 @@ void output_average(
 		assert(!density[ElementIndex].empty() == Kernels[ElementIndex].has_value() && density[ElementIndex].empty() == mc_points[ElementIndex].empty());
 		if (!density[ElementIndex].empty())
 		{
-			const double ppl_prm = Kernels[ElementIndex]->get_population();
-			const ClassicalPhaseVector r_prm = Kernels[ElementIndex]->get_1st_order_average();
-			const ClassicalPhaseVector r_ave = calculate_1st_order_average(density[ElementIndex]);
-			const double e_ave = calculate_total_energy_average(density[ElementIndex], iPES, mass);
+			const ClassicalPhaseVector r_prm = calculate_1st_order_average_one_surface(Kernels[ElementIndex].value());
+			const ClassicalPhaseVector r_ave = calculate_1st_order_average_one_surface(density[ElementIndex]);
+			const ClassicalPhaseVector r_mci = calculate_1st_order_average_one_surface(Kernels[ElementIndex].value(), mc_points);
+			const double ppl_prm = calculate_population_one_surface(Kernels[ElementIndex].value());
+			const double ppl_mci = calculate_population_one_surface(Kernels[ElementIndex].value(), mc_points);
+			const double e_ave = calculate_total_energy_average_one_surface(density[ElementIndex], mass, iPES);
+			const double e_mci = calculate_total_energy_average_one_surface(Kernels[ElementIndex].value(), mc_points, mass, iPES);
 			// output for analytcal integral by parameters; energy is NAN
 			os << ' ' << r_prm.format(VectorFormatter) << ' ' << ppl_prm << ' ' << NAN;
 			// output for direct averaging; population is NAN
 			os << ' ' << r_ave.format(VectorFormatter) << ' ' << NAN << ' ' << e_ave;
 			// output for monte carlo integral
-			os << ' ' << calculate_1st_order_average_one_surface(Kernels[ElementIndex].value(), mc_points).format(VectorFormatter);
-			os << ' ' << calculate_population_one_surface(Kernels[ElementIndex].value(), mc_points);
-			os << ' ' << calculate_total_energy_average_one_surface(Kernels[ElementIndex].value(), mc_points, mass, iPES);
-			ppl_prm_all += ppl_prm;
-			r_prm_all += ppl_prm * r_prm;
+			os << ' ' << r_mci.format(VectorFormatter) << ' ' << ppl_mci << ' ' << e_mci;
 			r_ave_all += ppl_prm * r_ave;
 			e_ave_all += ppl_prm * e_ave;
 		}
@@ -67,28 +75,31 @@ void output_average(
 			os << ' ' << ClassicalPhaseVector::Zero().format(VectorFormatter) << ' ' << 0.0 << ' ' << 0.0;
 		}
 	}
+	const ClassicalPhaseVector r_prm_all = calculate_1st_order_average(Kernels);
+	// r_ave_all is already calculated
+	const ClassicalPhaseVector r_mci_all = calculate_1st_order_average(Kernels, mc_points);
+	const double ppl_prm_all = calculate_population(Kernels);
 	const double ppl_mci_all = calculate_population(Kernels, mc_points);
+	// e_ave_all is already calculated
+	const double e_mci_all = calculate_total_energy_average(Kernels, mc_points, mass);
 	// output for analytcal integral by parameters; energy is NAN
 	os << ' ' << (r_prm_all / ppl_prm_all).format(VectorFormatter) << ' ' << ppl_prm_all << ' ' << NAN;
 	// output for direct averaging; population is NAN
 	os << ' ' << (r_ave_all / ppl_prm_all).format(VectorFormatter) << ' ' << NAN << ' ' << e_ave_all / ppl_prm_all;
 	// output for monte carlo integral
-	os << ' ' << (calculate_1st_order_average(Kernels, mc_points) / ppl_mci_all).format(VectorFormatter);
-	os << ' ' << ppl_mci_all;
-	os << ' ' << (calculate_total_energy_average(Kernels, mc_points, mass) / ppl_mci_all);
+	os << ' ' << (r_mci_all / ppl_mci_all).format(VectorFormatter) << ' ' << ppl_mci_all << ' ' << (e_mci_all / ppl_mci_all);
 	// output purity
-	os << ' ' << calculate_purity(Kernels) << ' ' << NAN << ' ' << calculate_purity(Kernels, mc_points) << std::endl;
+	const double prt_prm_all = calculate_purity(Kernels);
+	const double prt_mci_all = calculate_purity(Kernels, mc_points);
+	os << ' ' << prt_prm_all << ' ' << NAN << ' ' << prt_mci_all << std::endl;
 }
 
-void output_param(std::ostream& os, const QuantumArray<ParameterVector>& Params)
+void output_param(std::ostream& os, const Optimization& Optimizer)
 {
+	const QuantumArray<ParameterVector> lb = Optimizer.get_lower_bounds(), param = Optimizer.get_parameters(), ub = Optimizer.get_upper_bounds();
 	for (int iElement = 0; iElement < NumElements; iElement++)
 	{
-		for (double d : Params[iElement])
-		{
-			os << ' ' << d;
-		}
-		os << '\n';
+		os << lb[iElement] << '\n' << param[iElement] << '\n' << ub[iElement] << '\n';
 	}
 	os << '\n';
 }
@@ -182,9 +193,5 @@ void output_logging(
 	const std::time_t CurrentTime = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 	const auto& [error, Steps] = OptResult;
 	os << time << ' ' << error << ' ' << MCParams.get_num_MC_steps() << ' ' << MCParams.get_max_displacement();
-	for (int step : Steps)
-	{
-		os << ' ' << step;
-	}
-	os << ' ' << CPUTime.count() << ' ' << std::put_time(std::localtime(&CurrentTime), "%F %T %Z") << std::endl;
+	os << ' ' << Steps << ' ' << CPUTime.count() << ' ' << std::put_time(std::localtime(&CurrentTime), "%F %T %Z") << std::endl;
 }

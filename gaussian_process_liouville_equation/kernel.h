@@ -10,12 +10,14 @@
 using ParameterVector = std::vector<double>;
 
 /// @brief The class for kernel, including parameters, kernel matrix, its inverse, expected average, and derivatives
+/// @details @f$ k(x_1,x_2)=\sigma_f^2\left(\mathrm{exp}\left[-\frac{1}{2}\sum_i\left(\frac{x_{1,i}-x_{2,i}}{l_i}\right)^2\right]+\sigma_n^2\delta(x_1-x_2)\right) @f$
+/// where @f$ \sigma_f @f$ is the magnitude, @f$ l_i @f$ are the characteristic lengths, and @f$ \sigma_n @f$ is the noise.
 class Kernel final
 {
 public:
 	/// The unpacked parameters for the kernels.
-	/// First is the noise, then the Gaussian kernel parameters: magnitude and characteristic lengths
-	using KernelParameter = std::tuple<double, std::tuple<double, ClassicalPhaseVector>>;
+	/// First is the magnitude, then the characteristic lengths of Gaussian kernel, third the noise
+	using KernelParameter = std::tuple<double, ClassicalPhaseVector, double>;
 
 	static const std::size_t NumTotalParameters; ///< The overall number of parameters, include 1 for noise, 1 for magnitude of Gaussian and phasedim for characteristic length of Gaussian
 
