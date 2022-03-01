@@ -11,12 +11,12 @@
 /// @brief To calculate the average position and momentum of one element by averaging directly
 /// @param[in] density The selected points in phase space
 /// @return Average position and momentum
-ClassicalPhaseVector calculate_1st_order_average_one_surface(const EigenVector<PhaseSpacePoint>& density);
+ClassicalPhaseVector calculate_1st_order_average_one_surface(const ElementPoints& density);
 
 /// @brief To calculate the variance of position and momentum of one element
 /// @param[in] density The selected points in phase space
 /// @return Standard deviation of position and momentum
-ClassicalPhaseVector calculate_standard_deviation_one_surface(const EigenVector<PhaseSpacePoint>& density);
+ClassicalPhaseVector calculate_standard_deviation_one_surface(const ElementPoints& density);
 
 /// @brief To calculate the total energy of one element by averaging directly
 /// @param[in] density The selected points in phase space, must corresponding to a diagonal element in density matrix
@@ -24,15 +24,9 @@ ClassicalPhaseVector calculate_standard_deviation_one_surface(const EigenVector<
 /// @param[in] PESIndex The row and column index of the @p density in density matrix
 /// @return Averaged total energy
 double calculate_total_energy_average_one_surface(
-	const EigenVector<PhaseSpacePoint>& density,
+	const ElementPoints& density,
 	const ClassicalVector<double>& mass,
-	const int PESIndex);
-
-/// @brief To construct the training set as a matrix from std::vector of x and p
-/// @param[in] x Position of classical degree of freedom
-/// @param[in] p Momentum of classical degree of freedom
-/// @return The combination of the input
-Eigen::MatrixXd construct_training_feature(const EigenVector<ClassicalVector<double>>& x, const EigenVector<ClassicalVector<double>>& p);
+	const std::size_t PESIndex);
 
 /// @brief To print the grids of a certain element of density matrix
 /// @param[in] kernel The kernel of the training set
@@ -42,10 +36,9 @@ Eigen::VectorXd predict_elements(const Kernel& kernel, const Eigen::MatrixXd& Ph
 
 /// @brief To calculate the derivative of the prediction over parameters
 /// @param[in] kernel The kernel of the training set
-/// @param[in] x Position of classical degree of freedom
-/// @param[in] p Momentum of classical degree of freedom
+/// @param[in] r Phase space coordinates of classical degree of freedom
 /// @return A vector of the derivative of the kernel matrix over each of the parameter
-ParameterVector prediction_derivative(const Kernel& kernel, const ClassicalVector<double>& x, const ClassicalVector<double>& p);
+ElementParameter prediction_derivative(const Kernel& kernel, const ClassicalPhaseVector& r);
 
 /// @brief To print the grids of a certain element of density matrix
 /// @param[in] kernel The kernel of the training set
@@ -74,13 +67,9 @@ using OptionalKernels = QuantumArray<std::optional<Kernel>>;
 
 /// @brief To predict the density matrix at the given phase space point
 /// @param[in] Kernels An array of predictors for prediction, whose size is NumElements
-/// @param[in] x Position of classical degree of freedom
-/// @param[in] p Momentum of classical degree of freedom
+/// @param[in] r Phase space coordinates of classical degree of freedom
 /// @return The density matrix at the given point
-QuantumMatrix<std::complex<double>> predict_matrix(
-	const OptionalKernels& Kernels,
-	const ClassicalVector<double>& x,
-	const ClassicalVector<double>& p);
+QuantumMatrix<std::complex<double>> predict_matrix(const OptionalKernels& Kernels, const ClassicalPhaseVector& r);
 
 /// @brief To calculate the total population by analytical integration of parameters
 /// @param[in] Kernels An array of kernels for prediction, whose size is NumElements

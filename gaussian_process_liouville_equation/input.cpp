@@ -10,12 +10,14 @@
 /// @param[inout] param The variable waiting to be written
 /// @details The content would be: "[Descriptor]:\n[Value]\n", so need buffer to read descriptor and newline
 template <typename T>
-static void read_param(std::istream& is, T& param)
+static T read_param(std::istream& is)
 {
 	std::string buffer;
+	T result;
 	std::getline(is, buffer);
-	is >> param;
+	is >> result;
 	std::getline(is, buffer);
+	return result;
 }
 
 /// @brief Read a vector in Parameter from input stream
@@ -23,64 +25,70 @@ static void read_param(std::istream& is, T& param)
 /// @param[inout] vec The vector waiting to be written
 /// @details This is the specialization of read_param() function for ClassicalVector<double>.
 template <>
-void read_param<ClassicalVector<double>>(std::istream& is, ClassicalVector<double>& vec)
+ClassicalVector<double> read_param<ClassicalVector<double>>(std::istream& is)
 {
 	std::string buffer;
+	ClassicalVector<double> result;
 	std::getline(is, buffer);
-	for (int i = 0; i < Dim; i++)
+	for (std::size_t i = 0; i < Dim; i++)
 	{
-		is >> vec[i];
+		is >> result[i];
 	}
 	std::getline(is, buffer);
+	return result;
 }
 
-Parameters::Parameters(const std::string& input_file_name)
+InitialParameters::InitialParameters(const std::string& input_file_name)
 {
 	// read input
 	std::ifstream in(input_file_name);
 	assert(in.is_open());
-	read_param(in, mass);
-	read_param(in, x0);
-	read_param(in, p0);
-	read_param(in, SigmaP0);
-	read_param(in, OutputTime);
-	read_param(in, ReoptimizationTime);
-	read_param(in, dt);
-	read_param(in, NumberOfSelectedPoints);
+	mass = read_param<ClassicalVector<double>>(in);
+	const ClassicalVector<double> x0 = read_param<ClassicalVector<double>>(in);
+	const ClassicalVector<double> p0 = read_param<ClassicalVector<double>>(in);
+	const ClassicalVector<double> SigmaP0 = read_param<ClassicalVector<double>>(in);
+	OutputTime = read_param<double>(in);
+	ReoptimizationTime = read_param<double>(in);
+	dt = read_param<double>(in);
+	NumberOfSelectedPoints = read_param<int>(in);
 	in.close();
 	// deal with input
-	xmax = x0.array().abs() * 2;
-	xmin = -xmax;
-	SigmaX0 = hbar / 2.0 * SigmaP0.array().inverse();				 // follow the minimal uncertainty principle
-	dx = M_PI * hbar / 2.0 * (p0 + 3.0 * SigmaP0).array().inverse(); // 4 grids per de Broglie wavelength
-	xNumGrids = ((xmax - xmin).array() / dx.array()).cast<int>();
-	dx = (xmax - xmin).array() / xNumGrids.cast<double>().array();
+	const ClassicalVector<double> xmax = x0.array().abs() * 2, xmin = -xmax;
+	const ClassicalVector<double> SigmaX0 = hbar / 2.0 * SigmaP0.array().inverse();			 // follow the minimal uncertainty principle
+	ClassicalVector<double> dx = M_PI * hbar / 2.0 * (p0 + 3.0 * SigmaP0).array().inverse(); // 4 grids per de Broglie wavelength
+	const ClassicalVector<std::size_t> DirectionNumGrids = ((xmax - xmin).array() / dx.array()).cast<std::size_t>();
+	dx = (xmax - xmin).array() / DirectionNumGrids.cast<double>().array();
 	// in grid solution, dx = pi*hbar/(p0+3sigma_p), p in p0+pi*hbar/2/dx*[-1, 1]
-	pmax = p0.array() + M_PI * hbar / 2.0 * dx.array().inverse();
-	pmin = p0.array() - M_PI * hbar / 2.0 * dx.array().inverse();
-	pNumGrids = xNumGrids;
-	dp = (pmax - pmin).array() / pNumGrids.cast<double>().array();
+	const ClassicalVector<double> pmax = p0.array() + M_PI * hbar / 2.0 * dx.array().inverse();
+	const ClassicalVector<double> pmin = p0.array() - M_PI * hbar / 2.0 * dx.array().inverse();
+	const ClassicalVector<double> dp = (pmax - pmin).array() / DirectionNumGrids.cast<double>().array();
+	// get r version
+	r0 << x0, p0;
+	rmax << xmax, pmax;
+	rmin << xmin, pmin;
+	dr << dx, dp;
+	SigmaR0 << SigmaX0, SigmaP0;
 	// whole phase space grids
-	const int NumGrids = xNumGrids.prod() * pNumGrids.prod();
+	const std::size_t NumGrids = DirectionNumGrids.prod() * DirectionNumGrids.prod();
 	PhasePoints.resize(PhaseDim, NumGrids);
-	const std::vector<int> indices = get_indices(NumGrids);
+	const std::vector<std::size_t> indices = get_indices(NumGrids);
 	std::for_each(
 		std::execution::par_unseq,
 		indices.cbegin(),
 		indices.cend(),
-		[this](int iPoint) -> void
+		[&PhasePoints = PhasePoints, &DirectionNumGrids, &xmin, &pmin, &dx, &dp](std::size_t iPoint) -> void
 		{
 			ClassicalVector<double> xPoint = xmin, pPoint = pmin;
-			int NextIndex = iPoint;
-			for (int idx = Dim - 1; idx >= 0; idx--)
+			std::size_t NextIndex = iPoint;
+			for (std::size_t idx = Dim - 1; idx < Dim; idx--)
 			{
-				pPoint[idx] += dp[idx] * (NextIndex % pNumGrids[idx]);
-				NextIndex /= pNumGrids[idx];
+				pPoint[idx] += dp[idx] * (NextIndex % DirectionNumGrids[idx]);
+				NextIndex /= DirectionNumGrids[idx];
 			}
-			for (int idx = Dim - 1; idx >= 0; idx--)
+			for (std::size_t idx = Dim - 1; idx < Dim; idx--)
 			{
-				xPoint[idx] += dx[idx] * (NextIndex % xNumGrids[idx]);
-				NextIndex /= xNumGrids[idx];
+				xPoint[idx] += dx[idx] * (NextIndex % DirectionNumGrids[idx]);
+				NextIndex /= DirectionNumGrids[idx];
 			}
 			PhasePoints.col(iPoint) << xPoint, pPoint;
 		});
@@ -93,4 +101,8 @@ Parameters::Parameters(const std::string& input_file_name)
 	{
 		OutputTime = ReoptimizationTime;
 	}
+	const auto Distance = 2.0 * x0.array().abs();
+	const auto Speed = (p0.array() / mass.array()).abs();
+	const double TotalTime = (Distance / Speed).maxCoeff();
+	TotalTicks = static_cast<std::size_t>(2.0 * TotalTime / dt);
 }

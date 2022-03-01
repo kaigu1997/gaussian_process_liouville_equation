@@ -36,3 +36,5 @@ notes/
 # never ignore source code
 !*.c*
 !*.h*
+# ... except for gnu precompiled header
+*.h.gch

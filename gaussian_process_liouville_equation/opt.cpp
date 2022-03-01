@@ -34,12 +34,10 @@ using PurityConstraintParameter = std::tuple<AllTrainingSets, AllPoints, double>
 /// @param[in] iPES The index of the row of the density matrix element
 /// @param[in] jPES The index of the column of the density matrix element
 /// @return The element of density matrix
-/// @details If the index corresponds to upper triangular elements, gives real part.
-///
-/// If the index corresponds to lower triangular elements, gives imaginary part.
-///
+/// @details If the index corresponds to upper triangular elements, gives real part. @n
+/// If the index corresponds to lower triangular elements, gives imaginary part. @n
 /// If the index corresponds to diagonal elements, gives the original value.
-static inline double get_density_matrix_element(const QuantumMatrix<std::complex<double>>& DensityMatrix, const int iPES, const int jPES)
+static inline double get_density_matrix_element(const QuantumMatrix<std::complex<double>>& DensityMatrix, const std::size_t iPES, const std::size_t jPES)
 {
 	if (iPES <= jPES)
 	{
@@ -53,35 +51,51 @@ static inline double get_density_matrix_element(const QuantumMatrix<std::complex
 
 /// @brief To construct the training set for all elements
 /// @param[in] density The selected points in phase space for each element of density matrices
+/// @param[in] extra_points The extra selected points to reduce overfitting
 /// @return The training set of all elements in density matrix
-static AllTrainingSets construct_training_sets(const AllPoints& density)
+static AllTrainingSets construct_training_sets(const AllPoints& density, const AllPoints& extra_points)
 {
-	auto construct_element_training_set = [&density](const int iPES, const int jPES) -> ElementTrainingSet
+	auto construct_element_training_set = [&density, &extra_points](const std::size_t iPES, const std::size_t jPES) -> ElementTrainingSet
 	{
-		const EigenVector<PhaseSpacePoint>& ElementDensity = density[iPES * NumPES + jPES];
-		const int NumPoints = ElementDensity.size();
+		const ElementPoints& ElementDensity = density[iPES * NumPES + jPES];
+		const ElementPoints& ExtraElementDensity = extra_points[iPES * NumPES + jPES];
+		const std::size_t NumPoints = ElementDensity.size();
+		const std::size_t NumExtraPoints = ExtraElementDensity.size();
 		// construct training feature (PhaseDim*N) and training labels (N*1)
-		Eigen::MatrixXd feature = Eigen::MatrixXd::Zero(PhaseDim, NumPoints);
-		Eigen::VectorXd label = Eigen::VectorXd::Zero(NumPoints);
-		const std::vector<int> indices = get_indices(NumPoints);
+		Eigen::MatrixXd feature = Eigen::MatrixXd::Zero(PhaseDim, NumPoints + NumExtraPoints);
+		Eigen::VectorXd label = Eigen::VectorXd::Zero(NumPoints + NumExtraPoints);
+		// first insert original points
+		const std::vector<std::size_t> indices = get_indices(NumPoints);
 		std::for_each(
 			std::execution::par_unseq,
 			indices.cbegin(),
 			indices.cend(),
-			[&ElementDensity, &feature, &label, iPES, jPES](int iPoint) -> void
+			[&ElementDensity, &feature, &label, iPES, jPES](std::size_t iPoint) -> void
 			{
-				const auto& [x, p, rho] = ElementDensity[iPoint];
-				feature.col(iPoint) << x, p;
+				const auto& [r, rho] = ElementDensity[iPoint];
+				feature.col(iPoint) = r;
 				label[iPoint] = get_density_matrix_element(rho, iPES, jPES);
+			});
+		// then insert extra points
+		const std::vector<std::size_t> extra_indices = get_indices(NumExtraPoints);
+		std::for_each(
+			std::execution::par_unseq,
+			extra_indices.cbegin(),
+			extra_indices.cend(),
+			[&ExtraElementDensity, &feature, &label, iPES, jPES, NumPoints](std::size_t iPoint) -> void
+			{
+				const auto& [r, rho] = ExtraElementDensity[iPoint];
+				feature.col(iPoint + NumPoints) = r;
+				label[iPoint + NumPoints] = get_density_matrix_element(rho, iPES, jPES);
 			});
 		return std::make_tuple(feature, label);
 	};
 	AllTrainingSets result;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (int jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
-			const int ElementIndex = iPES * NumPES + jPES;
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			if (!density[ElementIndex].empty())
 			{
 				result[ElementIndex] = construct_element_training_set(iPES, jPES);
@@ -104,11 +118,11 @@ static OptionalKernels construct_predictors(
 	const bool IsCalculateDerivative)
 {
 	OptionalKernels result;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (int jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
-			const int ElementIndex = iPES * NumPES + jPES;
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			const auto& [feature, label] = TrainingSets[ElementIndex];
 			if (!ParameterVectors[ElementIndex].empty() && feature.size() != 0)
 			{
@@ -127,10 +141,11 @@ static OptionalKernels construct_predictors(
 void construct_predictors(
 	OptionalKernels& kernels,
 	const QuantumArray<ParameterVector>& ParameterVectors,
-	const AllPoints& density)
+	const AllPoints& density,
+	const AllPoints& extra_points)
 {
-	OptionalKernels k = construct_predictors(ParameterVectors, construct_training_sets(density), true, false);
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	OptionalKernels k = construct_predictors(ParameterVectors, construct_training_sets(density, extra_points), true, false);
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		if (k[iElement].has_value())
 		{
@@ -150,7 +165,7 @@ static const double InitialNoise = 1e-2;	///< The initial weight for noise
 /// @param[in] xSigma The variance of position
 /// @param[in] pSigma The variance of momentum
 /// @return Vector containing all parameters for one element
-static ParameterVector set_initial_parameters(const ClassicalVector<double>& xSigma, const ClassicalVector<double>& pSigma)
+static ParameterVector set_initial_parameters(const ClassicalPhaseVector& rSigma)
 {
 	ParameterVector result(Kernel::NumTotalParameters);
 	std::size_t iParam = 0;
@@ -158,14 +173,9 @@ static ParameterVector set_initial_parameters(const ClassicalVector<double>& xSi
 	result[iParam] = InitialMagnitude;
 	iParam++;
 	// second, Gaussian
-	for (int iDim = 0; iDim < Dim; iDim++)
+	for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 	{
-		result[iParam] = xSigma[iDim];
-		iParam++;
-	}
-	for (int iDim = 0; iDim < Dim; iDim++)
-	{
-		result[iParam] = pSigma[iDim];
+		result[iParam] = rSigma[iDim];
 		iParam++;
 	}
 	// thrid, noise
@@ -177,7 +187,7 @@ static ParameterVector set_initial_parameters(const ClassicalVector<double>& xSi
 /// @param[in] xSize The size of the box on x direction
 /// @param[in] pSize The size of the box on p direction
 /// @return Lower and upper bounds
-static Bounds calculate_bounds(const ClassicalVector<double>& xSize, const ClassicalVector<double>& pSize)
+static Bounds calculate_bounds(const ClassicalPhaseVector& rSize)
 {
 	static const double GaussKerMinCharLength = 1.0 / 100.0; // Minimal characteristic length for Gaussian kernel
 	Bounds result;
@@ -186,16 +196,10 @@ static Bounds calculate_bounds(const ClassicalVector<double>& xSize, const Class
 	LowerBound.push_back(InitialMagnitude);
 	UpperBound.push_back(InitialMagnitude);
 	// second, Gaussian
-	for (int iDim = 0; iDim < Dim; iDim++)
+	for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 	{
 		LowerBound.push_back(GaussKerMinCharLength);
-		UpperBound.push_back(xSize[iDim]);
-	}
-	// dealing with p
-	for (int iDim = 0; iDim < Dim; iDim++)
-	{
-		LowerBound.push_back(GaussKerMinCharLength);
-		UpperBound.push_back(pSize[iDim]);
+		UpperBound.push_back(rSize[iDim]);
 	}
 	// third, noise
 	LowerBound.push_back(InitialNoise * InitialNoise / InitialMagnitude);
@@ -206,7 +210,7 @@ static Bounds calculate_bounds(const ClassicalVector<double>& xSize, const Class
 /// @brief To set up the bounds for the parameter
 /// @param[in] density The selected points in phase space of one element of density matrices
 /// @return Lower and upper bounds
-static Bounds calculate_bounds(const EigenVector<PhaseSpacePoint>& density)
+static Bounds calculate_bounds(const ElementPoints& density)
 {
 	assert(!density.empty());
 	Bounds result;
@@ -249,12 +253,10 @@ static inline ParameterVector local_parameter_to_global(const ParameterVector& p
 /// @param[in] param The parameters for local optimizer, i.e., the normal parameter
 /// @param[in] grad The gradient from local optimizer, i.e., the normal gradient
 /// @return The gradient for global optimizer, i.e., the changed gradient
-/// @details Since for the magnitude of global optimizer is the ln of the local optimizer,
-///
+/// @details Since for the magnitude of global optimizer is the ln of the local optimizer, @n
 /// @f[
 /// \frac{\partial}{\partial\mathrm{ln}x}=x\frac{\partial}{\partial x}
-/// @f]
-///
+/// @f] @n
 /// the multiplication of the normal magnitude is needed.
 static inline ParameterVector local_gradient_to_global(const ParameterVector& param, const ParameterVector& grad)
 {
@@ -307,11 +309,11 @@ void set_optimizer_bounds(std::vector<nlopt::opt>& optimizers, const QuantumArra
 	assert(optimizers.size() == NumElements || optimizers.size() == NumElements + 2);
 	const bool IsLocalOptimizer = (optimizers.size() != NumElements);
 	ParameterVector diagonal_lower_bound, total_lower_bound, diagonal_upper_bound, total_upper_bound;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (int jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
-			const int ElementIndex = iPES * NumPES + jPES;
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			const auto& [LowerBound, UpperBound] = bounds[ElementIndex];
 			assert(LowerBound.size() == Kernel::NumTotalParameters && UpperBound.size() == Kernel::NumTotalParameters);
 			if (IsLocalOptimizer)
@@ -346,7 +348,7 @@ void set_optimizer_bounds(std::vector<nlopt::opt>& optimizers, const QuantumArra
 }
 
 Optimization::Optimization(
-	const Parameters& Params,
+	const InitialParameters& InitParams,
 	const double InitialTotalEnergy,
 	const double InitialPurity,
 	const nlopt::algorithm LocalAlgorithm,
@@ -355,14 +357,14 @@ Optimization::Optimization(
 	const nlopt::algorithm GlobalSubAlgorithm) :
 	TotalEnergy(InitialTotalEnergy),
 	Purity(InitialPurity),
-	mass(Params.get_mass()),
-	InitialParameter(set_initial_parameters(Params.get_sigma_x0(), Params.get_sigma_p0())),
+	mass(InitParams.get_mass()),
+	InitialParameter(set_initial_parameters(InitParams.get_sigma_r0())),
 	InitialParameterForGlobalOptimizer(local_parameter_to_global(InitialParameter))
 {
 	static const double InitStepSize = 0.5; // Initial step size in optimization
 	static const double RelTol = 1e-5;		// Relative tolerance
 	static const double AbsTol = 1e-15;		// Relative tolerance
-	static const int MaxEval = 100000;		// Maximum evaluations for global optimizer
+	static const std::size_t MaxEval = 100000;		// Maximum evaluations for global optimizer
 
 	// set up parameters and minimizers
 	auto set_optimizer = [](nlopt::opt& optimizer) -> void
@@ -385,7 +387,7 @@ Optimization::Optimization(
 	};
 
 	// minimizer for each element
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		ParameterVectors[iElement] = InitialParameter;
 		NLOptLocalMinimizers.push_back(nlopt::opt(LocalAlgorithm, Kernel::NumTotalParameters));
@@ -423,7 +425,7 @@ Optimization::Optimization(
 
 	// set up bounds
 	QuantumArray<Bounds> bounds;
-	bounds.fill(calculate_bounds(Params.get_xmax() - Params.get_xmin(), Params.get_pmax() - Params.get_pmin()));
+	bounds.fill(calculate_bounds(InitParams.get_rmax() - InitParams.get_rmin()));
 	set_optimizer_bounds(NLOptLocalMinimizers, bounds);
 	set_optimizer_bounds(NLOptGlobalMinimizers, bounds);
 }
@@ -432,12 +434,10 @@ Optimization::Optimization(
 /// @param[in] kernel The kernel to use
 /// @param[out] grad The gradient at the given point
 /// @return The @f$ -\mathrm{log}p(\mathbf{y}\|X,\theta) @f$
-/// @details The result could be expanded as
-///
+/// @details The result could be expanded as @n
 /// @f[
 /// -\mathrm{log}p(\mathbf{y}|X,\theta)=\frac{1}{2}\mathbf{y}^{\mathsf{T}}K^{-1}\mathbf{y}+\frac{1}{2}\mathrm{log}\|K\|+\frac{n}{2}\mathrm{log}(2\pi)
-/// @f]
-///
+/// @f] @n
 /// where the last term is a constant for a certain optimization, n is the size of the training set.
 [[maybe_unused]] static double negative_log_marginal_likelihood(const Kernel& kernel, ParameterVector& grad)
 {
@@ -459,12 +459,10 @@ Optimization::Optimization(
 /// @param[in] kernel The kernel to use
 /// @param[out] grad The gradient at the given point
 /// @return The squared error of LOOCV
-/// @details For each training set point, leave one out cross validation predicts
-///
+/// @details For each training set point, leave one out cross validation predicts @n
 /// @f[
 /// \mu_i=y_i-\frac{[K^{-1}\mathbf{y}]_i}{[K^{-1}]_{ii}}
-/// @f]
-///
+/// @f] @n
 /// and the summation over all possible i gives the squared error
 [[maybe_unused]] static double leave_one_out_cross_validation(const Kernel& kernel, ParameterVector& grad)
 {
@@ -472,8 +470,8 @@ Optimization::Optimization(
 	const auto& InvDiag = kernel.get_inverse().diagonal().array();
 	if (!grad.empty())
 	{
-		const auto& NegInvDerivInvVec = kernel.get_negative_inv_deriv_inv();
-		const auto& NegInvDerivInvLblVec = kernel.get_negative_inv_deriv_inv_lbl();
+		const EigenVector<Eigen::MatrixXd>& NegInvDerivInvVec = kernel.get_negative_inv_deriv_inv();
+		const EigenVector<Eigen::VectorXd>& NegInvDerivInvLblVec = kernel.get_negative_inv_deriv_inv_lbl();
 		for (std::size_t iParam = 0; iParam < Kernel::NumTotalParameters; iParam++)
 		{
 			const auto& NegInvDerivInv = NegInvDerivInvVec[iParam].diagonal().array();
@@ -555,13 +553,13 @@ static Optimization::Result optimize_elementwise(
 		return std::string(optimizer.get_algorithm_name()).find("global") != std::string::npos || optimizer.get_algorithm() == nlopt::algorithm::GN_ESCH;
 	}; // judge if it is global optimizer by checking its name
 	double total_error = 0.0;
-	std::vector<int> num_steps(NumElements, 0);
+	std::vector<std::size_t> num_steps(NumElements, 0);
 	// optimize element by element
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (int jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
-			const int ElementIndex = iPES * NumPES + jPES;
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			ElementTrainingSet ets = TrainingSets[ElementIndex];
 			if (std::get<0>(ets).size() != 0)
 			{
@@ -605,12 +603,12 @@ static double diagonal_loose(const ParameterVector& x, ParameterVector& grad, vo
 {
 	const auto& TrainingSets = *static_cast<AllTrainingSets*>(params);
 	double err = 0.0;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const int ElementIndex = iPES * NumPES + iPES;
+		const std::size_t ElementIndex = iPES * NumPES + iPES;
 		[[maybe_unused]] const auto& [feature, label] = TrainingSets[ElementIndex];
-		const int BeginIndex = iPES * Kernel::NumTotalParameters;
-		const int EndIndex = BeginIndex + Kernel::NumTotalParameters;
+		const std::size_t BeginIndex = iPES * Kernel::NumTotalParameters;
+		const std::size_t EndIndex = BeginIndex + Kernel::NumTotalParameters;
 		if (feature.size() != 0)
 		{
 			const ParameterVector x_element(x.cbegin() + BeginIndex, x.cbegin() + EndIndex);
@@ -639,7 +637,7 @@ static double diagonal_loose(const ParameterVector& x, ParameterVector& grad, vo
 static QuantumArray<ParameterVector> construct_all_parameter_from_diagonal(const ParameterVector& x)
 {
 	QuantumArray<ParameterVector> result;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
 		result[iPES * NumPES + iPES] = ParameterVector(
 			x.cbegin() + iPES * Kernel::NumTotalParameters,
@@ -653,7 +651,7 @@ static QuantumArray<ParameterVector> construct_all_parameter_from_diagonal(const
 /// @param[out] grad The gradient at the given point
 /// @param[in] params Other parameters. Here it is the diagonal training sets
 /// @return @f$ \langle\rho\rangle_{\mathrm{MonteCarlo}} - 1 @f$
-static double monte_carlo_integral_population_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
+[[maybe_unused]] static double monte_carlo_integral_population_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	const auto& [TrainingSets, mc_points] = *static_cast<PopulationConstraintParameter*>(params);
 	// construct predictors
@@ -679,7 +677,7 @@ static double monte_carlo_integral_population_constraint(const ParameterVector& 
 /// @param[out] grad The gradient at the given point
 /// @param[in] params Other parameters. Here it is the diagonal training sets
 /// @return @f$ \langle\rho\rangle_{\mathrm{parameters}} - 1 @f$
-static double analytical_integral_population_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
+[[maybe_unused]] static double analytical_integral_population_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	[[maybe_unused]] const auto& [TrainingSets, mc_points] = *static_cast<PopulationConstraintParameter*>(params);
 	// construct predictors
@@ -705,7 +703,7 @@ static double analytical_integral_population_constraint(const ParameterVector& x
 /// @param[out] grad The gradient at the given point
 /// @param[in] params Other parameters. Here it is the diagonal training sets, total energy and mass
 /// @return @f$ \langle E\rangle_{\mathrm{MonteCarlo}} - E_0 @f$
-static double monte_carlo_integral_energy_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
+[[maybe_unused]] static double monte_carlo_integral_energy_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	const auto& [TrainingSets, mc_points, TotalEnergy, mass] = *static_cast<MCEnergyConstraintParameter*>(params);
 	// construct predictors
@@ -731,7 +729,7 @@ static double monte_carlo_integral_energy_constraint(const ParameterVector& x, P
 /// @param[out] grad The gradient at the given point
 /// @param[in] params Other parameters. Here it is the diagonal training sets, total energy and mass
 /// @return @f$ \langle E\rangle_{\mathrm{parameters}} - E_0 @f$
-static double analytical_integral_energy_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
+[[maybe_unused]] static double analytical_integral_energy_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	[[maybe_unused]] const auto& [TrainingSets, Energies, TotalEnergy] = *static_cast<AnalyticalEnergyConstraintParameter*>(params);
 	// construct predictors
@@ -757,7 +755,7 @@ static double analytical_integral_energy_constraint(const ParameterVector& x, Pa
 /// @param[out] grad The gradient at the given point
 /// @param[in] params Other parameters. Here it is the diagonal training sets and purity
 /// @return @f$ \langle\rho^2\rangle_{\mathrm{MonteCarlo}} - \langle\rho^2\rangle_{t=0} @f$
-static double diagonal_monte_carlo_integral_purity_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
+[[maybe_unused]] static double diagonal_monte_carlo_integral_purity_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	const auto& [TrainingSets, mc_points, Purity] = *static_cast<PurityConstraintParameter*>(params);
 	// construct predictors
@@ -769,7 +767,7 @@ static double diagonal_monte_carlo_integral_purity_constraint(const ParameterVec
 	if (!grad.empty())
 	{
 		ParameterVector all_deriv = purity_derivative(Kernels, mc_points);
-		for (int iPES = 0; iPES < NumPES; iPES++)
+		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 		{
 			std::copy(
 				all_deriv.cbegin() + (iPES * NumPES + iPES) * Kernel::NumTotalParameters,
@@ -790,7 +788,7 @@ static double diagonal_monte_carlo_integral_purity_constraint(const ParameterVec
 /// @param[out] grad The gradient at the given point
 /// @param[in] params Other parameters. Here it is the diagonal training sets and purity
 /// @return @f$ \langle\rho^2\rangle_{\mathrm{parameters}} - \langle\rho^2\rangle_{t=0} @f$
-static double diagonal_analytical_integral_purity_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
+[[maybe_unused]] static double diagonal_analytical_integral_purity_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	[[maybe_unused]] const auto& [TrainingSets, mc_points, Purity] = *static_cast<PurityConstraintParameter*>(params);
 	// construct predictors
@@ -802,7 +800,7 @@ static double diagonal_analytical_integral_purity_constraint(const ParameterVect
 	if (!grad.empty())
 	{
 		ParameterVector all_deriv = purity_derivative(Kernels);
-		for (int iPES = 0; iPES < NumPES; iPES++)
+		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 		{
 			std::copy(
 				all_deriv.cbegin() + (iPES * NumPES + iPES) * Kernel::NumTotalParameters,
@@ -831,21 +829,21 @@ static double diagonal_analytical_integral_purity_constraint(const ParameterVect
 static Optimization::Result optimize_diagonal(
 	const AllTrainingSets& TrainingSets,
 	const AllPoints& mc_points,
-	const QuantumVector<double>& Energies,
-	const double TotalEnergy,
-	const double Purity,
-	const ClassicalVector<double>& mass,
+	[[maybe_unused]] const QuantumVector<double>& Energies,
+	[[maybe_unused]] const double TotalEnergy,
+	[[maybe_unused]] const double Purity,
+	[[maybe_unused]] const ClassicalVector<double>& mass,
 	nlopt::opt& minimizer,
 	QuantumArray<ParameterVector>& ParameterVectors)
 {
 	// construct training set and parameters
 	AllTrainingSets ats = TrainingSets;
 	ParameterVector DiagonalParameters;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (int jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
-			const int ElementIndex = iPES * NumPES + jPES;
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			if (iPES == jPES)
 			{
 				// diagonal elements, save parameters
@@ -866,16 +864,16 @@ static Optimization::Result optimize_diagonal(
 	minimizer.set_min_objective(diagonal_loose, static_cast<void*>(&ats));
 	// set up constraints
 	PopulationConstraintParameter pplcp = std::make_tuple(ats, mc_points);
-	minimizer.add_equality_constraint(monte_carlo_integral_population_constraint, static_cast<void*>(&pplcp));
+	// minimizer.add_equality_constraint(monte_carlo_integral_population_constraint, static_cast<void*>(&pplcp));
 	minimizer.add_equality_constraint(analytical_integral_population_constraint, static_cast<void*>(&pplcp));
-	MCEnergyConstraintParameter mcergcp = std::make_tuple(ats, mc_points, TotalEnergy, mass);
-	minimizer.add_equality_constraint(monte_carlo_integral_energy_constraint, static_cast<void*>(&mcergcp));
+	// MCEnergyConstraintParameter mcergcp = std::make_tuple(ats, mc_points, TotalEnergy, mass);
+	// minimizer.add_equality_constraint(monte_carlo_integral_energy_constraint, static_cast<void*>(&mcergcp));
 	AnalyticalEnergyConstraintParameter aergcp = std::make_tuple(ats, Energies, TotalEnergy);
 	minimizer.add_equality_constraint(analytical_integral_energy_constraint, static_cast<void*>(&aergcp));
 	PurityConstraintParameter prtcp = std::make_tuple(ats, mc_points, Purity); // definition must be out of if, or memory will be released
 	if (Purity > 0)
 	{
-		minimizer.add_equality_constraint(diagonal_monte_carlo_integral_purity_constraint, static_cast<void*>(&prtcp));
+	// 	minimizer.add_equality_constraint(diagonal_monte_carlo_integral_purity_constraint, static_cast<void*>(&prtcp));
 		minimizer.add_equality_constraint(diagonal_analytical_integral_purity_constraint, static_cast<void*>(&prtcp));
 	}
 	// optimize
@@ -896,9 +894,9 @@ static Optimization::Result optimize_diagonal(
 #endif
 	minimizer.remove_equality_constraints();
 	// set up parameters
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const int ElementIndex = iPES * NumPES + iPES;
+		const std::size_t ElementIndex = iPES * NumPES + iPES;
 		if (!mc_points[ElementIndex].empty())
 		{
 			ParameterVectors[ElementIndex] = ParameterVector(
@@ -906,7 +904,7 @@ static Optimization::Result optimize_diagonal(
 				DiagonalParameters.cbegin() + (iPES + 1) * Kernel::NumTotalParameters);
 		}
 	}
-	return std::make_tuple(err, std::vector<int>(1, minimizer.get_numevals()));
+	return std::make_tuple(err, std::vector<std::size_t>(1, minimizer.get_numevals()));
 }
 
 /// @brief To calculate the overall loose for off-diagonal elements
@@ -919,11 +917,11 @@ static double offdiagonal_loose(const ParameterVector& x, ParameterVector& grad,
 	double err = 0.0;
 	// get the parameters
 	const auto& TrainingSets = *static_cast<AllTrainingSets*>(params);
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		[[maybe_unused]] const auto& [feature, label] = TrainingSets[iElement];
-		const int BeginIndex = iElement * Kernel::NumTotalParameters;
-		const int EndIndex = BeginIndex + Kernel::NumTotalParameters;
+		const std::size_t BeginIndex = iElement * Kernel::NumTotalParameters;
+		const std::size_t EndIndex = BeginIndex + Kernel::NumTotalParameters;
 		if (iElement / NumPES != iElement % NumPES && feature.size() != 0)
 		{
 			// for non-zero off-diagonal element, calculate its error and gradient if needed
@@ -950,7 +948,7 @@ static double offdiagonal_loose(const ParameterVector& x, ParameterVector& grad,
 static QuantumArray<ParameterVector> construct_all_parameter(const ParameterVector& x)
 {
 	QuantumArray<ParameterVector> result;
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		result[iElement] = ParameterVector(
 			x.cbegin() + iElement * Kernel::NumTotalParameters,
@@ -964,7 +962,7 @@ static QuantumArray<ParameterVector> construct_all_parameter(const ParameterVect
 /// @param[out] grad The gradient at the given point
 /// @param[in] params Other parameters. Here it is the off-diagonal training sets and purity
 /// @return @f$ \langle\rho^2\rangle_{\mathrm{MonteCarlo}} - \langle\rho^2\rangle_{t=0} @f$
-static double monte_carlo_integral_purity_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
+[[maybe_unused]] static double monte_carlo_integral_purity_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	const auto& [TrainingSets, mc_points, Purity] = *static_cast<PurityConstraintParameter*>(params);
 	// construct kernels
@@ -990,7 +988,7 @@ static double monte_carlo_integral_purity_constraint(const ParameterVector& x, P
 /// @param[out] grad The gradient at the given point
 /// @param[in] params Other parameters. Here it is the off-diagonal training sets and purity
 /// @return @f$ \langle\rho^2\rangle_{\mathrm{parameters}} - \langle\rho^2\rangle_{t=0} @f$
-static double analytical_integral_purity_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
+[[maybe_unused]] static double analytical_integral_purity_constraint(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	[[maybe_unused]] const auto& [TrainingSets, mc_points, Purity] = *static_cast<PurityConstraintParameter*>(params);
 	// construct kernels
@@ -1021,14 +1019,14 @@ static double analytical_integral_purity_constraint(const ParameterVector& x, Pa
 Optimization::Result optimize_offdiagonal(
 	const AllTrainingSets& TrainingSets,
 	const AllPoints& mc_points,
-	const double Purity,
+	[[maybe_unused]] const double Purity,
 	nlopt::opt& minimizer,
 	QuantumArray<ParameterVector>& ParameterVectors)
 {
 	// construct training set
 	AllTrainingSets ats = TrainingSets;
 	ParameterVector Parameters;
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		Parameters.insert(
 			Parameters.cend(),
@@ -1038,7 +1036,7 @@ Optimization::Result optimize_offdiagonal(
 	minimizer.set_min_objective(offdiagonal_loose, static_cast<void*>(&ats));
 	// setup constraint
 	PurityConstraintParameter pcp = std::make_tuple(ats, mc_points, Purity);
-	minimizer.add_equality_constraint(monte_carlo_integral_purity_constraint, &pcp);
+	// minimizer.add_equality_constraint(monte_carlo_integral_purity_constraint, &pcp);
 	minimizer.add_equality_constraint(analytical_integral_purity_constraint, &pcp);
 	// optimize
 	double err = 0.0;
@@ -1058,7 +1056,7 @@ Optimization::Result optimize_offdiagonal(
 #endif
 	minimizer.remove_equality_constraints();
 	// set up parameters
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		if (iElement / NumElements != iElement % NumElements && !mc_points[iElement].empty())
 		{
@@ -1067,7 +1065,7 @@ Optimization::Result optimize_offdiagonal(
 				Parameters.cbegin() + (iElement + 1) * Kernel::NumTotalParameters);
 		}
 	}
-	return std::make_tuple(err, std::vector<int>(1, minimizer.get_numevals()));
+	return std::make_tuple(err, std::vector<std::size_t>(1, minimizer.get_numevals()));
 }
 
 /// @brief To check each of the averages (<r>, <1>, <E> and purity) is satisfactory or not
@@ -1076,18 +1074,15 @@ Optimization::Result optimize_offdiagonal(
 /// @param[in] mc_points The selected points for calculating mc integration
 /// @param[in] Energies The energy of each surfaces and the total energy
 /// @param[in] Purity The purity of the partial Wigner transformed density matrix
-/// @param[in] mass Mass of classical degree of freedom
 /// @return Whether each of the averages (<r>, <1>, <E> and purity) is satisfactory or not
-/// @details The comparison happens between integral (both analytical and monte carlo) and
-/// average for <r>, and between integral and exact value for <1>, <E> and purity.
+/// @details The comparison happens between integral and average for <r>,
+/// and between integral and exact value for <1>, <E> and purity.
 static Eigen::Vector4d check_averages(
 	const OptionalKernels& Kernels,
 	const AllPoints& density,
-	const AllPoints& mc_points,
 	const QuantumVector<double>& Energies,
 	const double TotalEnergy,
-	const double Purity,
-	const ClassicalVector<double>& mass)
+	const double Purity)
 {
 	// to calculate the error that is above the tolerance or not
 	// if within tolerance, return 0; otherwise, return relative error
@@ -1112,7 +1107,7 @@ static Eigen::Vector4d check_averages(
 		{
 			static const double AbsoluteTolerance = 0.2;
 			static const double RelativeTolerance = 0.1;
-			const auto err = ((calc.array() / ref.array()) - 1.0).abs();
+			const auto err = ((calc.array() / ref.array()).abs() - 1.0).abs();
 			if ((err < RelativeTolerance).all() && ((calc - ref).array().abs() < AbsoluteTolerance).all())
 			{
 				return 0.0;
@@ -1138,38 +1133,36 @@ static Eigen::Vector4d check_averages(
 
 	Eigen::Vector4d result = Eigen::Vector4d::Zero();
 	// <r>
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const int ElementIndex = iPES * NumPES + iPES;
-		if (Kernels[ElementIndex].has_value() && !density[ElementIndex].empty() && !mc_points[ElementIndex].empty())
+		const std::size_t ElementIndex = iPES * NumPES + iPES;
+		if (Kernels[ElementIndex].has_value() && !density[ElementIndex].empty())
 		{
 			const ClassicalPhaseVector r_ave = calculate_1st_order_average_one_surface(density[ElementIndex]);
-			const ClassicalPhaseVector r_mci = calculate_1st_order_average_one_surface(Kernels[ElementIndex].value(), mc_points); // mci = Monte Carlo Integral
 			const ClassicalPhaseVector r_prm = calculate_1st_order_average_one_surface(Kernels[ElementIndex].value()); // prm = parameters
 			spdlog::info(
-				"On surface {}, Exact <r> = {}, MC integrated <r> = {}, Analytical integrated <r> = {}.",
+				"On surface {}, Exact <r> = {}, Analytical integrated <r> = {}.",
 				iPES,
 				r_ave.format(VectorFormatter),
-				r_mci.format(VectorFormatter),
 				r_prm.format(VectorFormatter));
-			result[0] += beyond_tolerance_error(r_mci, r_ave) + beyond_tolerance_error(r_prm, r_ave);
+			result[0] += beyond_tolerance_error(r_prm, r_ave);
 		}
 	}
 	check_and_output(result[0], "<r>");
 	// <1>
-	const double ppl_mci = calculate_population(Kernels, mc_points), ppl_prm = calculate_population(Kernels);
-	spdlog::info("Exact population = {}, MC integrated population = {}, analytical integrated population = {}.", 1.0, ppl_mci, ppl_prm);
-	result[1] += beyond_tolerance_error(ppl_mci, 1.0) + beyond_tolerance_error(ppl_prm, 1.0);
+	const double ppl_prm = calculate_population(Kernels);
+	spdlog::info("Exact population = {}, analytical integrated population = {}.", 1.0, ppl_prm);
+	result[1] += beyond_tolerance_error(ppl_prm, 1.0);
 	check_and_output(result[1], "Population");
 	// <E>
-	const double eng_mci = calculate_total_energy_average(Kernels, mc_points, mass), eng_prm_ave = calculate_total_energy_average(Kernels, Energies);
-	spdlog::info("Exact energy = {}, MC integrated energy = {}, analytical integrated energy = {}", TotalEnergy, eng_mci, eng_prm_ave);
-	result[2] += beyond_tolerance_error(eng_mci, TotalEnergy) + beyond_tolerance_error(eng_prm_ave, TotalEnergy);
+	const double eng_prm_ave = calculate_total_energy_average(Kernels, Energies);
+	spdlog::info("Exact energy = {}, analytical integrated energy = {}", TotalEnergy, eng_prm_ave);
+	result[2] += beyond_tolerance_error(eng_prm_ave, TotalEnergy);
 	check_and_output(result[2], "Energy");
 	// purity
-	const double prt_mci = calculate_purity(Kernels, mc_points), prt_prm = calculate_purity(Kernels);
-	spdlog::info("Exact purity = {}, MC integrated purity = {}, analytical integrated purity = {}.", Purity, prt_mci, prt_prm);
-	result[3] += beyond_tolerance_error(prt_mci, Purity) + beyond_tolerance_error(prt_prm, Purity);
+	const double prt_prm = calculate_purity(Kernels);
+	spdlog::info("Exact purity = {}, analytical integrated purity = {}.", Purity, prt_prm);
+	result[3] += beyond_tolerance_error(prt_prm, Purity);
 	check_and_output(result[3], "Purity");
 	return result;
 }
@@ -1178,18 +1171,18 @@ static Eigen::Vector4d check_averages(
 /// First optimize elementwise, then optimize the diagonal with normalization and energy conservation
 Optimization::Result Optimization::optimize(
 	const AllPoints& density,
-	const AllPoints& mc_points)
+	const AllPoints& extra_points)
 {
 	// construct training sets
-	const AllTrainingSets TrainingSets = construct_training_sets(density);
+	const AllTrainingSets TrainingSets = construct_training_sets(density, extra_points);
 	// set bounds for current bounds, and calculate energy on each surfaces
 	QuantumVector<double> energies = QuantumVector<double>::Zero();
 	QuantumArray<Bounds> param_bounds;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (int jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
-			const int ElementIndex = iPES * NumPES + jPES;
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			if (!density[ElementIndex].empty())
 			{
 				param_bounds[ElementIndex] = calculate_bounds(density[ElementIndex]);
@@ -1212,9 +1205,9 @@ Optimization::Result Optimization::optimize(
 	{
 		if (NumPES != 1)
 		{
-			for (int iPES = 1; iPES < NumPES; iPES++)
+			for (std::size_t iPES = 1; iPES < NumPES; iPES++)
 			{
-				for (int jPES = 0; jPES < iPES; jPES++)
+				for (std::size_t jPES = 0; jPES < iPES; jPES++)
 				{
 					if (!density[iPES * NumPES + jPES].empty())
 					{
@@ -1227,10 +1220,10 @@ Optimization::Result Optimization::optimize(
 	}();
 
 	// construct a function for code reuse
-	auto optimize_and_check = [this, &density, &mc_points, &TrainingSets, &energies, OffDiagonalOptimization](QuantumArray<ParameterVector>& parameter_vectors) -> std::tuple<Optimization::Result, Eigen::Vector4d>
+	auto optimize_and_check = [this, &density, &TrainingSets, &energies, OffDiagonalOptimization](QuantumArray<ParameterVector>& parameter_vectors) -> std::tuple<Optimization::Result, Eigen::Vector4d>
 	{
 		// initially, set the magnitude to be 1
-		for (int iElement = 0; iElement < NumElements; iElement++)
+		for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 		{
 			parameter_vectors[iElement][0] = InitialMagnitude;
 		}
@@ -1241,7 +1234,7 @@ Optimization::Result Optimization::optimize(
 			// do not add purity condition for diagonal, so give a negative purity to indicate no necessity
 			const auto& [DiagonalError, DiagonalStep] = optimize_diagonal(
 				TrainingSets,
-				mc_points,
+				density,
 				energies,
 				TotalEnergy,
 				-Purity,
@@ -1250,7 +1243,7 @@ Optimization::Result Optimization::optimize(
 				parameter_vectors);
 			const auto& [OffDiagonalError, OffDiagonalStep] = optimize_offdiagonal(
 				TrainingSets,
-				mc_points,
+				density,
 				Purity,
 				NLOptLocalMinimizers[NumElements + 1],
 				parameter_vectors);
@@ -1262,7 +1255,7 @@ Optimization::Result Optimization::optimize(
 		{
 			const auto& [DiagonalError, DiagonalStep] = optimize_diagonal(
 				TrainingSets,
-				mc_points,
+				density,
 				energies,
 				TotalEnergy,
 				Purity,
@@ -1274,9 +1267,9 @@ Optimization::Result Optimization::optimize(
 			steps.push_back(0);
 		}
 		// afterwards, calculate the magnitude
-		for (int iElement = 0; iElement < NumElements; iElement++)
+		for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 		{
-			if (!mc_points[iElement].empty())
+			if (!density[iElement].empty())
 			{
 				const auto& [feature, label] = TrainingSets[iElement];
 				const Kernel kernel(parameter_vectors[iElement], feature, label, true, false);
@@ -1284,7 +1277,7 @@ Optimization::Result Optimization::optimize(
 			}
 		}
 		spdlog::info("error = {}", std::get<0>(result));
-		return std::make_tuple(result, check_averages(construct_predictors(parameter_vectors, TrainingSets, true, false), density, mc_points, energies, TotalEnergy, Purity, mass));
+		return std::make_tuple(result, check_averages(construct_predictors(parameter_vectors, TrainingSets, true, false), density, energies, TotalEnergy, Purity));
 	};
 
 	auto compare_and_overwrite = [this](
@@ -1298,13 +1291,13 @@ Optimization::Result Optimization::optimize(
 	{
 		auto& [error, steps] = result;
 		const auto& [error_new, steps_new] = result_new;
-		const int BetterResults = (check_new.array() <= check_result.array()).count();
+		const std::size_t BetterResults = (check_new.array() <= check_result.array()).count();
 		if (BetterResults > 2)
 		{
 			spdlog::info(new_name + " is better because of better averages.");
 			ParameterVectors = param_vec_new;
 			error = error_new;
-			for (int iElement = 0; iElement < NumElements + 2; iElement++)
+			for (std::size_t iElement = 0; iElement < NumElements + 2; iElement++)
 			{
 				steps[iElement] += steps_new[iElement];
 			}
@@ -1315,7 +1308,7 @@ Optimization::Result Optimization::optimize(
 			spdlog::info(new_name + " is better because of smaller error.");
 			ParameterVectors = param_vec_new;
 			error = error_new;
-			for (int iElement = 0; iElement < NumElements + 2; iElement++)
+			for (std::size_t iElement = 0; iElement < NumElements + 2; iElement++)
 			{
 				steps[iElement] += steps_new[iElement];
 			}
@@ -1338,7 +1331,7 @@ Optimization::Result Optimization::optimize(
 	// 2. optimize locally with initial parameter
 	spdlog::warn("Local optimization with previous parameters failed. Retry with local optimization with initial parameters.");
 	QuantumArray<ParameterVector> param_vec_initial;
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		param_vec_initial[iElement] = InitialParameter;
 	}
@@ -1359,17 +1352,17 @@ Optimization::Result Optimization::optimize(
 	// 3. optimize globally
 	spdlog::warn("Local optimization failed. Retry with global optimization.");
 	QuantumArray<ParameterVector> param_vec_global, param_vec_local;
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		param_vec_global[iElement] = InitialParameterForGlobalOptimizer;
 	}
 	[[maybe_unused]] auto [error_global_elem, steps_global_elem] = optimize_elementwise(TrainingSets, NLOptGlobalMinimizers, param_vec_global);
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		param_vec_local[iElement] = global_parameter_to_local(param_vec_global[iElement]);
 	}
 	auto [result_global, check_global] = optimize_and_check(param_vec_local);
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		std::get<1>(result_global)[iElement] += steps_global_elem[iElement];
 	}
@@ -1394,7 +1387,7 @@ Optimization::Result Optimization::optimize(
 QuantumArray<ParameterVector> Optimization::get_lower_bounds(void) const
 {
 	QuantumArray<ParameterVector> result;
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		result[iElement] = NLOptLocalMinimizers[iElement].get_lower_bounds();
 	}
@@ -1404,7 +1397,7 @@ QuantumArray<ParameterVector> Optimization::get_lower_bounds(void) const
 QuantumArray<ParameterVector> Optimization::get_upper_bounds(void) const
 {
 	QuantumArray<ParameterVector> result;
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		result[iElement] = NLOptLocalMinimizers[iElement].get_upper_bounds();
 	}

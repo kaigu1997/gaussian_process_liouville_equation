@@ -9,11 +9,12 @@
 #include "input.h"
 #include "predict.h"
 
-/// @brief To generate the points for the monte carlo integration
+/// @brief To generate the extra points for the density fitting
 /// @param[in] Params Parameters objects containing all the required information (r0, sigma0, mass)
 /// @param[in] NumPoints The number of points for each elements
-/// @return The selected points, the real part of whose first element is the weight
-AllPoints mc_points_generator(const AllPoints& density, const int NumPoints);
+/// @param[in] dist The current distribution
+/// @return The newly selected points with its corresponding distribution
+AllPoints extra_points_generator(const AllPoints& density, const std::size_t NumPoints, const DistributionFunction dist);
 
 /// @brief To calculate the population on one surface by monte carlo integration
 /// @param[in] kernel The kernel for prediction
@@ -37,7 +38,7 @@ double calculate_total_energy_average_one_surface(
 	const Kernel& kernel,
 	const AllPoints& mc_points,
 	const ClassicalVector<double>& mass,
-	const int PESIndex);
+	const std::size_t PESIndex);
 
 /// @brief To calculate the population by monte carlo integration
 /// @param[in] Kernels An array of kernels for prediction, whose size is NumElements

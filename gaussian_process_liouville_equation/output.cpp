@@ -19,7 +19,8 @@
 template <typename T>
 inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec)
 {
-	std::copy(vec.cbegin(), vec.cend(), std::ostream_iterator<T>(os, " "));
+	std::copy(vec.cbegin(), vec.cend() - 1, std::ostream_iterator<T>(os, " "));
+	os << *(vec.cend() - 1);
 	return os;
 }
 
@@ -27,10 +28,8 @@ inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec)
 /// its <x> and <p>, population and energy calculated by
 /// analytical integral, direct averaging and monte carlo
 /// integral. For those that is nonexistent (population by
-/// direct averaging and energy by analytical integral), output NAN.
-///
-/// Then, output total purity by analytical integral and monte carlo integral.
-///
+/// direct averaging and energy by analytical integral), output NAN. @n
+/// Then, output total purity by analytical integral and monte carlo integral. @n
 /// For the nomenclature, prm = parameter (analytical integral),
 /// ave = direct averaing, and mci = monte carlo integral.
 void output_average(
@@ -43,9 +42,9 @@ void output_average(
 	// average: time, population, x, p, V, T, E of each PES
 	ClassicalPhaseVector r_ave_all = ClassicalPhaseVector::Zero();
 	double e_ave_all = 0.0;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const int ElementIndex = iPES * (NumPES + 1);
+		const std::size_t ElementIndex = iPES * (NumPES + 1);
 		assert(!density[ElementIndex].empty() == Kernels[ElementIndex].has_value() && density[ElementIndex].empty() == mc_points[ElementIndex].empty());
 		if (!density[ElementIndex].empty())
 		{
@@ -97,7 +96,7 @@ void output_average(
 void output_param(std::ostream& os, const Optimization& Optimizer)
 {
 	const QuantumArray<ParameterVector> lb = Optimizer.get_lower_bounds(), param = Optimizer.get_parameters(), ub = Optimizer.get_upper_bounds();
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		os << lb[iElement] << '\n' << param[iElement] << '\n' << ub[iElement] << '\n';
 	}
@@ -106,50 +105,50 @@ void output_param(std::ostream& os, const Optimization& Optimizer)
 
 void output_point(std::ostream& os, const AllPoints& Points)
 {
-	const int NumPoints = get_num_points(Points);
-	const std::vector<int> indices = get_indices(NumPoints);
-	Eigen::MatrixXd result(PhaseDim * NumElements, NumPoints);
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	const std::size_t NumPoints = get_num_points(Points);
+	const std::vector<std::size_t> indices = get_indices(NumPoints);
+	QuantumArray<Eigen::MatrixXd> point_coordinates;
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (int jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			if (iPES <= jPES)
 			{
+				point_coordinates[ElementIndex] = Eigen::MatrixXd::Zero(PhaseDim, NumPoints);
 				// for row-major, visit upper triangular elements earlier
 				// so selection for the upper triangular elements
-				const int ElementIndex = iPES * NumPES + jPES;
-				const EigenVector<PhaseSpacePoint>& ElementPoints = Points[ElementIndex];
-				const int StartRow = ElementIndex * PhaseDim;
+				const ElementPoints& ElementPoints = Points[ElementIndex];
+				Eigen::MatrixXd& element_point_coordinates = point_coordinates[ElementIndex];
+				const std::size_t StartRow = ElementIndex * PhaseDim;
 				if (!ElementPoints.empty())
 				{
 					std::for_each(
 						std::execution::par_unseq,
 						indices.cbegin(),
 						indices.cend(),
-						[&ElementPoints, &result, StartRow](int iPoint) -> void
+						[&ElementPoints, &element_point_coordinates, StartRow](std::size_t iPoint) -> void
 						{
-							[[maybe_unused]] const auto& [x, p, rho] = ElementPoints[iPoint];
-							result.block<PhaseDim, 1>(StartRow, iPoint) << x, p;
+							[[maybe_unused]] const auto& [r, rho] = ElementPoints[iPoint];
+							element_point_coordinates.col(iPoint) = r;
 						});
 				}
-				else
-				{
-					result.block(StartRow, 0, PhaseDim, NumPoints) = Eigen::MatrixXd::Zero(PhaseDim, NumPoints);
-				}
+				// else 0, as already set
 			}
 			else
 			{
 				// for strict lower triangular elements, copy the upper part
-				result.block((iPES * NumPES + jPES) * NumPES, 0, PhaseDim, NumPoints) = result.block((jPES * NumPES + iPES) * NumPES, 0, PhaseDim, NumPoints);
+				point_coordinates[ElementIndex] = point_coordinates[jPES * NumPES + iPES];
 			}
+			os << point_coordinates[ElementIndex].format(MatrixFormatter) << '\n';
 		}
 	}
-	os << result.format(MatrixFormatter) << "\n\n";
+	os << '\n';
 }
 
 void output_phase(std::ostream& phase, std::ostream& variance, const OptionalKernels& Kernels, const Eigen::MatrixXd& PhaseGrids)
 {
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
 		if (Kernels[iElement].has_value())
 		{
@@ -176,9 +175,9 @@ void output_autocor(
 {
 	const AutoCorrelations step_autocor = autocorrelation_optimize_steps(MCParams, dist, density);
 	const AutoCorrelations displ_autocor = autocorrelation_optimize_displacement(MCParams, dist, density);
-	for (int iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
-		os << step_autocor[iElement].format(VectorFormatter) << displ_autocor[iElement].format(VectorFormatter) << '\n';
+		os << step_autocor[iElement].format(VectorFormatter) << ' ' << NAN << ' ' << displ_autocor[iElement].format(VectorFormatter) << '\n';
 	}
 	os << '\n';
 }

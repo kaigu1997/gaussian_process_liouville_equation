@@ -15,11 +15,11 @@ using ParameterVector = std::vector<double>;
 class Kernel final
 {
 public:
-	/// The unpacked parameters for the kernels.
+	static constexpr std::size_t NumTotalParameters = 1 + PhaseDim + 1; ///< The overall number of parameters, include 1 for noise, 1 for magnitude of Gaussian and phasedim for characteristic length of Gaussian
+
+	/// The unpacked parameters for the kernels. @n
 	/// First is the magnitude, then the characteristic lengths of Gaussian kernel, third the noise
 	using KernelParameter = std::tuple<double, ClassicalPhaseVector, double>;
-
-	static const std::size_t NumTotalParameters; ///< The overall number of parameters, include 1 for noise, 1 for magnitude of Gaussian and phasedim for characteristic length of Gaussian
 
 	Kernel() = delete;
 
@@ -222,5 +222,9 @@ private:
 	const std::optional<ParameterVector> PopulationDeriv;				 ///< The derivative of population over parameters
 	const std::optional<ParameterVector> PurityDeriv;					 ///< The derivative of purity over parameters
 };
+
+/// The packed parameters for Kernel, i.e., the packed version of @p Kernel::KernelParameter. @n
+/// The Eigen vector containing exactly the number of parameters 
+using ElementParameter = Eigen::Matrix<double, Kernel::NumTotalParameters, 1>;
 
 #endif // !KERNEL_H

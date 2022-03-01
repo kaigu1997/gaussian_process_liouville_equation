@@ -121,7 +121,7 @@ Tensor3d adiabatic_force(const ClassicalVector<double>& x)
 	Tensor3d AdiaForce;
 	const QuantumMatrix<double>& TransformMatrix = diabatic_to_adiabatic_matrix(x);
 	const Tensor3d& DiaForce = diabatic_force(x);
-	for (int i = 0; i < Dim; i++)
+	for (std::size_t i = 0; i < Dim; i++)
 	{
 		AdiaForce[i] = (TransformMatrix.adjoint() * DiaForce[i] * TransformMatrix).selfadjointView<Eigen::Lower>();
 	}
@@ -136,12 +136,12 @@ Tensor3d adiabatic_coupling(const ClassicalVector<double>& x)
 	Tensor3d NAC;
 	const Eigen::VectorXd& E = adiabatic_potential(x);
 	const Tensor3d& F = adiabatic_force(x);
-	for (int i = 0; i < Dim; i++)
+	for (std::size_t i = 0; i < Dim; i++)
 	{
 		NAC[i] = QuantumMatrix<double>::Zero();
-		for (int j = 1; j < NumPES; j++)
+		for (std::size_t j = 1; j < NumPES; j++)
 		{
-			for (int k = 0; k < j; k++)
+			for (std::size_t k = 0; k < j; k++)
 			{
 				NAC[i](j, k) = F[i](j, k) / (E[j] - E[k]);
 			}
@@ -151,10 +151,10 @@ Tensor3d adiabatic_coupling(const ClassicalVector<double>& x)
 	return NAC;
 }
 
-ClassicalVector<double> tensor_slice(const Tensor3d& tensor, const int row, const int col)
+ClassicalVector<double> tensor_slice(const Tensor3d& tensor, const std::size_t row, const std::size_t col)
 {
 	ClassicalVector<double> result;
-	for (int iDim = 0; iDim < Dim; iDim++)
+	for (std::size_t iDim = 0; iDim < Dim; iDim++)
 	{
 		result[iDim] = tensor[iDim](row, col);
 	}
@@ -171,7 +171,7 @@ ClassicalVector<double> tensor_slice(const Tensor3d& tensor, const int row, cons
 /// @f$ C^{\mathsf{T}}M_{\mathrm{adia}}C=M_{\mathrm{force }i} @f$,
 /// which diagonalizes force on the idx-th direction,
 /// and is the transformation matrix at a certain position x.
-static QuantumMatrix<double> adiabatic_to_force_basis_matrix(const ClassicalVector<double>& x, const int idx)
+static QuantumMatrix<double> adiabatic_to_force_basis_matrix(const ClassicalVector<double>& x, const std::size_t idx)
 {
 	const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(adiabatic_force(x)[idx]);
 	return solver.eigenvectors();
@@ -180,7 +180,7 @@ static QuantumMatrix<double> adiabatic_to_force_basis_matrix(const ClassicalVect
 /// @sa adiabatic_force(), adiabatic_to_force_basis_matrix()
 /// @details This function calculates the force of the given direction by
 /// diagonalization of the corresponding (idx) direction of the adiabatic force.
-QuantumVector<double> force_basis_force(const ClassicalVector<double>& x, const int idx)
+QuantumVector<double> force_basis_force(const ClassicalVector<double>& x, const std::size_t idx)
 {
 	const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(adiabatic_force(x)[idx]);
 	return solver.eigenvalues();
@@ -203,8 +203,8 @@ static inline void make_self_adjoint(QuantumMatrix<std::complex<double>>& mat)
 QuantumMatrix<std::complex<double>> basis_transform(
 	const QuantumMatrix<std::complex<double>>& rho,
 	const ClassicalVector<double>& x,
-	const int idx_from,
-	const int idx_to)
+	const std::size_t idx_from,
+	const std::size_t idx_to)
 {
 	QuantumMatrix<std::complex<double>> result = rho;
 	if (idx_from != idx_to)

@@ -19,41 +19,41 @@ using AutoCorrelations = QuantumArray<Eigen::VectorXd>;
 QuantumMatrix<bool> is_very_small(const AllPoints& density);
 
 /// @brief To generate initial adiabatic PWTDM at the given place
-/// @param[in] Params Parameters objects containing all the required information (r0, sigma0, mass)
+/// @param[in] r0 Initial center of phase space
+/// @param[in] SigmaR0 Initial standard deviation of phase space
 /// @param[in] InitialPopulation Initial population on each of the PES
-/// @param[in] x Position of classical degree of freedom
-/// @param[in] p Momentum of classical degree of freedom
+/// @param[in] r Given phase space coordinates
 /// @return The initial density matrix at the give phase point under adiabatic basis
 QuantumMatrix<std::complex<double>> initial_distribution(
-	const Parameters& Params,
+	const ClassicalPhaseVector& r0,
+	const ClassicalPhaseVector& SigmaR0,
 	const std::array<double, NumPES>& InitialPopulation,
-	const ClassicalVector<double>& x,
-	const ClassicalVector<double>& p);
+	const ClassicalPhaseVector& r);
 
 /// @brief To store the parameters used in MC process
 class MCParameters final
 {
-	int NumPoints, NOMC;
+	std::size_t NumPoints, NOMC;
 	double displacement;
 
 public:
 	static const double AboveMinFactor;
 	/// @brief Constructor. Initialization of parameters.
-	/// @param[in] Params Parameters object containing position, momentum, etc
+	/// @param[in] InitParams InitialParameters object containing position, momentum, etc
 	/// @param[in] NOMC_ The initial number of monte carlo steps
 	/// @param[in] NGrids_ The initial number of grids to set the length of displacement
-	MCParameters(const Parameters& Params, const int NOMC_ = 200);
+	MCParameters(const InitialParameters& InitParams, const std::size_t NOMC_ = 200);
 
 	/// @brief To set the number of selected points
 	/// @param[in] NumPoints_ The number of points to be selected
-	void set_num_points(const int NumPoints_)
+	void set_num_points(const std::size_t NumPoints_)
 	{
 		NumPoints = NumPoints_;
 	}
 
 	/// @brief To set the number of monte carlo steps
 	/// @param[in] NOMC_ The number of monte carlo steps
-	void set_num_MC_steps(const int NOMC_)
+	void set_num_MC_steps(const std::size_t NOMC_)
 	{
 		NOMC = NOMC_;
 	}
@@ -67,14 +67,14 @@ public:
 
 	/// @brief To get the number of points selected
 	/// @return The number of points selected
-	int get_num_points(void) const
+	std::size_t get_num_points(void) const
 	{
 		return NumPoints;
 	}
 
 	/// @brief To get the number of monte carlo steps
 	/// @return The number of monte carlo steps
-	int get_num_MC_steps(void) const
+	std::size_t get_num_MC_steps(void) const
 	{
 		return NOMC;
 	}
@@ -88,17 +88,15 @@ public:
 };
 
 /// @brief Using Metropolis Monte Carlo to select points
-/// @param[in] Params The input parameters (mass, dt, etc)
+/// @param[in] InitParams The input parameters (mass, dt, etc)
 /// @param[in] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
 /// @param[in] distribution The function object to generate the distribution
 /// @param[inout] density The selected points in phase space for each element of density matrices
 /// @param[in] IsToBeEvolved Whether the points are at evolved places or original places
 void monte_carlo_selection(
-	const Parameters& Params,
 	const MCParameters& MCParams,
 	const DistributionFunction& distribution,
-	AllPoints& density,
-	const bool IsToBeEvolved = false);
+	AllPoints& density);
 
 /// @brief To optimize the number of the monte carlo steps by autocorrelation
 /// @param[inout] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
@@ -123,7 +121,7 @@ AutoCorrelations autocorrelation_optimize_displacement(
 /// @brief To get the number of points for each elements
 /// @param[in] Points The selected points in phase space for each element of density matrices
 /// @return The number of points for non-zero element
-int get_num_points(const AllPoints& Points);
+std::size_t get_num_points(const AllPoints& Points);
 
 /// @brief To select points for new elements of density matrix
 /// @param[inout] density The selected points in phase space for each element of density matrices

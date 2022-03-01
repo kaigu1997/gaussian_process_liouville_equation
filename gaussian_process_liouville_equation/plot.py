@@ -1,4 +1,5 @@
 import matplotlib as mpl
+import matplotlib.animation
 import matplotlib.pyplot as plt
 import numpy as np
 import typing
@@ -187,13 +188,14 @@ def draw_point_anime(
 	p: np.ndarray,
 	t: np.ndarray,
 	parameter_point_file: str,
+	extra_point_file: str,
 	mcint_point_file: str,
 	title: str,
-	anime_both_file: str,
-	anime_mcint_file: str) -> np.ndarray:
+	anime_both_file: str) -> np.ndarray:
 	# general info and open files
 	PHASEDIM = 2 * DIM
 	prm_point = np.loadtxt(parameter_point_file).reshape((t.size, NUM_ELM, PHASEDIM, -1)) # prm = parameter
+	xtr_point = np.loadtxt(extra_point_file).reshape((t.size, NUM_ELM, PHASEDIM, -1)) # xtr = extra
 	mci_point = np.loadtxt(mcint_point_file).reshape((t.size, NUM_ELM, PHASEDIM, -1)) # mci = monte carlo integral
 	xmin = min(x[0], prm_point[:, :, 0, :].min(), mci_point[:, :, 0, :].min())
 	xmax = max(x[-1], prm_point[:, :, 0, :].max(), mci_point[:, :, 0, :].max())
@@ -221,35 +223,37 @@ def draw_point_anime(
 		return fig, axs,
 
 	# plot frame by frame, check if parameter points scattered
-	def ani_run(frame, is_plot_parameter_point):
+	def ani_run(frame):
 		if frame != 0:
 			for i in range(NUM_ELM):
 				row, col = i // NUM_PES, i % NUM_PES
 				axs[row][col].contourf(xv, pv, np.zeros((2, 2)), colors='white')
-				axs[row][col].scatter(mci_point[frame, i, 0, :], mci_point[frame, i, 1, :], s=3, c='red') # plot mci points
-				if is_plot_parameter_point:
-					axs[row][col].scatter(prm_point[frame, i, 0, :], prm_point[frame, i, 1, :], s=3, c='blue') # plot prm points
+				axs[row][col].scatter(mci_point[frame - 1, i, 0, :], mci_point[frame - 1, i, 1, :], s=3, c='red') # plot mci points
+				axs[row][col].scatter(xtr_point[frame - 1, i, 0, :], xtr_point[frame - 1, i, 1, :], s=3, c='green') # plot xtr points
+				axs[row][col].scatter(prm_point[frame - 1, i, 0, :], prm_point[frame - 1, i, 1, :], s=3, c='blue') # plot prm points
 			fig.suptitle(title + '\n' + time_template % t[frame - 1])
 		return fig, axs,
 
-	mpl.animation.FuncAnimation(fig, ani_run, t.size, ani_init, fargs=(True,), interval=10, repeat=False, blit=False).save(anime_both_file, 'imagemagick')
+	mpl.animation.FuncAnimation(fig, ani_run, t.size, ani_init, interval=10, repeat=False, blit=False).save(anime_both_file, 'imagemagick')
 	fig.clear()
 	axs = fig.subplots(nrows=NUM_ROW, ncols=NUM_COL)
-	mpl.animation.FuncAnimation(fig, ani_run, t.size, ani_init, fargs=(False,), interval=10, repeat=False, blit=False).save(anime_mcint_file, 'imagemagick')
 	# after animation, move out-of-range point into the box
 	prm_point[:, :, 0, :] = np.where(prm_point[:, :, 0, :] < x[0], x[0], prm_point[:, :, 0, :])
 	prm_point[:, :, 0, :] = np.where(prm_point[:, :, 0, :] > x[-1], x[-1], prm_point[:, :, 0, :])
 	prm_point[:, :, 1, :] = np.where(prm_point[:, :, 1, :] < p[0], p[0], prm_point[:, :, 1, :])
 	prm_point[:, :, 1, :] = np.where(prm_point[:, :, 1, :] > p[-1], p[-1], prm_point[:, :, 1, :])
-	return prm_point
+	xtr_point[:, :, 0, :] = np.where(xtr_point[:, :, 0, :] < x[0], x[0], xtr_point[:, :, 0, :])
+	xtr_point[:, :, 0, :] = np.where(xtr_point[:, :, 0, :] > x[-1], x[-1], xtr_point[:, :, 0, :])
+	xtr_point[:, :, 1, :] = np.where(xtr_point[:, :, 1, :] < p[0], p[0], xtr_point[:, :, 1, :])
+	xtr_point[:, :, 1, :] = np.where(xtr_point[:, :, 1, :] > p[-1], p[-1], xtr_point[:, :, 1, :])
+	return np.append(prm_point, xtr_point, axis=3)
 
 
 def draw_phase_anime(
-	DIM: int,
 	x: np.ndarray,
 	p: np.ndarray,
 	t: np.ndarray,
-	point_file: typing.Union[str, np.ndarray],
+	point_file: np.ndarray,
 	phase_file: typing.Union[str, np.ndarray],
 	title: str,
 	anime_point_file: str,
@@ -265,8 +269,8 @@ def draw_phase_anime(
 	axs = fig.subplots(nrows=NUM_ROW, ncols=NUM_COL)
 	time_template = 'Time = %da.u.'
 	# open files
-	point = (np.loadtxt(point_file) if type(point_file) == str else point_file)
-	phase = (np.loadtxt(phase_file) if type(phase_file) == str else phase_file)
+	point = point_file
+	phase = (np.loadtxt(phase_file).reshape((t.size, NUM_ELM, LEN_X, LEN_P)) if type(phase_file) == str else phase_file)
 	# construct the color bar
 	if is_logscale:
 		COLORBAR_LIMIT = np.max(np.abs(np.log(phase[phase > 0])))
@@ -299,16 +303,16 @@ def draw_phase_anime(
 			for i in range(NUM_ELM):
 				row, col = i // NUM_PES, i % NUM_PES
 				place = NUM_ELM * (frame - 1) + i
-				axs[row][col].contourf(xv, pv, phase[place].reshape(LEN_X, LEN_P).T, levels=LEVEL, cmap=CMAP, norm=NORM) # plot contours
+				axs[row][col].contourf(xv, pv, phase[frame - 1, i].T, levels=LEVEL, cmap=CMAP, norm=NORM) # plot contours
 				if is_plot_point:
-					axs[row][col].scatter(point[frame, i, 0, :], point[frame, i, 1, :], s=3, c='black') # plot points
+					axs[row][col].scatter(point[frame - 1, i, 0, :], point[frame - 1, i, 1, :], s=3, c='black') # plot points
 			fig.suptitle(title + '\n' + time_template % t[frame - 1])
 		return fig, axs,
 
-	mpl.animation.FuncAnimation(fig, ani_run, t.size, ani_init, fargs=(True,), interval=10, repeat=False, blit=False).save(anime_point_file, 'imagemagick')
+	mpl.animation.FuncAnimation(fig, ani_run, t.size, ani_init, fargs=(True,), interval=200, repeat=False, blit=False).save(anime_point_file, 'imagemagick')
 	fig.clear()
 	axs = fig.subplots(nrows=NUM_ROW, ncols=NUM_COL)
-	mpl.animation.FuncAnimation(fig, ani_run, t.size, ani_init, fargs=(False,), interval=10, repeat=False, blit=False).save(anime_no_point_file, 'imagemagick')
+	mpl.animation.FuncAnimation(fig, ani_run, t.size, ani_init, fargs=(False,), interval=200, repeat=False, blit=False).save(anime_no_point_file, 'imagemagick')
 	return phase
 
 
@@ -318,7 +322,8 @@ if __name__ == '__main__':
 	LOG_FILE, LOG_PIC = 'run.log', 'log.png'
 	AVE_FILE, AVE_PIC = 'ave.txt', 'ave.png'
 	PRM_FILE, PRM_PIC = 'param.txt', 'param.png'
-	PRM_PT_FILE, MC_PT_FILE, PT_TITLE, BOTH_PT_ANI, MC_PT_ANI = 'prm_point.txt', 'mci_point.txt', 'Points for Monte Carlo Integral', 'point.gif', 'mci_point.gif'
+	PRM_PT_FILE, MCI_PT_FILE, XTR_PT_FILE = 'prm_point.txt', 'mci_point.txt', 'xtr_point.txt'
+	PT_TITLE, ALL_PT_ANI = 'Points for Monte Carlo Integral', 'point.gif'
 	PHS_FILE, PHS_TITLE, PHS_PT_ANI, PHS_NPT_ANI = 'phase.txt', 'Predicted Phase Space Distribution', 'phase_point.gif', 'phase_no_point.gif'
 	VAR_FILE, VAR_TITLE, VAR_PT_ANI, VAR_NPT_ANI = 'var.txt', 'Prediction Variance', 'variance_point.gif', 'variance_no_point.gif'
 	PHS_VAR_TITLE, PHS_VAR_PT_ANI, PHS_VAR_NPT_ANI = 'Predicted Distribution', 'phase_var_point.gif', 'phase_var_no_point.gif'
@@ -335,8 +340,8 @@ if __name__ == '__main__':
 			NUM_GRID = int(np.sqrt(len(pf.readline().split())))
 			pf.close()
 		x, p = np.linspace(xmin, xmax, NUM_GRID), np.linspace(pmin, pmax, NUM_GRID)
-		pt_data = draw_point_anime(DIM, x, p, t, PRM_PT_FILE, MC_PT_FILE, PT_TITLE, BOTH_PT_ANI, MC_PT_ANI)
-		phs_data = draw_phase_anime(DIM, x, p, t, pt_data, PHS_FILE, PHS_TITLE, PHS_PT_ANI, PHS_NPT_ANI, False)
-		var_data = draw_phase_anime(DIM, x, p, t, pt_data, VAR_FILE, VAR_TITLE, VAR_PT_ANI, VAR_NPT_ANI, True)
+		pt_data = draw_point_anime(DIM, x, p, t, PRM_PT_FILE, XTR_PT_FILE, MCI_PT_FILE, PT_TITLE, ALL_PT_ANI)
+		phs_data = draw_phase_anime(x, p, t, pt_data, PHS_FILE, PHS_TITLE, PHS_PT_ANI, PHS_NPT_ANI, False)
+		var_data = draw_phase_anime(x, p, t, pt_data, VAR_FILE, VAR_TITLE, VAR_PT_ANI, VAR_NPT_ANI, True)
 		phs_data[np.power(phs_data, 2) < var_data] = 0.0
-		draw_phase_anime(DIM, x, p, t, pt_data, phs_data, PHS_VAR_TITLE, PHS_VAR_PT_ANI, PHS_VAR_NPT_ANI, False)
+		draw_phase_anime(x, p, t, pt_data, phs_data, PHS_VAR_TITLE, PHS_VAR_PT_ANI, PHS_VAR_NPT_ANI, False)

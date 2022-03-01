@@ -9,7 +9,7 @@
 #include "pes.h"
 
 /// @details The reduction is not combined in return because of STUPID clang-format.
-ClassicalPhaseVector calculate_1st_order_average_one_surface(const EigenVector<PhaseSpacePoint>& density)
+ClassicalPhaseVector calculate_1st_order_average_one_surface(const ElementPoints& density)
 {
 	assert(!density.empty());
 	const ClassicalPhaseVector result =
@@ -21,15 +21,13 @@ ClassicalPhaseVector calculate_1st_order_average_one_surface(const EigenVector<P
 			std::plus<ClassicalPhaseVector>(),
 			[](const PhaseSpacePoint& psp) -> ClassicalPhaseVector
 			{
-				[[maybe_unused]] const auto& [x, p, rho] = psp;
-				ClassicalPhaseVector result;
-				result << x, p;
-				return result;
+				[[maybe_unused]] const auto& [r, rho] = psp;
+				return r;
 			});
 	return result / density.size();
 }
 
-ClassicalPhaseVector calculate_standard_deviation_one_surface(const EigenVector<PhaseSpacePoint>& density)
+ClassicalPhaseVector calculate_standard_deviation_one_surface(const ElementPoints& density)
 {
 	assert(!density.empty());
 	const ClassicalPhaseVector sum_square_r =
@@ -41,18 +39,16 @@ ClassicalPhaseVector calculate_standard_deviation_one_surface(const EigenVector<
 			std::plus<ClassicalPhaseVector>(),
 			[](const PhaseSpacePoint& psp) -> ClassicalPhaseVector
 			{
-				[[maybe_unused]] const auto& [x, p, rho] = psp;
-				ClassicalPhaseVector result;
-				result << x, p;
-				return result.array().square();
+				[[maybe_unused]] const auto& [r, rho] = psp;
+				return r.array().square();
 			});
 	return (sum_square_r.array() / density.size() - calculate_1st_order_average_one_surface(density).array().square()).sqrt();
 }
 
 double calculate_total_energy_average_one_surface(
-	const EigenVector<PhaseSpacePoint>& density,
+	const ElementPoints& density,
 	const ClassicalVector<double>& mass,
-	const int PESIndex)
+	const std::size_t PESIndex)
 {
 	assert(!density.empty());
 	const double result =
@@ -64,35 +60,17 @@ double calculate_total_energy_average_one_surface(
 			std::plus<double>(),
 			[&mass, PESIndex](const PhaseSpacePoint& psp) -> double
 			{
-				[[maybe_unused]] const auto& [x, p, rho] = psp;
+				[[maybe_unused]] const auto& [r, rho] = psp;
+				const auto [x, p] = split_phase_coordinate(r);
 				return p.dot((p.array() / mass.array()).matrix()) / 2.0 + adiabatic_potential(x)[PESIndex];
 			});
 	return result / density.size();
 }
 
-Eigen::MatrixXd construct_training_feature(const EigenVector<ClassicalVector<double>>& x, const EigenVector<ClassicalVector<double>>& p)
-{
-	assert(x.size() == p.size());
-	const int size = x.size();
-	Eigen::MatrixXd result(PhaseDim, size);
-	const std::vector<int> indices = get_indices(size);
-	std::for_each(
-		std::execution::par_unseq,
-		indices.cbegin(),
-		indices.cend(),
-		[&result, &x, &p](int i) -> void
-		{
-			result.col(i) << x[i], p[i];
-		});
-	return result;
-}
-
-/// @details Using Gaussian Process Regression to predict by
-///
+/// @details Using Gaussian Process Regression to predict by @n
 /// @f[
 /// \mathbb{E}[p(\mathbf{f}_*|X_*,X,\mathbf{y})]=K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}\mathbf{y}
-/// @f]
-///
+/// @f] @n
 /// where @f$ X_* @f$ is the test features, @f$ X @f$ is the training features,
 /// and @f$ \mathbf{y} @f$ is the training labels.
 Eigen::VectorXd predict_elements(const Kernel& kernel, const Eigen::MatrixXd& PhaseGrids)
@@ -103,21 +81,19 @@ Eigen::VectorXd predict_elements(const Kernel& kernel, const Eigen::MatrixXd& Ph
 }
 
 /**
- * @details The derivative is given by
- *
+ * @details The derivative is given by @n
  * @f{eqnarray*}{
  * \frac{\partial}{\partial\theta}\mathbb{E}[p(\mathbf{f}_*|X_*,X,\mathbf{y})]
  * &=&\frac{\partial K(X_*,X)}{\partial\theta}[K(X,X)+\sigma_n^2I]^{-1}\mathbf{y} \\
  * &-&K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}\frac{\partial[K(X,X)+\sigma_n^2I]}{\partial\theta}[K(X,X)+\sigma_n^2I]^{-1}\mathbf{y}
- * @f}
- *
+ * @f} @n
  * where @f$ \theta @f$ stands for the parameters.
  */
-ParameterVector prediction_derivative(const Kernel& kernel, const ClassicalVector<double>& x, const ClassicalVector<double>& p)
+ElementParameter prediction_derivative(const Kernel& kernel, const ClassicalPhaseVector& r)
 {
 	assert(kernel.is_same_feature() && kernel.is_derivative_calculated());
-	const Kernel k_new_old(kernel.get_parameters(), construct_training_feature({x}, {p}), kernel.get_left_feature(), true);
-	ParameterVector result(Kernel::NumTotalParameters);
+	const Kernel k_new_old(kernel.get_parameters(), r, kernel.get_left_feature(), true);
+	ElementParameter result = ElementParameter::Zero();
 	for (std::size_t iParam = 0; iParam < Kernel::NumTotalParameters; iParam++)
 	{
 		result[iParam] = (k_new_old.get_derivatives()[iParam] * kernel.get_inverse_label()).value()
@@ -126,20 +102,17 @@ ParameterVector prediction_derivative(const Kernel& kernel, const ClassicalVecto
 	return result;
 }
 
-/// @details The variance is given by
-///
+/// @details The variance is given by @n
 /// @f[
 /// \mathrm{Var}=K(X_*,X_*)-K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}K(X,X_*)
-/// @f]
-///
-/// and if the prediction is smaller than variance, the prediction will be set as 0.
-///
+/// @f] @n
+/// and if the prediction is smaller than variance, the prediction will be set as 0. @n
 /// The variance matrix is generally too big and not necessary, so it will be calculated elementwise.
 Eigen::VectorXd predict_variances(const Kernel& kernel, const Eigen::MatrixXd& PhaseGrids)
 {
 	assert(kernel.is_same_feature() && PhaseGrids.rows() == PhaseDim);
 	const Kernel k_new_old(kernel.get_parameters(), PhaseGrids, kernel.get_left_feature(), false);
-	auto calc_result = [&kernel, &k_new_old, &PhaseGrids](const int iCol) -> double
+	auto calc_result = [&kernel, &k_new_old, &PhaseGrids](const std::size_t iCol) -> double
 	{
 		// construct two features so that K(X*,X*) does not contain noise
 		const Eigen::MatrixXd feature = PhaseGrids.col(iCol);
@@ -147,33 +120,29 @@ Eigen::VectorXd predict_variances(const Kernel& kernel, const Eigen::MatrixXd& P
 		const auto& k_new_old_row_i = k_new_old.get_kernel().row(iCol);
 		return (k_new_new.get_kernel() - k_new_old_row_i * kernel.get_inverse() * k_new_old_row_i.transpose()).value();
 	};
-	const unsigned NumPoints = PhaseGrids.cols();
+	const std::size_t NumPoints = PhaseGrids.cols();
 	Eigen::VectorXd result(NumPoints);
-	const std::vector<int> indices = get_indices(NumPoints);
+	const std::vector<std::size_t> indices = get_indices(NumPoints);
 	std::for_each(
 		std::execution::par_unseq,
 		indices.cbegin(),
 		indices.cend(),
-		[&result, &calc_result](int iCol) -> void
+		[&result, &calc_result](std::size_t iCol) -> void
 		{
 			result[iCol] = calc_result(iCol);
 		});
 	return result;
 }
 
-QuantumMatrix<std::complex<double>> predict_matrix(
-	const OptionalKernels& Kernels,
-	const ClassicalVector<double>& x,
-	const ClassicalVector<double>& p)
+QuantumMatrix<std::complex<double>> predict_matrix(const OptionalKernels& Kernels, const ClassicalPhaseVector& r)
 {
 	using namespace std::literals::complex_literals;
-	const Eigen::MatrixXd PhaseCoord = construct_training_feature({x}, {p});
-	auto predict = [&Kernels, &PhaseCoord](const int iPES, const int jPES) -> double
+	auto predict = [&Kernels, &r](const std::size_t iPES, const std::size_t jPES) -> double
 	{
-		const int ElementIndex = iPES * NumPES + jPES;
+		const std::size_t ElementIndex = iPES * NumPES + jPES;
 		if (Kernels[ElementIndex].has_value())
 		{
-			return predict_elements(Kernels[ElementIndex].value(), PhaseCoord).value();
+			return predict_elements(Kernels[ElementIndex].value(), r).value();
 		}
 		else
 		{
@@ -181,9 +150,9 @@ QuantumMatrix<std::complex<double>> predict_matrix(
 		}
 	};
 	QuantumMatrix<std::complex<double>> result = QuantumMatrix<std::complex<double>>::Zero();
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (int jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
 			const double ElementValue = predict(iPES, jPES);
 			if (iPES <= jPES)
@@ -202,9 +171,9 @@ QuantumMatrix<std::complex<double>> predict_matrix(
 double calculate_population(const OptionalKernels& Kernels)
 {
 	double result = 0.0;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const int ElementIndex = iPES * NumPES + iPES;
+		const std::size_t ElementIndex = iPES * NumPES + iPES;
 		if (Kernels[ElementIndex].has_value())
 		{
 			result += Kernels[ElementIndex]->get_population();
@@ -216,9 +185,9 @@ double calculate_population(const OptionalKernels& Kernels)
 ClassicalPhaseVector calculate_1st_order_average(const OptionalKernels& Kernels)
 {
 	ClassicalPhaseVector result = ClassicalPhaseVector::Zero();
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const int ElementIndex = iPES * NumPES + iPES;
+		const std::size_t ElementIndex = iPES * NumPES + iPES;
 		if (Kernels[ElementIndex].has_value())
 		{
 			result += Kernels[ElementIndex]->get_1st_order_average();
@@ -232,9 +201,9 @@ ClassicalPhaseVector calculate_1st_order_average(const OptionalKernels& Kernels)
 double calculate_total_energy_average(const OptionalKernels& Kernels, const QuantumVector<double>& Energies)
 {
 	double result = 0.0;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const int ElementIndex = iPES * NumPES + iPES;
+		const std::size_t ElementIndex = iPES * NumPES + iPES;
 		if (Kernels[ElementIndex].has_value())
 		{
 			result += Kernels[ElementIndex]->get_population() * Energies[iPES];
@@ -247,11 +216,11 @@ double calculate_total_energy_average(const OptionalKernels& Kernels, const Quan
 double calculate_purity(const OptionalKernels& Kernels)
 {
 	double result = 0.0;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (int jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
-			const int ElementIndex = iPES * NumPES + jPES;
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			if (Kernels[ElementIndex].has_value())
 			{
 				if (iPES == jPES)
@@ -271,9 +240,9 @@ double calculate_purity(const OptionalKernels& Kernels)
 ParameterVector population_derivative(const OptionalKernels& Kernels)
 {
 	ParameterVector result;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const int ElementIndex = iPES * NumPES + iPES;
+		const std::size_t ElementIndex = iPES * NumPES + iPES;
 		if (Kernels[ElementIndex].has_value())
 		{
 			const ParameterVector& grad = Kernels[ElementIndex]->get_population_derivative();
@@ -290,9 +259,9 @@ ParameterVector population_derivative(const OptionalKernels& Kernels)
 ParameterVector energy_derivative(const OptionalKernels& Kernels, const QuantumVector<double>& Energies)
 {
 	ParameterVector result;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const int ElementIndex = iPES * NumPES + iPES;
+		const std::size_t ElementIndex = iPES * NumPES + iPES;
 		if (Kernels[ElementIndex].has_value())
 		{
 			ParameterVector grad = Kernels[ElementIndex]->get_population_derivative();
@@ -313,11 +282,11 @@ ParameterVector energy_derivative(const OptionalKernels& Kernels, const QuantumV
 ParameterVector purity_derivative(const OptionalKernels& Kernels)
 {
 	ParameterVector result;
-	for (int iPES = 0; iPES < NumPES; iPES++)
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (int jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
-			const int ElementIndex = iPES * NumPES + jPES;
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			if (Kernels[ElementIndex].has_value())
 			{
 				const ParameterVector& grad = Kernels[ElementIndex]->get_purity_derivative();

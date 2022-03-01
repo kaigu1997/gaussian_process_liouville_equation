@@ -48,7 +48,7 @@ Tensor3d adiabatic_force(const ClassicalVector<double>& x);
 /// @param[in] row The row index of the tensor
 /// @param[in] col The column index of the tensor
 /// @return A vector, that is tensor(0, row, col) to tensor(idx1_max, row, col)
-ClassicalVector<double> tensor_slice(const Tensor3d& tensor, const int row, const int col);
+ClassicalVector<double> tensor_slice(const Tensor3d& tensor, const std::size_t row, const std::size_t col);
 
 /// @brief To transform density matrix from one basis to another
 /// @param[in] rho The PWTDM, a self-adjoint complex matrix
@@ -59,7 +59,7 @@ ClassicalVector<double> tensor_slice(const Tensor3d& tensor, const int row, cons
 QuantumMatrix<std::complex<double>> basis_transform(
 	const QuantumMatrix<std::complex<double>>& rho,
 	const ClassicalVector<double>& x,
-	const int idx_from,
-	const int idx_to);
+	const std::size_t idx_from,
+	const std::size_t idx_to);
 
 #endif // !PES_H

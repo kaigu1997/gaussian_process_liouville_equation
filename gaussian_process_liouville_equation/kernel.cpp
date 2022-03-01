@@ -5,8 +5,6 @@
 
 #include "kernel.h"
 
-const std::size_t Kernel::NumTotalParameters = 1 + PhaseDim + 1;
-
 /// @brief To unpack the parameters to components
 /// @param[in] Parameter All the parameters
 /// @return The unpacked parameters
@@ -20,7 +18,7 @@ static Kernel::KernelParameter unpack_parameters(const ParameterVector& Paramete
 	// first, magnitude
 	magnitude = Parameter[iParam++];
 	// second, Gaussian
-	for (int iDim = 0; iDim < PhaseDim; iDim++)
+	for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 	{
 		char_length[iDim] = Parameter[iDim + iParam];
 	}
@@ -40,29 +38,29 @@ static Eigen::MatrixXd gaussian_kernel(
 	const Eigen::MatrixXd& LeftFeature,
 	const Eigen::MatrixXd& RightFeature)
 {
-	auto calculate_element = [&CharacteristicLength, &LeftFeature, &RightFeature](const int iRow, const int iCol) -> double
+	auto calculate_element = [&CharacteristicLength, &LeftFeature, &RightFeature](const std::size_t iRow, const std::size_t iCol) -> double
 	{
 		const auto& diff = ((LeftFeature.col(iRow) - RightFeature.col(iCol)).array() / CharacteristicLength.array()).matrix();
 		return std::exp(-diff.squaredNorm() / 2.0);
 	};
-	const int Rows = LeftFeature.cols(), Cols = RightFeature.cols();
+	const std::size_t Rows = LeftFeature.cols(), Cols = RightFeature.cols();
 	const bool IsTrainingSet = LeftFeature.data() == RightFeature.data() && Rows == Cols;
 	Eigen::MatrixXd result = Eigen::MatrixXd::Zero(Rows, Cols);
-	const std::vector<int> indices = get_indices(static_cast<bool>(result.IsRowMajor) ? Rows : Cols);
+	const std::vector<std::size_t> indices = get_indices(static_cast<bool>(result.IsRowMajor) ? Rows : Cols);
 	std::for_each(
 		std::execution::par_unseq,
 		indices.cbegin(),
 		indices.cend(),
-		[&result, &calculate_element, Rows, Cols, IsTrainingSet](int i) -> void
+		[&result, &calculate_element, Rows, Cols, IsTrainingSet](std::size_t i) -> void
 		{
 			if (static_cast<bool>(result.IsRowMajor))
 			{
 				// row major
-				const int iRow = i;
+				const std::size_t iRow = i;
 				if (IsTrainingSet)
 				{
 					// training set, the matrix is symmetric
-					for (int iCol = 0; iCol < iRow; iCol++)
+					for (std::size_t iCol = 0; iCol < iRow; iCol++)
 					{
 						result(iRow, iCol) += calculate_element(iRow, iCol);
 					}
@@ -70,7 +68,7 @@ static Eigen::MatrixXd gaussian_kernel(
 				else
 				{
 					// general rectangular
-					for (int iCol = 0; iCol < Cols; iCol++)
+					for (std::size_t iCol = 0; iCol < Cols; iCol++)
 					{
 						result(iRow, iCol) += calculate_element(iRow, iCol);
 					}
@@ -79,11 +77,11 @@ static Eigen::MatrixXd gaussian_kernel(
 			else
 			{
 				// column major
-				const int iCol = i;
+				const std::size_t iCol = i;
 				if (IsTrainingSet)
 				{
 					// training set, the matrix is symmetric
-					for (int iRow = iCol + 1; iRow < Rows; iRow++)
+					for (std::size_t iRow = iCol + 1; iRow < Rows; iRow++)
 					{
 						result(iRow, iCol) += calculate_element(iRow, iCol);
 					}
@@ -91,7 +89,7 @@ static Eigen::MatrixXd gaussian_kernel(
 				else
 				{
 					// general rectangular
-					for (int iRow = 0; iRow < Rows; iRow++)
+					for (std::size_t iRow = 0; iRow < Rows; iRow++)
 					{
 						result(iRow, iCol) += calculate_element(iRow, iCol);
 					}
@@ -112,14 +110,11 @@ static Eigen::MatrixXd gaussian_kernel(
 /// @param[in] LeftFeature The left feature
 /// @param[in] RightFeature The right feature
 /// @return The kernel matrix
-/// @details This function calculates the kernel matrix with noise. Denote @f$ x_{mni}=\frac{[\mathbf{x}_m]_i-[\mathbf{x}_n]_i}{l_i} @f$,
-///
+/// @details This function calculates the kernel matrix with noise. Denote @f$ x_{mni}=\frac{[\mathbf{x}_m]_i-[\mathbf{x}_n]_i}{l_i} @f$, @n
 /// @f[
 /// k(\mathbf{x}_1,\mathbf{x}_2)=\sigma_f^2\mathrm{exp}\left(-\frac{1}{2}\sum_ix_{12i}^2\right)+\sigma_n^2\delta(\mathbf{x}_1-\mathbf{x}_2)
-/// @f]
-///
-/// where M is the characteristic matrix in the form of a diagonal matrix, whose elements are the characteristic length of each dimention.
-///
+/// @f] @n
+/// where M is the characteristic matrix in the form of a diagonal matrix, whose elements are the characteristic length of each dimention. @n
 /// When there are more than one feature, the kernel matrix follows @f$ K_{ij}=k(X_{1_{\cdot i}}, X_{2_{\cdot j}}) @f$.
 static inline Eigen::MatrixXd get_kernel_matrix(
 	const Kernel::KernelParameter& KernelParams,
@@ -127,7 +122,7 @@ static inline Eigen::MatrixXd get_kernel_matrix(
 	const Eigen::MatrixXd& RightFeature)
 {
 	assert(LeftFeature.rows() == PhaseDim && RightFeature.rows() == PhaseDim);
-	const int Rows = LeftFeature.cols(), Cols = RightFeature.cols();
+	const std::size_t Rows = LeftFeature.cols(), Cols = RightFeature.cols();
 	Eigen::MatrixXd result = Eigen::MatrixXd::Zero(Rows, Cols);
 	const auto& [Magnitude, CharLength, Noise] = KernelParams;
 	// second, Gaussian
@@ -147,8 +142,7 @@ static inline Eigen::MatrixXd get_kernel_matrix(
 /// @param[in] KernelParams The unpacked parameters for all kernels
 /// @param[in] InvLbl The inverse of kernel matrix of training features times the training labels
 /// @return The integral of @f$ \langle\rho\rangle @f$
-/// @details For the current kernel,
-///
+/// @details For the current kernel, @n
 /// @f[
 /// \langle\rho\rangle=(2\pi)^D\sigma_f^2\prod_i\abs{l_i}\sum_i[K^{-1}\mathbf{y}]_i
 /// @f]
@@ -166,12 +160,10 @@ static inline double calculate_population(const Kernel::KernelParameter& KernelP
 /// @param[in] Features The features
 /// @param[in] InvLbl The inverse of kernel matrix of training features times the training labels
 /// @return Average positions and momenta
-/// @details For the current kernel, for @f$ x_0 @f$ for example,
-///
+/// @details For the current kernel, for @f$ x_0 @f$ for example, @n
 /// @f[
 /// \langle x_0\rangle=(2\pi)^D\sigma_f^2\prod_i\abs{l_i}\sum_i[\mathbf{x}_i]_0[K^{-1}\mathbf{y}]_i
-/// @f]
-///
+/// @f] @n
 /// and similar for other @f$ x_i @f$ and @f$ p_i @f$.
 static inline ClassicalPhaseVector calculate_1st_order_average(
 	const Kernel::KernelParameter& KernelParams,
@@ -190,12 +182,10 @@ static inline ClassicalPhaseVector calculate_1st_order_average(
 /// @param[in] Features The features
 /// @param[in] InvLbl The inverse of kernel matrix of training features times the training labels
 /// @return The integral of @f$ (2\pi\hbar)^{\frac{d}{2}}\langle\rho^2\rangle @f$
-/// @details For the current kernel,
-///
+/// @details For the current kernel, @n
 /// @f[
 /// (2\pi\hbar)^{\frac{d}{2}}\langle\rho^2\rangle=(\pi)^D\sigma_f^4\prod_i\abs{l_i}\mathbf{y}^{\mathsf{T}}K^{-1}K_1K^{-1}\mathbf{y}
-/// @f]
-///
+/// @f] @n
 /// where @f$ [K_1]_{mn}=\mathrm{exp}\left(-\frac{1}{4}\sum_i x_{mni}^2\right) @f$
 /// if denote @f$ x_{mni}=\frac{[\mathbf{x}_m]_i-[\mathbf{x}_n]_i}{l_i} @f$.
 static inline double calculate_purity(
@@ -216,12 +206,10 @@ static inline double calculate_purity(
 /// @param[in] RightFeature The right feature
 /// @return The derivative of gaussian kernel over characteristic lengths
 /// @details Denote @f$ x_{mni}=\frac{[\mathbf{x}_m]_i-[\mathbf{x}_n]_i}{l_i} @f$,
-/// for the derivative of element @f$ K_{mn} @f$ over characteristic length @f$ l_j @f$
-///
+/// for the derivative of element @f$ K_{mn} @f$ over characteristic length @f$ l_j @f$ @n
 /// @f[
 /// \frac{\partial K_{mn}}{\partial l_j}=\mathrm{exp}\left(-\frac{1}{2}\sum_i x_{mni}^2\right)\frac{x_{mnj}^2}{l_j}
-/// @f]
-///
+/// @f] @n
 /// and thus the derivative matrix is constructed.
 static EigenVector<Eigen::MatrixXd> gaussian_derivative_over_char_length(
 	const ClassicalPhaseVector& CharacteristicLength,
@@ -229,33 +217,33 @@ static EigenVector<Eigen::MatrixXd> gaussian_derivative_over_char_length(
 	const Eigen::MatrixXd& RightFeature)
 {
 	const Eigen::MatrixXd& GaussianKernelMatrix = gaussian_kernel(CharacteristicLength, LeftFeature, RightFeature);
-	auto calculate_factor = [&CharacteristicLength, &LeftFeature, &RightFeature](const int iRow, const int iCol) -> ClassicalPhaseVector
+	auto calculate_factor = [&CharacteristicLength, &LeftFeature, &RightFeature](const std::size_t iRow, const std::size_t iCol) -> ClassicalPhaseVector
 	{
 		const auto& diff = (LeftFeature.col(iRow) - RightFeature.col(iCol)).array() / CharacteristicLength.array();
 		return diff.square() / CharacteristicLength.array();
 	};
 	EigenVector<Eigen::MatrixXd> result(PhaseDim, GaussianKernelMatrix);
-	const int Rows = LeftFeature.cols(), Cols = RightFeature.cols();
+	const std::size_t Rows = LeftFeature.cols(), Cols = RightFeature.cols();
 	const bool IsRowMajor = static_cast<bool>(GaussianKernelMatrix.IsRowMajor);
 	const bool IsTrainingSet = LeftFeature.data() == RightFeature.data() && Rows == Cols;
-	const std::vector<int> indices = get_indices(IsRowMajor ? Rows : Cols);
+	const std::vector<std::size_t> indices = get_indices(IsRowMajor ? Rows : Cols);
 	std::for_each(
 		std::execution::par_unseq,
 		indices.cbegin(),
 		indices.cend(),
-		[&result, &calculate_factor, Rows, Cols, IsRowMajor, IsTrainingSet](int i) -> void
+		[&result, &calculate_factor, Rows, Cols, IsRowMajor, IsTrainingSet](std::size_t i) -> void
 		{
 			if (IsRowMajor)
 			{
 				// row major
-				const int iRow = i;
+				const std::size_t iRow = i;
 				if (IsTrainingSet)
 				{
 					// training set, the matrix is symmetric
-					for (int iCol = 0; iCol < iRow; iCol++)
+					for (std::size_t iCol = 0; iCol < iRow; iCol++)
 					{
 						const ClassicalPhaseVector& factor = calculate_factor(iRow, iCol);
-						for (int iDim = 0; iDim < PhaseDim; iDim++)
+						for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 						{
 							result[iDim](iRow, iCol) *= factor[iDim];
 						}
@@ -264,10 +252,10 @@ static EigenVector<Eigen::MatrixXd> gaussian_derivative_over_char_length(
 				else
 				{
 					// general rectangular
-					for (int iCol = 0; iCol < Cols; iCol++)
+					for (std::size_t iCol = 0; iCol < Cols; iCol++)
 					{
 						const ClassicalPhaseVector& factor = calculate_factor(iRow, iCol);
-						for (int iDim = 0; iDim < PhaseDim; iDim++)
+						for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 						{
 							result[iDim](iRow, iCol) *= factor[iDim];
 						}
@@ -277,14 +265,14 @@ static EigenVector<Eigen::MatrixXd> gaussian_derivative_over_char_length(
 			else
 			{
 				// column major
-				const int iCol = i;
+				const std::size_t iCol = i;
 				if (IsTrainingSet)
 				{
 					// training set, the matrix is symmetric
-					for (int iRow = iCol + 1; iRow < Rows; iRow++)
+					for (std::size_t iRow = iCol + 1; iRow < Rows; iRow++)
 					{
 						const ClassicalPhaseVector& factor = calculate_factor(iRow, iCol);
-						for (int iDim = 0; iDim < PhaseDim; iDim++)
+						for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 						{
 							result[iDim](iRow, iCol) *= factor[iDim];
 						}
@@ -293,10 +281,10 @@ static EigenVector<Eigen::MatrixXd> gaussian_derivative_over_char_length(
 				else
 				{
 					// general rectangular
-					for (int iRow = 0; iRow < Rows; iRow++)
+					for (std::size_t iRow = 0; iRow < Rows; iRow++)
 					{
 						const ClassicalPhaseVector& factor = calculate_factor(iRow, iCol);
-						for (int iDim = 0; iDim < PhaseDim; iDim++)
+						for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 						{
 							result[iDim](iRow, iCol) *= factor[iDim];
 						}
@@ -307,7 +295,7 @@ static EigenVector<Eigen::MatrixXd> gaussian_derivative_over_char_length(
 	if (LeftFeature.data() == RightFeature.data() && Rows == Cols)
 	{
 		// training set, the matrix is symmetric
-		for (int iDim = 0; iDim < PhaseDim; iDim++)
+		for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 		{
 			// as it is symmetric, only lower part of the matrix are necessary to calculate
 			result[iDim].diagonal() = Eigen::VectorXd::Zero(Rows);
@@ -330,7 +318,7 @@ static EigenVector<Eigen::MatrixXd> calculate_derivatives(
 	const Eigen::MatrixXd& KernelMatrix)
 {
 	assert(LeftFeature.rows() == PhaseDim && RightFeature.rows() == PhaseDim);
-	const int Rows = LeftFeature.cols(), Cols = RightFeature.cols();
+	const std::size_t Rows = LeftFeature.cols(), Cols = RightFeature.cols();
 	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 	EigenVector<Eigen::MatrixXd> result;
 	// first, magnitude
@@ -372,7 +360,7 @@ static EigenVector<Eigen::MatrixXd> inverse_times_derivatives(
 	result[iParam] = 2.0 / Magnitude * Eigen::MatrixXd::Identity(Inverse.rows(), Inverse.cols());
 	iParam++;
 	// second, Gaussian
-	for (int iDim = 0; iDim < PhaseDim; iDim++)
+	for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 	{
 		result[iDim + iParam] *= Derivatives[iDim + iParam];
 	}
@@ -429,7 +417,7 @@ static ParameterVector population_derivatives(
 	// first, magnitude
 	result[iParam++] = 0.0;
 	// second, Gaussian
-	for (int iDim = 0; iDim < PhaseDim; iDim++)
+	for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 	{
 		result[iParam] = ThisTimeFactor * (InvLbl.sum() / CharLength[iDim] + NegInvDerivInvLbl[iParam].sum());
 		iParam++;
@@ -474,7 +462,7 @@ static ParameterVector purity_derivatives(
 		}
 		return result;
 	}();
-	for (int iDim = 0; iDim < PhaseDim; iDim++)
+	for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 	{
 		result[iParam] = ThisTimeFactor
 			* ((InvLbl.transpose() * ModifiedGaussianKernel * InvLbl).value() / CharLength[iDim]
