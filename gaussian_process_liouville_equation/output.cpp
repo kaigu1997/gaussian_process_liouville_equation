@@ -24,8 +24,8 @@ inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec)
 	return os;
 }
 
-/// @details For each surfaces and for total, output 
-/// its <x> and <p>, population and energy calculated by
+/// @details For each surfaces and for total, output
+/// its @<x@> and @<p@>, population and energy calculated by
 /// analytical integral, direct averaging and monte carlo
 /// integral. For those that is nonexistent (population by
 /// direct averaging and energy by analytical integral), output NAN. @n
@@ -44,7 +44,7 @@ void output_average(
 	double e_ave_all = 0.0;
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const std::size_t ElementIndex = iPES * (NumPES + 1);
+		const std::size_t ElementIndex = iPES * NumPES + iPES;
 		assert(!density[ElementIndex].empty() == Kernels[ElementIndex].has_value() && density[ElementIndex].empty() == mc_points[ElementIndex].empty());
 		if (!density[ElementIndex].empty())
 		{
@@ -88,9 +88,32 @@ void output_average(
 	// output for monte carlo integral
 	os << ' ' << (r_mci_all / ppl_mci_all).format(VectorFormatter) << ' ' << ppl_mci_all << ' ' << (e_mci_all / ppl_mci_all);
 	// output purity
+	QuantumMatrix<double> prt_prm = QuantumMatrix<double>::Zero(), prt_mci = QuantumMatrix<double>::Zero();
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	{
+		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		{
+			if (Kernels[iPES * NumPES + jPES].has_value())
+			{
+				prt_prm(iPES, jPES) += Kernels[iPES * NumPES + jPES]->get_purity();
+			}
+			if (iPES != jPES && Kernels[jPES * NumPES + iPES].has_value())
+			{
+				prt_prm(iPES, jPES) += Kernels[jPES * NumPES + iPES]->get_purity();
+			}
+			prt_mci(iPES, jPES) = calculate_purity_one_element(Kernels, mc_points, iPES, jPES);
+		}
+	}
+	prt_prm = prt_prm.selfadjointView<Eigen::Lower>();
+	prt_mci = prt_mci.selfadjointView<Eigen::Lower>();
+	// output elementwise
+	os << ' ' << prt_prm.format(VectorFormatter) << ' ' << prt_mci.format(VectorFormatter);
+	// output sum
 	const double prt_prm_all = calculate_purity(Kernels);
 	const double prt_mci_all = calculate_purity(Kernels, mc_points);
-	os << ' ' << prt_prm_all << ' ' << NAN << ' ' << prt_mci_all << std::endl;
+	os << ' ' << prt_prm_all << ' ' << prt_mci_all;
+	// finish
+	os << std::endl;
 }
 
 void output_param(std::ostream& os, const Optimization& Optimizer)
@@ -98,7 +121,9 @@ void output_param(std::ostream& os, const Optimization& Optimizer)
 	const QuantumArray<ParameterVector> lb = Optimizer.get_lower_bounds(), param = Optimizer.get_parameters(), ub = Optimizer.get_upper_bounds();
 	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
-		os << lb[iElement] << '\n' << param[iElement] << '\n' << ub[iElement] << '\n';
+		os << lb[iElement] << '\n';
+		os << param[iElement] << '\n';
+		os << ub[iElement] << '\n';
 	}
 	os << '\n';
 }

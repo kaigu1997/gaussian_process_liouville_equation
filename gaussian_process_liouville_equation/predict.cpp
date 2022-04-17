@@ -67,6 +67,20 @@ double calculate_total_energy_average_one_surface(
 	return result / density.size();
 }
 
+QuantumVector<double> calculate_total_energy_average_each_surface(const AllPoints& density, const ClassicalVector<double>& mass)
+{
+	QuantumVector<double> result = QuantumVector<double>::Zero();
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	{
+		const std::size_t ElementIndex = iPES * NumPES + iPES;
+		if (!density[ElementIndex].empty())
+		{
+			result[iPES] = calculate_total_energy_average_one_surface(density[ElementIndex], mass, iPES);
+		}
+	}
+	return result;
+}
+
 /// @details Using Gaussian Process Regression to predict by @n
 /// @f[
 /// \mathbb{E}[p(\mathbf{f}_*|X_*,X,\mathbf{y})]=K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}\mathbf{y}
@@ -134,6 +148,53 @@ Eigen::VectorXd predict_variances(const Kernel& kernel, const Eigen::MatrixXd& P
 	return result;
 }
 
+/**
+ * @details This function uses a connection procedure. @n
+ * When @f$ \bar{y}^2<\mathrm{Var}(y) @f$, predicts 0; @n
+ * when @f$ \bar{y}^2>t^2\mathrm{Var}(y) @f$, predicts @f$ \bar{y} @f$, where @f$ t>1 @f$ is a parameter; @n
+ * Otherwise, use a cubic function to connect them. This cubic function @f$ f @f$ satisfies
+ * @f{eqnarray*}{
+ * f(\bar{y})&=&0\\
+ * f(t(\bar{y}))&=&1\\
+ * f^{\prime}(\bar{y})&=&0\\
+ * f^{\prime}(t\bar{y})&=&0
+ * @f} @n
+ * In other words, its value and 1st order derivative is continuous with the other parts. @n
+ * The prediction will then be @f$ f\bar{y} @f$.
+ */
+Eigen::VectorXd predict_elements_with_variance_comparison(const Kernel& kernel, const Eigen::MatrixXd& PhaseGrids)
+{
+	static constexpr double ConnectingPoint = 2.0;
+	static_assert(ConnectingPoint > 1.0);
+	assert(PhaseGrids.rows() == PhaseDim);
+	const Eigen::VectorXd prediction = predict_elements(kernel, PhaseGrids), variance = predict_variances(kernel, PhaseGrids);
+	const std::size_t NumPoints = PhaseGrids.cols();
+	Eigen::VectorXd result(NumPoints);
+	const std::vector<std::size_t> indices = get_indices(NumPoints);
+	std::for_each(
+		std::execution::par_unseq,
+		indices.cbegin(),
+		indices.cend(),
+		[&prediction, &variance, &result](std::size_t i) -> void
+		{
+			if (power<2>(prediction[i]) >= power<2>(ConnectingPoint) * variance[i])
+			{
+				result[i] = prediction[i];
+			}
+			else if (power<2>(prediction[i]) <= variance[i])
+			{
+				result[i] = 0.0;
+			}
+			else
+			{
+				const double AbsoluteRelativePrediction = std::abs(prediction[i]) / std::sqrt(variance[i]);
+				result[i] = prediction[i] * (3.0 * ConnectingPoint - 2.0 * AbsoluteRelativePrediction - 1.0)
+					* power<2>(AbsoluteRelativePrediction - 1) / power<3>(ConnectingPoint - 1);
+			}
+		});
+	return result;
+}
+
 QuantumMatrix<std::complex<double>> predict_matrix(const OptionalKernels& Kernels, const ClassicalPhaseVector& r)
 {
 	using namespace std::literals::complex_literals;
@@ -143,6 +204,40 @@ QuantumMatrix<std::complex<double>> predict_matrix(const OptionalKernels& Kernel
 		if (Kernels[ElementIndex].has_value())
 		{
 			return predict_elements(Kernels[ElementIndex].value(), r).value();
+		}
+		else
+		{
+			return 0.0;
+		}
+	};
+	QuantumMatrix<std::complex<double>> result = QuantumMatrix<std::complex<double>>::Zero();
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	{
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
+		{
+			const double ElementValue = predict(iPES, jPES);
+			if (iPES <= jPES)
+			{
+				result(jPES, iPES) += ElementValue;
+			}
+			else
+			{
+				result(iPES, jPES) += 1.0i * ElementValue;
+			}
+		}
+	}
+	return result.selfadjointView<Eigen::Lower>();
+}
+
+QuantumMatrix<std::complex<double>> predict_matrix_with_variance_comparison(const OptionalKernels& Kernels, const ClassicalPhaseVector& r)
+{
+	using namespace std::literals::complex_literals;
+	auto predict = [&Kernels, &r](const std::size_t iPES, const std::size_t jPES) -> double
+	{
+		const std::size_t ElementIndex = iPES * NumPES + jPES;
+		if (Kernels[ElementIndex].has_value())
+		{
+			return predict_elements_with_variance_comparison(Kernels[ElementIndex].value(), r).value();
 		}
 		else
 		{
@@ -256,7 +351,7 @@ ParameterVector population_derivative(const OptionalKernels& Kernels)
 	return result;
 }
 
-ParameterVector energy_derivative(const OptionalKernels& Kernels, const QuantumVector<double>& Energies)
+ParameterVector total_energy_derivative(const OptionalKernels& Kernels, const QuantumVector<double>& Energies)
 {
 	ParameterVector result;
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
@@ -265,9 +360,9 @@ ParameterVector energy_derivative(const OptionalKernels& Kernels, const QuantumV
 		if (Kernels[ElementIndex].has_value())
 		{
 			ParameterVector grad = Kernels[ElementIndex]->get_population_derivative();
-			for (ParameterVector::iterator iter = grad.begin(); iter != grad.end(); ++iter)
+			for (double& d : grad)
 			{
-				*iter *= Energies[iPES];
+				d *= Energies[iPES];
 			}
 			result.insert(result.cend(), grad.cbegin(), grad.cend());
 		}
@@ -289,7 +384,14 @@ ParameterVector purity_derivative(const OptionalKernels& Kernels)
 			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			if (Kernels[ElementIndex].has_value())
 			{
-				const ParameterVector& grad = Kernels[ElementIndex]->get_purity_derivative();
+				ParameterVector grad = Kernels[ElementIndex]->get_purity_derivative();
+				if (iPES != jPES)
+				{
+					for (double& d : grad)
+					{
+						d *= 2;
+					}
+				}
 				result.insert(result.cend(), grad.cbegin(), grad.cend());
 			}
 			else

@@ -131,10 +131,10 @@ static inline Eigen::MatrixXd get_kernel_matrix(
 	if (LeftFeature.data() == RightFeature.data())
 	{
 		// in case when it is not training feature, the diagonal kernel (working as noise) is not needed
-		result += Noise * Noise * Eigen::MatrixXd::Identity(Rows, Cols);
+		result += power<2>(Noise) * Eigen::MatrixXd::Identity(Rows, Cols);
 	}
 	// "first", magnitude
-	result *= Magnitude * Magnitude;
+	result *= power<2>(Magnitude);
 	return result;
 }
 
@@ -144,14 +144,14 @@ static inline Eigen::MatrixXd get_kernel_matrix(
 /// @return The integral of @f$ \langle\rho\rangle @f$
 /// @details For the current kernel, @n
 /// @f[
-/// \langle\rho\rangle=(2\pi)^D\sigma_f^2\prod_i\abs{l_i}\sum_i[K^{-1}\mathbf{y}]_i
+/// \langle\rho\rangle=(2\pi)^D\sigma_f^2\prod_i\left|l_i\right|\sum_i[K^{-1}\mathbf{y}]_i
 /// @f]
 static inline double calculate_population(const Kernel::KernelParameter& KernelParams, const Eigen::VectorXd& InvLbl)
 {
-	static const double GlobalFactor = std::pow(2.0 * M_PI, Dim);
+	static constexpr double GlobalFactor = power<Dim>(2.0 * M_PI);
 	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 	double ppl = 0.0;
-	ppl += GlobalFactor * std::pow(Magnitude, 2) * CharLength.prod() * InvLbl.sum();
+	ppl += GlobalFactor * power<2>(Magnitude) * CharLength.prod() * InvLbl.sum();
 	return ppl;
 }
 
@@ -162,7 +162,7 @@ static inline double calculate_population(const Kernel::KernelParameter& KernelP
 /// @return Average positions and momenta
 /// @details For the current kernel, for @f$ x_0 @f$ for example, @n
 /// @f[
-/// \langle x_0\rangle=(2\pi)^D\sigma_f^2\prod_i\abs{l_i}\sum_i[\mathbf{x}_i]_0[K^{-1}\mathbf{y}]_i
+/// \langle x_0\rangle=(2\pi)^D\sigma_f^2\prod_i\left|l_i\right|\sum_i[\mathbf{x}_i]_0[K^{-1}\mathbf{y}]_i
 /// @f] @n
 /// and similar for other @f$ x_i @f$ and @f$ p_i @f$.
 static inline ClassicalPhaseVector calculate_1st_order_average(
@@ -170,10 +170,10 @@ static inline ClassicalPhaseVector calculate_1st_order_average(
 	const Eigen::MatrixXd& Features,
 	const Eigen::VectorXd& InvLbl)
 {
-	static const double GlobalFactor = std::pow(2.0 * M_PI, Dim);
+	static constexpr double GlobalFactor = power<Dim>(2.0 * M_PI);
 	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 	ClassicalPhaseVector r = ClassicalPhaseVector::Zero();
-	r += GlobalFactor * std::pow(Magnitude, 2) * CharLength.prod() * Features * InvLbl;
+	r += GlobalFactor * power<2>(Magnitude) * CharLength.prod() * Features * InvLbl;
 	return r;
 }
 
@@ -184,7 +184,7 @@ static inline ClassicalPhaseVector calculate_1st_order_average(
 /// @return The integral of @f$ (2\pi\hbar)^{\frac{d}{2}}\langle\rho^2\rangle @f$
 /// @details For the current kernel, @n
 /// @f[
-/// (2\pi\hbar)^{\frac{d}{2}}\langle\rho^2\rangle=(\pi)^D\sigma_f^4\prod_i\abs{l_i}\mathbf{y}^{\mathsf{T}}K^{-1}K_1K^{-1}\mathbf{y}
+/// (2\pi\hbar)^{\frac{d}{2}}\langle\rho^2\rangle=(\pi)^D\sigma_f^4\prod_i\left|l_i\right|\mathbf{y}^{\mathsf{T}}K^{-1}K_1K^{-1}\mathbf{y}
 /// @f] @n
 /// where @f$ [K_1]_{mn}=\mathrm{exp}\left(-\frac{1}{4}\sum_i x_{mni}^2\right) @f$
 /// if denote @f$ x_{mni}=\frac{[\mathbf{x}_m]_i-[\mathbf{x}_n]_i}{l_i} @f$.
@@ -193,15 +193,15 @@ static inline double calculate_purity(
 	const Eigen::MatrixXd& Features,
 	const Eigen::VectorXd& InvLbl)
 {
-	static const double GlobalFactor = PurityFactor * std::pow(M_PI, Dim);
+	static constexpr double GlobalFactor = PurityFactor * power<Dim>(M_PI);
 	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 	double result = 0.0;
-	result += GlobalFactor * std::pow(Magnitude, 4) * CharLength.prod() * (InvLbl.transpose() * gaussian_kernel(M_SQRT2 * CharLength, Features, Features) * InvLbl).value();
+	result += GlobalFactor * power<4>(Magnitude) * CharLength.prod() * (InvLbl.transpose() * gaussian_kernel(M_SQRT2 * CharLength, Features, Features) * InvLbl).value();
 	return result;
 }
 
 /// @brief To calculate the derivative of gaussian kernel over characteristic lengths
-/// @param[in] CharLegnth The characteristic length
+/// @param[in] CharacteristicLength The characteristic length
 /// @param[in] LeftFeature The left feature
 /// @param[in] RightFeature The right feature
 /// @return The derivative of gaussian kernel over characteristic lengths
@@ -325,7 +325,7 @@ static EigenVector<Eigen::MatrixXd> calculate_derivatives(
 	result.push_back(2.0 / Magnitude * KernelMatrix);
 	// second, Gaussian
 	const EigenVector<Eigen::MatrixXd> GaussianDerivOverCharLength = gaussian_derivative_over_char_length(CharLength, LeftFeature, RightFeature);
-	const double MagSquare = Magnitude * Magnitude;
+	const double MagSquare = power<2>(Magnitude);
 	// third, noise
 	for (const auto& Mat : GaussianDerivOverCharLength)
 	{
@@ -344,7 +344,6 @@ static EigenVector<Eigen::MatrixXd> calculate_derivatives(
 
 /// @brief To calculate the inverse of kernel times the derivatives of kernel
 /// @param[in] KernelParams The unpacked parameters for all kernels
-/// @param[in] KernelMatrix The kernel matrix
 /// @param[in] Inverse The inverse of the kernel matrix
 /// @param[in] Derivatives The derivatives of the kernel matrix over parameters
 /// @return The product
@@ -366,7 +365,7 @@ static EigenVector<Eigen::MatrixXd> inverse_times_derivatives(
 	}
 	iParam += PhaseDim;
 	// third, noise
-	result[iParam] = 2 * Magnitude * Magnitude * Noise * Inverse;
+	result[iParam] = 2 * power<2>(Magnitude) * Noise * Inverse;
 	iParam++;
 	return result;
 }
@@ -401,7 +400,7 @@ static EigenVector<Eigen::VectorXd> negative_inverse_derivative_inverse_label(co
 
 /// @brief To calculate the derivative of @f$ \langle\rho\rangle @f$ over all parameters
 /// @param[in] KernelParams The unpacked parameters for all kernels
-/// @param[in] InvDerivInvLbl The inverse
+/// @param[in] NegInvDerivInvLbl @f$ -K^{-1}\frac{\partial K}{\partial \theta}K^{-1} @f$
 /// @param[in] InvLbl The inverse of kernel matrix of training features times the training labels
 /// @return The derivative of @f$ \langle\rho\rangle @f$ over all parameters
 static ParameterVector population_derivatives(
@@ -409,13 +408,14 @@ static ParameterVector population_derivatives(
 	const EigenVector<Eigen::VectorXd>& NegInvDerivInvLbl,
 	const Eigen::VectorXd& InvLbl)
 {
-	static const double GlobalFactor = std::pow(2.0 * M_PI, Dim);
+	static constexpr double GlobalFactor = power<Dim>(2.0 * M_PI);
 	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
-	const double ThisTimeFactor = GlobalFactor * Magnitude * Magnitude * CharLength.prod();
+	const double ThisTimeFactor = GlobalFactor * power<2>(Magnitude) * CharLength.prod();
 	ParameterVector result(Kernel::NumTotalParameters);
 	std::size_t iParam = 0;
 	// first, magnitude
-	result[iParam++] = 0.0;
+	result[iParam] = 0.0;
+	iParam++;
 	// second, Gaussian
 	for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 	{
@@ -431,7 +431,7 @@ static ParameterVector population_derivatives(
 /// @brief To calculate the derivative of @f$ \langle\rho^2\rangle @f$ over all parameters
 /// @param[in] KernelParams The unpacked parameters for all kernels
 /// @param[in] Feature The feature
-/// @param[in] InvDerivInvLbl The inverse
+/// @param[in] NegInvDerivInvLbl @f$ -K^{-1}\frac{\partial K}{\partial \theta}K^{-1} @f$
 /// @param[in] InvLbl The inverse of kernel matrix of training features times the training labels
 /// @return The derivative of @f$ \langle\rho\rangle @f$ over all parameters
 static ParameterVector purity_derivatives(
@@ -440,9 +440,9 @@ static ParameterVector purity_derivatives(
 	const EigenVector<Eigen::VectorXd>& NegInvDerivInvLbl,
 	const Eigen::VectorXd& InvLbl)
 {
-	static const double GlobalFactor = PurityFactor * std::pow(M_PI, Dim);
+	static constexpr double GlobalFactor = PurityFactor * power<Dim>(M_PI);
 	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
-	const double ThisTimeFactor = GlobalFactor * std::pow(Magnitude, 4) * CharLength.prod();
+	const double ThisTimeFactor = GlobalFactor * power<4>(Magnitude) * CharLength.prod();
 	ParameterVector result(Kernel::NumTotalParameters);
 	std::size_t iParam = 0;
 	const ClassicalPhaseVector ModifiedCharLength = M_SQRT2 * CharLength;

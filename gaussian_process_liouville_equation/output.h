@@ -15,7 +15,6 @@
 /// @brief To output averages
 /// @param[inout] os The output stream
 /// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
-/// @param[in] Predictors An array of predictors for prediction, whose size is NumElements
 /// @param[in] density The selected points in phase space for each element of density matrices
 /// @param[in] mc_points The selected points for calculating mc integration
 /// @param[in] mass Mass of classical degree of freedom
@@ -28,7 +27,7 @@ void output_average(
 
 /// @brief To output parameters
 /// @param[inout] os The output stream
-/// @param[in] optimizer The object of opitimization class
+/// @param[in] Optimizer The object of @p Opitimization class
 void output_param(std::ostream& os, const Optimization& Optimizer);
 
 /// @brief To output the selected points
@@ -55,7 +54,7 @@ void output_autocor(
 	const AllPoints& density);
 
 /// @brief To output some basic information
-/// @param[inout] logging The output stream
+/// @param[inout] os The output stream
 /// @param[in] time Current evolution time
 /// @param[in] OptResult The result of optimization, including total error and number of steps
 /// @param[in] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)

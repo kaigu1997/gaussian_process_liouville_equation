@@ -4,10 +4,14 @@
 #ifndef STDAFX_H
 #define STDAFX_H
 
+/// @def EIGEN_USE_MKL_ALL
+/// @brief Ask Eigen to use intel MKL as its backend
 #ifndef EIGEN_USE_MKL_ALL
 #define EIGEN_USE_MKL_ALL
 #endif // !EIGEN_USE_MKL_ALL
 
+/// @def SPDLOG_ACTIVE_LEVEL
+/// @brief Set the logging level of spdlog library
 #ifndef SPDLOG_ACTIVE_LEVEL
 #ifdef NDEBUG
 #define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_OFF
@@ -51,17 +55,36 @@
 
 #include <mkl.h>
 
+/// @brief To calculate power of numeric types
+/// @param t The value, could be integer or floating point
+/// @return Its nth power
+template <std::size_t n, typename T>
+inline constexpr T power([[maybe_unused]] const T t)
+{
+	static_assert(std::is_arithmetic_v<std::decay_t<T>>);
+	if constexpr (n == 0)
+	{
+		return 1;
+	}
+	else
+	{
+		return t * power<n - 1>(t);
+	}
+}
+
 // mathmatical/physical constants
 constexpr double hbar = 1.0; ///< Reduced Planck constant in a.u.
 
 // DOF constants
-constexpr std::size_t NumPES = 2;					 ///< The number of quantum degree (potential energy surfaces)
-constexpr std::size_t NumElements = NumPES * NumPES; ///< The number of elements of matrices in quantum degree (e.g. H, rho)
-constexpr std::size_t Dim = 1;						 ///< The dimension of the system, half the dimension of the phase space
-constexpr std::size_t PhaseDim = Dim * 2;			 ///< The dimension of the phase space, twice the dimension of the system
+constexpr std::size_t NumPES = 2;									 ///< The number of quantum degree (potential energy surfaces)
+constexpr std::size_t NumElements = power<2>(NumPES);				 ///< The number of elements of matrices in quantum degree (e.g. H, rho)
+constexpr std::size_t NumOffDiagonalElements = NumElements - NumPES; ///< The number of off-diagonal elements
+constexpr std::size_t Dim = 1;										 ///< The dimension of the system, half the dimension of the phase space
+constexpr std::size_t PhaseDim = Dim * 2;							 ///< The dimension of the phase space, twice the dimension of the system
 
 // other constants
-const double PurityFactor = std::pow(2.0 * M_PI * hbar, Dim); ///< The factor for purity. @f$ S=(2\pi\hbar)^D\int\mathrm{d}\Gamma\mathrm{Tr}\rho^2 @f$
+constexpr double PurityFactor = power<Dim>(2.0 * M_PI * hbar); ///< The factor for purity. @f$ S=(2\pi\hbar)^D\int\mathrm{d}\Gamma\mathrm{Tr}\rho^2 @f$
+constexpr double epsilon = 1e-2;							   ///< The threshold of whether an element is small or not
 
 // formatters
 const Eigen::IOFormat VectorFormatter(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", " ", "", "", "", "");	///< Formatter for output vector
@@ -107,16 +130,8 @@ inline std::vector<std::size_t> get_indices(const std::size_t N)
 	return result;
 }
 
-/// @brief The weight function for sorting / MC selection
-/// @param x The input variable
-/// @return The weight of the input, which is the square of it
-inline double weight_function(const std::complex<double>& x)
-{
-	return std::norm(x);
-}
-
 /// @brief To get the (editable) x and p of r
-/// @param r The editable phase space coordinates 
+/// @param r The editable phase space coordinates
 /// @return The x block and p block
 inline std::tuple<Eigen::Block<ClassicalPhaseVector, Dim, 1>, Eigen::Block<ClassicalPhaseVector, Dim, 1>> split_phase_coordinate(ClassicalPhaseVector& r)
 {
@@ -124,7 +139,7 @@ inline std::tuple<Eigen::Block<ClassicalPhaseVector, Dim, 1>, Eigen::Block<Class
 }
 
 /// @brief To get the (constant) x and p of r
-/// @param r The constant phase space coordinates 
+/// @param r The constant phase space coordinates
 /// @return The x and p vector
 inline std::tuple<ClassicalVector<double>, ClassicalVector<double>> split_phase_coordinate(const ClassicalPhaseVector& r)
 {

@@ -16,12 +16,17 @@ enum Direction
 	Forward = 1	   ///< Going forward, for point evolution
 };
 
-ClassicalVector<bool> is_coupling(
+/// @brief To judge if current point have large coupling in any of the given directions
+/// @param[in] x Position of classical degree of freedom
+/// @param[in] p Momentum of classical degree of freedom
+/// @param[in] mass Mass of classical degree of freedom
+/// @return Whether each classical direction has coupling or not
+static ClassicalVector<bool> is_coupling(
 	[[maybe_unused]] const ClassicalVector<double>& x,
 	[[maybe_unused]] const ClassicalVector<double>& p,
 	[[maybe_unused]] const ClassicalVector<double>& mass)
 {
-	[[maybe_unused]] static const double CouplingCriterion = 0.01; // Criteria of whether have coupling or not
+	[[maybe_unused]] static constexpr double CouplingCriterion = 0.01; // Criteria of whether have coupling or not
 #define ADIA
 #ifdef ADIA
 	return ClassicalVector<bool>::Zero();
@@ -225,7 +230,7 @@ static EigenVector<ClassicalVector<double>> momentum_offdiagonal_evolve(
 /// @param[in] drc The direction of evolution
 /// @param[in] SmallIndex The smaller index of density matrix
 /// @param[in] LargeIndex The larger index of density matrix
-/// @return sin and cos @f$ dt(\omega(x_0)+2\omega(x_1)+\omega(x_2))/4 @f$
+/// @return sine and cosine of @f$ dt(\omega(x_0)+2\omega(x_1)+\omega(x_2))/4 @f$
 static inline Eigen::Vector2d calculate_omega0(
 	const ClassicalVector<double>& x0,
 	const ClassicalVector<double>& x1,
@@ -384,14 +389,14 @@ static Eigen::MatrixXd calculate_non_adiabatic_rho_elements(
 				EigenVector<ClassicalVector<double>>(p3.begin() + ElmIdx * NBranch, p3.begin() + (ElmIdx + 1) * NBranch));
 			if (Kernels[ElmIdx].has_value())
 			{
-				result.col(ElmIdx) = predict_elements(Kernels[ElmIdx].value(), TrainingFeature);
+				result.col(ElmIdx) = predict_elements_with_variance_comparison(Kernels[ElmIdx].value(), TrainingFeature);
 			}
 			if (iPES != jPES)
 			{
 				const std::size_t SymElmIdx = jPES * NumPES + iPES;
 				if (Kernels[SymElmIdx].has_value())
 				{
-					result.col(SymElmIdx) = predict_elements(Kernels[SymElmIdx].value(), TrainingFeature);
+					result.col(SymElmIdx) = predict_elements_with_variance_comparison(Kernels[SymElmIdx].value(), TrainingFeature);
 				}
 			}
 		}
@@ -439,7 +444,13 @@ static inline double calculate_2_level_element(
 		+ Coe1 * ((1.0 - phi(2, 0)) * rho(2, 0) - 2.0 * phi(2, 1) * omega1(2, 1) * rho(2, 1) + 2.0 * phi(2, 1) * omega1(2, 0) * rho(2, 2) + (1.0 + phi(2, 0)) * rho(2, 3));
 }
 
-QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
+/// @brief To predict the density matrix of the given point after evolving 1 time step back
+/// @param[in] r Phase space coordinates of classical degree of freedom
+/// @param[in] mass Mass of classical degree of freedom
+/// @param[in] dt Time interval
+/// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
+/// @return The density matrix at the given point after evolving
+static QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 	const ClassicalPhaseVector& r,
 	const ClassicalVector<double>& mass,
 	const double dt,
@@ -447,9 +458,9 @@ QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 {
 	const auto [x, p] = split_phase_coordinate(r);
 	using namespace std::literals::complex_literals;
-	static const Direction drc = Direction::Backward;
+	static constexpr Direction drc = Direction::Backward;
 	QuantumMatrix<std::complex<double>> result = QuantumMatrix<std::complex<double>>::Zero();
-	if (NumPES == 2)
+	if constexpr (NumPES == 2)
 	{
 		// 2-level system
 		const ClassicalVector<bool> IsCouple = is_coupling(x, p, mass);
@@ -509,18 +520,18 @@ QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 			const Eigen::Vector2d omega = calculate_omega0(x, x1, x2[1], dt, drc, 0, 1);
 			if (Kernels[0].has_value())
 			{
-				result(0, 0) = predict_elements(Kernels[0].value(), construct_training_feature({x2[0]}, {p1[0]})).value();
+				result(0, 0) = predict_elements_with_variance_comparison(Kernels[0].value(), construct_training_feature({x2[0]}, {p1[0]})).value();
 			}
 			if (Kernels[1].has_value() || Kernels[2].has_value())
 			{
 				const Eigen::MatrixXd TrainingFeature = construct_training_feature({x2[1]}, {p1[1]});
-				const double re = Kernels[1].has_value() ? predict_elements(Kernels[1].value(), TrainingFeature).value() : 0.0;
-				const double im = Kernels[2].has_value() ? predict_elements(Kernels[2].value(), TrainingFeature).value() : 0.0;
+				const double re = Kernels[1].has_value() ? predict_elements_with_variance_comparison(Kernels[1].value(), TrainingFeature).value() : 0.0;
+				const double im = Kernels[2].has_value() ? predict_elements_with_variance_comparison(Kernels[2].value(), TrainingFeature).value() : 0.0;
 				result(1, 0) = (re + 1.0i * im) * (omega[1] + 1.0i * omega[0]);
 			}
 			if (Kernels[3].has_value())
 			{
-				result(1, 1) = predict_elements(Kernels[3].value(), construct_training_feature({x2[2]}, {p1[2]})).value();
+				result(1, 1) = predict_elements_with_variance_comparison(Kernels[3].value(), construct_training_feature({x2[2]}, {p1[2]})).value();
 			}
 		}
 	}
@@ -544,7 +555,7 @@ void evolve(
 	using namespace std::literals::complex_literals;
 	static std::mt19937 engine(std::chrono::system_clock::now().time_since_epoch().count()); // Random number generator, using merseen twister with seed from time
 	static std::uniform_real_distribution<double> mc_selection(0.0, 1.0);					 // for whether pick or not
-	static const Direction drc = Direction::Forward;
+	static constexpr Direction drc = Direction::Forward;
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
 		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
@@ -590,7 +601,7 @@ void evolve(
 										mass,
 										dt,
 										Kernels);
-									weight[iBranch] = weight_function(predicts[iBranch](iPES, jPES));
+									weight[iBranch] = std::abs(predicts[iBranch](iPES, jPES));
 								}
 								// select one of them with monte carlo
 								const double rand = mc_selection(engine) * std::reduce(weight.cbegin(), weight.cend());
@@ -618,6 +629,7 @@ void evolve(
 								{
 									const Eigen::Vector2d omega0 = calculate_omega0(x, x1, x2, dt, drc, std::min(iPES, jPES), std::max(iPES, jPES));
 									rho(std::max(iPES, jPES), std::min(iPES, jPES)) *= (omega0[1] + 1.0i * omega0[0]);
+									rho(std::min(iPES, jPES), std::max(iPES, jPES)) = std::conj(rho(std::max(iPES, jPES), std::min(iPES, jPES)));
 								}
 								// finally, update the phase space coordinates
 								r << x2, p1;

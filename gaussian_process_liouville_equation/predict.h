@@ -28,7 +28,13 @@ double calculate_total_energy_average_one_surface(
 	const ClassicalVector<double>& mass,
 	const std::size_t PESIndex);
 
-/// @brief To print the grids of a certain element of density matrix
+/// @brief To calculate the total energy of each element by averaging directly
+/// @param[in] density The selected points in phase space, must corresponding to a diagonal element in density matrix
+/// @param[in] mass Mass of classical degree of freedom
+/// @return Averaged total energy on each surfaces
+QuantumVector<double> calculate_total_energy_average_each_surface(const AllPoints& density, const ClassicalVector<double>& mass);
+
+/// @brief To calculate the prediction of a certain element of density matrix
 /// @param[in] kernel The kernel of the training set
 /// @param[in] PhaseGrids All the grids required to calculate in phase space
 /// @return A N-by-1 matrix, N is the number of required grids
@@ -45,6 +51,12 @@ ElementParameter prediction_derivative(const Kernel& kernel, const ClassicalPhas
 /// @param[in] PhaseGrids All the grids required to calculate in phase space
 /// @return A N-by-1 matrix, N is the number of required grids
 Eigen::VectorXd predict_variances(const Kernel& kernel, const Eigen::MatrixXd& PhaseGrids);
+
+/// @brief To calculate the prediction of a certain element of density matrix with comparison to the variance
+/// @param[in] kernel The kernel of the training set
+/// @param[in] PhaseGrids All the grids required to calculate in phase space
+/// @return A N-by-1 matrix, N is the number of required grids
+Eigen::VectorXd predict_elements_with_variance_comparison(const Kernel& kernel, const Eigen::MatrixXd& PhaseGrids);
 
 /// @brief To calculate the population on one surface by analytica integration of parameters
 /// @param[in] kernel The kernel for prediction
@@ -71,15 +83,20 @@ using OptionalKernels = QuantumArray<std::optional<Kernel>>;
 /// @return The density matrix at the given point
 QuantumMatrix<std::complex<double>> predict_matrix(const OptionalKernels& Kernels, const ClassicalPhaseVector& r);
 
+/// @brief To predict the density matrix at the given phase space point, after comparing with variance
+/// @param[in] Kernels An array of predictors for prediction, whose size is NumElements
+/// @param[in] r Phase space coordinates of classical degree of freedom
+/// @return The density matrix at the given point
+QuantumMatrix<std::complex<double>> predict_matrix_with_variance_comparison(const OptionalKernels& Kernels, const ClassicalPhaseVector& r);
+
 /// @brief To calculate the total population by analytical integration of parameters
 /// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
 /// @return The overall population calculated by points
 double calculate_population(const OptionalKernels& Kernels);
 
-/// @brief To calculate the <x> and <p> by analytical integration of parameters
+/// @brief To calculate the @<x@> and @<p@> by analytical integration of parameters
 /// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
-/// @param[in] mc_points The selected points for calculating mc integration
-/// @return The overall population calculated by points
+/// @return The overall @<x@> and @<p@> calculated by points
 ClassicalPhaseVector calculate_1st_order_average(const OptionalKernels& Kernels);
 
 /// @brief To calculate the total energy by analytical integration
@@ -102,7 +119,7 @@ ParameterVector population_derivative(const OptionalKernels& Kernels);
 /// @param[in] Kernels An array of predictors for prediction, whose size is NumElements
 /// @param[in] Energies The energy on each surfaces
 /// @return The derivative of overall energy calculated by parameters over parameters
-ParameterVector energy_derivative(const OptionalKernels& Kernels, const QuantumVector<double>& Energies);
+ParameterVector total_energy_derivative(const OptionalKernels& Kernels, const QuantumVector<double>& Energies);
 
 /// @brief To calculate the derivative of analytically integrated purity over parameters
 /// @param[in] Kernels An array of kernels for prediction, whose size is NumElements

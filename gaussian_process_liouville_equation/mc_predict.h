@@ -7,14 +7,28 @@
 #include "stdafx.h"
 
 #include "input.h"
+#include "mc.h"
 #include "predict.h"
 
 /// @brief To generate the extra points for the density fitting
-/// @param[in] Params Parameters objects containing all the required information (r0, sigma0, mass)
+/// @param[in] density The selected points in phase space for each element of density matrices
 /// @param[in] NumPoints The number of points for each elements
-/// @param[in] dist The current distribution
+/// @param[in] distribution The current distribution
 /// @return The newly selected points with its corresponding distribution
-AllPoints extra_points_generator(const AllPoints& density, const std::size_t NumPoints, const DistributionFunction dist);
+AllPoints generate_extra_points(const AllPoints& density, const std::size_t NumPoints, const DistributionFunction& distribution);
+
+/// @brief To generate the points for monte carlo integral
+/// @param[in] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
+/// @param[in] Kernels An array of kernels for prediction, whose size is NumElements; used for providing normalization factor
+/// @param[in] density The selected points in phase space for each element of density matrices
+/// @param[in] NumPoints The number of points for each elements
+/// @param[in] distribution The distribution of points for monte carlo integral (might not be phase space distribution)
+AllPoints generate_monte_carlo_points(
+	const MCParameters& MCParams,
+	const OptionalKernels& Kernels,
+	const AllPoints& density,
+	const std::size_t NumPoints,
+	const DistributionFunction& distribution);
 
 /// @brief To calculate the population on one surface by monte carlo integration
 /// @param[in] kernel The kernel for prediction
@@ -22,10 +36,10 @@ AllPoints extra_points_generator(const AllPoints& density, const std::size_t Num
 /// @return The population of that surface calculated by points
 double calculate_population_one_surface(const Kernel& kernel, const AllPoints& mc_points);
 
-/// @brief To calculate the <x> and <p> on one surface by monte carlo integration
+/// @brief To calculate the @<x@> and @<p@> on one surface by monte carlo integration
 /// @param[in] kernel The kernel for prediction
 /// @param[in] mc_points The selected points for calculating mc integration
-/// @return The <x> and <p> of that surface calculated by points
+/// @return The @<x@> and @<p@> of that surface calculated by points
 ClassicalPhaseVector calculate_1st_order_average_one_surface(const Kernel& kernel, const AllPoints& mc_points);
 
 /// @brief To calculate the energy on one surface by monte carlo integration
@@ -40,16 +54,28 @@ double calculate_total_energy_average_one_surface(
 	const ClassicalVector<double>& mass,
 	const std::size_t PESIndex);
 
+/// @brief To calculate the purity contributed by one of the density matrix elements by monte carlo integration
+/// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
+/// @param[in] mc_points The selected points for calculating mc integration
+/// @param[in] iPES The row index of the element in density matrix
+/// @param[in] jPES The column index of the element in density matrix
+/// @return The purity contributed by this element calculated by points
+double calculate_purity_one_element(
+	const OptionalKernels& Kernels,
+	const AllPoints& mc_points,
+	const std::size_t iPES,
+	const std::size_t jPES);
+
 /// @brief To calculate the population by monte carlo integration
 /// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
 /// @param[in] mc_points The selected points for calculating mc integration
 /// @return The overall population calculated by points
 double calculate_population(const OptionalKernels& Kernels, const AllPoints& mc_points);
 
-/// @brief To calculate the <x> and <p> by monte carlo integration
+/// @brief To calculate the @<x@> and @<p@> by monte carlo integration
 /// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
 /// @param[in] mc_points The selected points for calculating mc integration
-/// @return The overall <x> and <p> calculated by points
+/// @return The overall @<x@> and @<p@> calculated by points
 ClassicalPhaseVector calculate_1st_order_average(const OptionalKernels& Kernels, const AllPoints& mc_points);
 
 /// @brief To calculate the total energy by monte carlo integration

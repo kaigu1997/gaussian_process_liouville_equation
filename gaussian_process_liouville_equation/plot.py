@@ -36,11 +36,11 @@ def read_input(input_file: str) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarr
 def get_label(index: int) -> str:
 	row, col = index // NUM_PES, index % NUM_PES
 	if row == col:
-		return r'$\rho_{%d%d}$' % (row, col)
+		return r'$\rho_{%d,%d}$' % (row, col)
 	elif row < col:
-		return r'$\Re(\rho_{%d%d})$' % (row, col)
+		return r'$\Re(\rho_{%d,%d})$' % (row, col)
 	else:
-		return r'$\Im(\rho_{%d%d})$' % (col, row)
+		return r'$\Im(\rho_{%d,%d})$' % (col, row)
 
 
 def plot_log(log_file: str, pic_file: str) -> np.ndarray:
@@ -107,8 +107,9 @@ def plot_average(DIM: int, t: np.ndarray, ave_file: str, pic_file: str) -> None:
 	NUM_ROW, NUM_COL = len(Y_LABEL), len(X_LABEL) # for plot
 	# get data
 	data = np.loadtxt(ave_file)
-	purity_data = data[:, -3:].reshape((t.size, NUM_COL))
-	no_purity_data = data[:, 1:-3].reshape((t.size, NUM_PES + 1, NUM_COL, NUM_ROW - 1)) # apart from purity
+	purity_total_data = data[:, -2:].reshape((t.size, 2))
+	purity_elementwise_data = data[:, -(2 * NUM_ELM + 2):-2].reshape((t.size, 2, NUM_PES, NUM_PES))
+	no_purity_data = data[:, 1:-(2 * NUM_ELM + 2)].reshape((t.size, NUM_PES + 1, NUM_COL, NUM_ROW - 1)) # apart from purity
 	# prepare for average plot
 	fig = plt.figure(figsize=(NUM_COL * FIGSIZE, NUM_ROW * FIGSIZE))
 	axs = fig.subplots(nrows=NUM_ROW, ncols=NUM_COL)
@@ -129,8 +130,12 @@ def plot_average(DIM: int, t: np.ndarray, ave_file: str, pic_file: str) -> None:
 	# plot purity
 	for i in range(NUM_COL): # what kind of source: prm, ave, mci
 		ax = axs[NUM_ROW - 1][i]
-		if np.all(np.isfinite(purity_data[:, i])):
-			ax.plot(t, purity_data[:, i], label='Total')
+		if X_LABEL[i] != 'Direct Averaging':
+			DATA_INDEX = i // 2
+			for j in range(NUM_PES):
+				for k in range(NUM_PES):
+					ax.plot(t, purity_elementwise_data[:, DATA_INDEX, j, k], label=r'$\rho_{%d,%d}$' % (j, k))
+			ax.plot(t, purity_total_data[:, DATA_INDEX], label='Total')
 			ax.set_xlabel('Time')
 			ax.set_ylabel(Y_LABEL[NUM_ROW - 1])
 			ax.set_title(X_LABEL[i] + ' of ' + Y_LABEL[NUM_ROW - 1])

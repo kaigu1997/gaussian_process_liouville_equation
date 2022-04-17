@@ -6,6 +6,15 @@
 
 #include "stdafx.h"
 
+/// @brief Sign function: return -1 for negative, 1 for positive, and 0 for 0
+/// @param[in] val A value of any type that have '<' and '>' and could construct 0.0
+/// @return The sign of the value
+template <typename valtype>
+inline constexpr int sgn(const valtype& val)
+{
+	return (val > valtype(0.0)) - (val < valtype(0.0));
+}
+
 /// Different basis
 enum Representation
 {
@@ -51,7 +60,7 @@ Tensor3d adiabatic_force(const ClassicalVector<double>& x);
 ClassicalVector<double> tensor_slice(const Tensor3d& tensor, const std::size_t row, const std::size_t col);
 
 /// @brief To transform density matrix from one basis to another
-/// @param[in] rho The PWTDM, a self-adjoint complex matrix
+/// @param[in] rho The partial Wigner-transformed denstiy matrix, a self-adjoint complex matrix
 /// @param[in] x Position of classical degree of freedom
 /// @param[in] idx_from The index indicating the representation rho in
 /// @param[in] idx_to The index indicating the representation the return value in

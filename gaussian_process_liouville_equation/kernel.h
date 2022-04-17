@@ -27,7 +27,7 @@ public:
 	/// @param[in] Parameter Parameters used in the kernel
 	/// @param[in] feature The left feature
 	/// @param[in] label The label of kernels if used
-	/// @param[in] IsCalculateAverage Whether to calculate averages (<rho>, <x> and <p>, and purity) or not
+	/// @param[in] IsCalculateAverage Whether to calculate averages (@<1@>, @<r@>, and purity) or not
 	/// @param[in] IsCalculateDerivative Whether to calculate derivative of each kernel or not
 	Kernel(
 		const ParameterVector& Parameter,
@@ -38,8 +38,8 @@ public:
 
 	/// @brief The constructor for different features
 	/// @param[in] Parameter Parameters used in the kernel
-	/// @param[in] LeftFeature The left feature
-	/// @param[in] RightFeature The right feature
+	/// @param[in] left_feature The left feature
+	/// @param[in] right_feature The right feature
 	/// @param[in] IsCalculateDerivative Whether to calculate derivative of kernel matrix over parameters
 	Kernel(
 		const ParameterVector& Parameter,
@@ -115,7 +115,7 @@ public:
 		return InvLbl.value();
 	}
 
-	/// @brief To judge if the averages (<1>, <x>, <p> and purity) is calculated
+	/// @brief To judge if the averages (@<1@>, @<r@> and purity) is calculated
 	/// @return Whether population is calculated
 	bool is_average_calculated(void) const
 	{
@@ -130,8 +130,8 @@ public:
 		return Population.value();
 	}
 
-	/// @brief To get the <x> and <p> integration
-	/// @return The <x> and <p>
+	/// @brief To get the @<x@> and @<p@> integration
+	/// @return The @<x@> and @<p@>
 	const ClassicalPhaseVector& get_1st_order_average(void) const
 	{
 		assert(FirstOrderAverage.has_value());
@@ -213,7 +213,7 @@ private:
 	const std::optional<Eigen::MatrixXd> Inverse;						 ///< The inverse of the kernel
 	const std::optional<Eigen::VectorXd> InvLbl;						 ///< The inverse times label
 	const std::optional<double> Population;								 ///< The population calculated by parameters
-	const std::optional<ClassicalPhaseVector> FirstOrderAverage;		 ///< The <x> and <p> calculated by parameters
+	const std::optional<ClassicalPhaseVector> FirstOrderAverage;		 ///< The @<r@> calculated by parameters
 	const std::optional<double> Purity;									 ///< The purity calculated by parameters
 	const std::optional<EigenVector<Eigen::MatrixXd>> Derivatives;		 ///< Derivatives of kernel matrices over parameters
 	const std::optional<EigenVector<Eigen::MatrixXd>> InvDeriv;			 ///< The product of inverse times derivatives
@@ -224,7 +224,7 @@ private:
 };
 
 /// The packed parameters for Kernel, i.e., the packed version of @p Kernel::KernelParameter. @n
-/// The Eigen vector containing exactly the number of parameters 
+/// The Eigen vector containing exactly the number of parameters
 using ElementParameter = Eigen::Matrix<double, Kernel::NumTotalParameters, 1>;
 
 #endif // !KERNEL_H

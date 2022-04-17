@@ -18,7 +18,7 @@ using AutoCorrelations = QuantumArray<Eigen::VectorXd>;
 /// containing each element of density matrix is smallor not
 QuantumMatrix<bool> is_very_small(const AllPoints& density);
 
-/// @brief To generate initial adiabatic PWTDM at the given place
+/// @brief To generate initial adiabatic partial Wigner-transformed density matrics at the given place
 /// @param[in] r0 Initial center of phase space
 /// @param[in] SigmaR0 Initial standard deviation of phase space
 /// @param[in] InitialPopulation Initial population on each of the PES
@@ -33,23 +33,16 @@ QuantumMatrix<std::complex<double>> initial_distribution(
 /// @brief To store the parameters used in MC process
 class MCParameters final
 {
-	std::size_t NumPoints, NOMC;
-	double displacement;
+	std::size_t NOMC;	 ///< The number of MCMC steps
+	double displacement; ///< The maximum displacement of one MCMC step
 
 public:
-	static const double AboveMinFactor;
-	/// @brief Constructor. Initialization of parameters.
-	/// @param[in] InitParams InitialParameters object containing position, momentum, etc
-	/// @param[in] NOMC_ The initial number of monte carlo steps
-	/// @param[in] NGrids_ The initial number of grids to set the length of displacement
-	MCParameters(const InitialParameters& InitParams, const std::size_t NOMC_ = 200);
+	static constexpr double AboveMinFactor = 1.1; ///< choose the minimal step or max displacement whose autocor < factor*min{autocor}
 
-	/// @brief To set the number of selected points
-	/// @param[in] NumPoints_ The number of points to be selected
-	void set_num_points(const std::size_t NumPoints_)
-	{
-		NumPoints = NumPoints_;
-	}
+	/// @brief Constructor. Initialization of parameters.
+	/// @param[in] InitialDisplacement The initial guess of displacement
+	/// @param[in] InitialSteps The initial guess of the number of monte carlo steps
+	MCParameters(const double InitialDisplacement, const std::size_t InitialSteps = 200);
 
 	/// @brief To set the number of monte carlo steps
 	/// @param[in] NOMC_ The number of monte carlo steps
@@ -63,13 +56,6 @@ public:
 	void set_displacement(const double displacement_)
 	{
 		displacement = displacement_;
-	}
-
-	/// @brief To get the number of points selected
-	/// @return The number of points selected
-	std::size_t get_num_points(void) const
-	{
-		return NumPoints;
 	}
 
 	/// @brief To get the number of monte carlo steps
@@ -87,12 +73,15 @@ public:
 	}
 };
 
+/// @brief To get the number of points for each elements
+/// @param[in] Points The selected points in phase space for each element of density matrices
+/// @return The number of points for non-zero element
+std::size_t get_num_points(const AllPoints& Points);
+
 /// @brief Using Metropolis Monte Carlo to select points
-/// @param[in] InitParams The input parameters (mass, dt, etc)
 /// @param[in] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
 /// @param[in] distribution The function object to generate the distribution
 /// @param[inout] density The selected points in phase space for each element of density matrices
-/// @param[in] IsToBeEvolved Whether the points are at evolved places or original places
 void monte_carlo_selection(
 	const MCParameters& MCParams,
 	const DistributionFunction& distribution,
@@ -117,11 +106,6 @@ AutoCorrelations autocorrelation_optimize_displacement(
 	MCParameters& MCParams,
 	const DistributionFunction& distribution,
 	const AllPoints& density);
-
-/// @brief To get the number of points for each elements
-/// @param[in] Points The selected points in phase space for each element of density matrices
-/// @return The number of points for non-zero element
-std::size_t get_num_points(const AllPoints& Points);
 
 /// @brief To select points for new elements of density matrix
 /// @param[inout] density The selected points in phase space for each element of density matrices

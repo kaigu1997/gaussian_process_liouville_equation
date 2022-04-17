@@ -7,7 +7,6 @@
 
 /// @brief Read a parameter from input stream
 /// @param[inout] is The input stream (could be input file stream)
-/// @param[inout] param The variable waiting to be written
 /// @details The content would be: "[Descriptor]:\n[Value]\n", so need buffer to read descriptor and newline
 template <typename T>
 static T read_param(std::istream& is)
@@ -22,7 +21,6 @@ static T read_param(std::istream& is)
 
 /// @brief Read a vector in Parameter from input stream
 /// @param[inout] is The input stream (could be input file stream)
-/// @param[inout] vec The vector waiting to be written
 /// @details This is the specialization of read_param() function for ClassicalVector<double>.
 template <>
 ClassicalVector<double> read_param<ClassicalVector<double>>(std::istream& is)

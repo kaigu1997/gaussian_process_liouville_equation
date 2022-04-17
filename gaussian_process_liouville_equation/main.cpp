@@ -13,7 +13,9 @@
 #include "pes.h"
 #include "predict.h"
 
-int main()
+/// @brief The main function
+/// @return 0, except for cases of exceptions
+int main(void)
 {
 	// initialization: save some input parameters, using initial distribution to select points, and initial output
 	std::chrono::high_resolution_clock::time_point begin = std::chrono::high_resolution_clock::now(), end = begin;
@@ -29,61 +31,62 @@ int main()
 	const std::size_t ReoptFreq = InitParams.get_reoptimize_freq();			  // save parameter re-optimization frequency
 	const double dt = InitParams.get_dt();									  // save dt directly
 	const std::size_t NumPoints = InitParams.get_number_of_selected_points(); // save the number of points for evolving/optimizing
+	const std::size_t NumExtraPoints = NumPoints * 2;						  // The number of points extra selected for density fitting
 	const std::size_t NumMCPoints = NumPoints * 5;							  // The number of points for monte carlo integral
 	// get initial distribution
-	MCParameters MCParams(InitParams);
+	MCParameters MCParams(SigmaR0.minCoeff());
 	static constexpr std::array<double, NumPES> InitialPopulation = {0.5, 0.5};
 	const DistributionFunction initdist = std::bind(initial_distribution, r0, SigmaR0, InitialPopulation, std::placeholders::_1);
-	auto generate_initial_points = [&MCParams, &r0, &initdist](std::size_t NumPoints) -> AllPoints
+	AllPoints density; // generated from MC from initial distribution
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		AllPoints result;
-		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+		if (InitialPopulation[iPES] > 0.0)
 		{
-			if (InitialPopulation[iPES] > 0.0)
-			{
-				result[iPES * NumPES + iPES] = EigenVector<PhaseSpacePoint>(NumPoints, std::make_tuple(r0, initdist(r0)));
-			}
+			density[iPES * NumPES + iPES] = EigenVector<PhaseSpacePoint>(NumPoints, std::make_tuple(r0, initdist(r0)));
 		}
-		monte_carlo_selection(MCParams, initdist, result); // generated from MC from initial distribution
-		return result;
-	};
-	AllPoints density = generate_initial_points(NumPoints);;
+	}
+	density[1] = density[2] = EigenVector<PhaseSpacePoint>(NumPoints, std::make_tuple(r0, initdist(r0)));
+	monte_carlo_selection(MCParams, initdist, density);
 	QuantumMatrix<bool> IsSmall = is_very_small(density);	 // whether each element of density matrix is close to 0 everywhere or not
 	QuantumMatrix<bool> IsSmallOld = IsSmall;				 // whether each element is small at last moment; initially, not used
 	QuantumMatrix<bool> IsNew = QuantumMatrix<bool>::Zero(); // whether some element used to be small but is not small now; initially, not used
 	bool IsCouple = false;									 // whether the dynamics is adiabatic or not; initially, not used
 	// calculate initial energy and purity
-	const double TotalEnergy = [&density, &mass](void) -> double
-	{
-		const double SumWeight = std::reduce(InitialPopulation.begin(), InitialPopulation.end());
-		double result = 0.0;
-		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-		{
-			result += InitialPopulation[iPES] * calculate_total_energy_average_one_surface(density[iPES * NumPES + iPES], mass, iPES);
-		}
-		return result / SumWeight;
-	}();
-	const double Purity = QuantumVector<double>::Map(InitialPopulation.data()).squaredNorm() / std::pow(std::reduce(InitialPopulation.cbegin(), InitialPopulation.cend()), 2);
-	spdlog::info("Initial Energy = {:>+13.6e}; Initial Purity = {:>+13.6e}", TotalEnergy, Purity);
+	const double TotalEnergy = QuantumVector<double>::Map(InitialPopulation.data()).dot(calculate_total_energy_average_each_surface(density, mass))
+		/ std::reduce(InitialPopulation.begin(), InitialPopulation.end());
+	const double Purity = 1.0;
+	spdlog::info("Initial Energy = {}; Initial Purity = {}", TotalEnergy, Purity);
 	// sample extra points for density fitting
-	AllPoints extra_points = generate_initial_points(NumPoints);
+	AllPoints extra_points = generate_extra_points(density, NumExtraPoints, initdist);
 	// generate initial parameters and predictors
 	Optimization optimizer(InitParams, TotalEnergy, Purity);
 	Optimization::Result opt_result = optimizer.optimize(density, extra_points);
 	OptionalKernels kernels;
 	construct_predictors(kernels, optimizer.get_parameters(), density, extra_points);
 	const DistributionFunction& predict_distribution = std::bind(
-		predict_matrix,
+		predict_matrix_with_variance_comparison,
 		std::cref(kernels),
-		std::placeholders::_1); // predict current step distribution
-	const DistributionFunction& backward_evolve_predict_distribution = std::bind(
-		non_adiabatic_evolve_predict,
-		std::placeholders::_1,
-		mass,
-		dt,
-		std::cref(kernels));
+		std::placeholders::_1); // predict current step distribution, used for resampling of density
 	// sample points for mc integral
-	AllPoints mc_points = generate_initial_points(NumMCPoints);
+	auto generate_mc_kernels = [&optimizer, &density, &extra_points](OptionalKernels& mc_kernels) -> void
+	{
+		QuantumArray<ParameterVector> mc_params = optimizer.get_parameters();
+		for (std::size_t iElement = 0; iElement < NumElements; iElement++)
+		{
+			for (double& d : mc_params[iElement])
+			{
+				d *= M_SQRT2;
+			}
+		}
+		construct_predictors(mc_kernels, mc_params, density, extra_points);
+	};
+	OptionalKernels mc_kernels;
+	generate_mc_kernels(mc_kernels);
+	const DistributionFunction mc_distribution = [&mc_kernels](const ClassicalPhaseVector& r) -> QuantumMatrix<std::complex<double>>
+	{
+		return predict_matrix_with_variance_comparison(mc_kernels, r).array().abs2();
+	}; // elementwise square of the prediction, used for monte carlo integrals
+	AllPoints mc_points = generate_monte_carlo_points(MCParams, mc_kernels, density, NumMCPoints, mc_distribution);
 	// output: average, parameters, selected points, gridded phase space
 	std::ofstream average("ave.txt");
 	std::ofstream param("param.txt", std::ios_base::binary);
@@ -97,6 +100,7 @@ int main()
 	auto output = [&](const double time) -> void
 	{
 		end = std::chrono::high_resolution_clock::now();
+		spdlog::info("Start output...");
 		average << time;
 		output_average(average, kernels, density, mc_points, mass);
 		output_param(param, optimizer);
@@ -107,12 +111,13 @@ int main()
 		output_autocor(autocor, MCParams, predict_distribution, density);
 		output_logging(logging, time, opt_result, MCParams, end - begin);
 		spdlog::info(
-			"T = {:>4.0f}, error = {:>+13.6e}, norm = {:>+13.6e}, energy = {:>+13.6e}, purity = {:>+13.6e}",
+			"T = {:>4.0f}, error = {:>+22.15e}, norm = {:>+22.15e}, energy = {:>+22.15e}, purity = {:>+22.15e}",
 			time,
 			std::get<0>(opt_result),
-			calculate_population(kernels, extra_points),
-			calculate_total_energy_average(kernels, extra_points, mass),
-			calculate_purity(kernels, extra_points));
+			calculate_population(kernels),
+			calculate_total_energy_average(kernels, calculate_total_energy_average_each_surface(density, mass)),
+			calculate_purity(kernels));
+		spdlog::info("Finish output");
 		begin = end;
 	};
 	output(0.0);
@@ -121,9 +126,9 @@ int main()
 	for (std::size_t iTick = 1; iTick <= TotalTicks; iTick++)
 	{
 		// evolve
+		// both density and extra points needs evolution, as they are both used for prediction
 		evolve(density, mass, dt, kernels);
 		evolve(extra_points, mass, dt, kernels);
-		evolve(mc_points, mass, dt, kernels);
 		IsSmall = is_very_small(density);
 		IsNew = IsSmallOld.array() > IsSmall.array();
 		IsCouple = is_coupling(density, mass);
@@ -131,9 +136,9 @@ int main()
 		if (IsNew.any())
 		{
 			new_element_point_selection(density, IsNew);
-			extra_points = extra_points_generator(density, NumPoints, backward_evolve_predict_distribution);
 			opt_result = optimizer.optimize(density, extra_points);
 			construct_predictors(kernels, optimizer.get_parameters(), density, extra_points);
+			extra_points = generate_extra_points(density, NumExtraPoints, predict_distribution);
 		}
 		// judge if it is time to re-optimize, or there are new elements having population
 		if (iTick % ReoptFreq == 0)
@@ -141,9 +146,9 @@ int main()
 			// model training if non-adiabatic
 			if (IsCouple)
 			{
-				extra_points = extra_points_generator(density, NumPoints, backward_evolve_predict_distribution);
 				opt_result = optimizer.optimize(density, extra_points);
 				construct_predictors(kernels, optimizer.get_parameters(), density, extra_points);
+				extra_points = generate_extra_points(density, NumExtraPoints, predict_distribution);
 			}
 			if (iTick % OutputFreq == 0)
 			{
@@ -155,11 +160,12 @@ int main()
 				else
 				{
 					// not coupled, optimize for output
-					extra_points = extra_points_generator(density, NumPoints, backward_evolve_predict_distribution);
 					opt_result = optimizer.optimize(density, extra_points);
 					construct_predictors(kernels, optimizer.get_parameters(), density, extra_points);
+					extra_points = generate_extra_points(density, NumExtraPoints, predict_distribution);
 				}
-				monte_carlo_selection(MCParams, predict_distribution, mc_points);
+				generate_mc_kernels(mc_kernels);
+				mc_points = generate_monte_carlo_points(MCParams, mc_kernels, density, NumMCPoints, mc_distribution);
 				// output time
 				output(iTick * dt);
 				// judge whether to finish or not: any of the dimension go over -x0

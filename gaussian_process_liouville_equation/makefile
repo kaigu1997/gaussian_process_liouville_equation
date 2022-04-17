@@ -29,11 +29,11 @@ $(PCH): stdafx.h
 
 .PHONY: clean
 clean:
-	\rm -f *.o *.d *.gch
+	\rm -f *.o *.d* *.gch
 
 .PHONY: distclean
 distclean: clean
-	\rm -rf -- *log *.out* *.png *.gif gp_test core.* *.txt
+	\rm -rf -- *log *.out* *.png *.gif gp_test core.* *.txt Doxyfile* html/ latex/
 
 CLANG_FORMAT := $(shell grep alias\ clang-format= ~/.bash_aliases | awk -F"'" '{print $$2}')
 .PHONY: format

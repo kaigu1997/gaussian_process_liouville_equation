@@ -10,11 +10,18 @@
 class InitialParameters final
 {
 private:
-	ClassicalVector<double> mass;
-	ClassicalPhaseVector r0, rmin, rmax, dr, SigmaR0;
-	Eigen::MatrixXd PhasePoints;
-	double OutputTime, ReoptimizationTime, dt;
-	std::size_t NumberOfSelectedPoints, TotalTicks;
+	ClassicalVector<double> mass;		///< Mass of classical degree of freedom
+	ClassicalPhaseVector r0;			///< Initial position and momentum of classical degree of freedom
+	ClassicalPhaseVector rmin;			///< Lower bound of position and momentum of classical degree of freedom for the grids
+	ClassicalPhaseVector rmax;			///< Lower bound of position and momentum of classical degree of freedom for the grids
+	ClassicalPhaseVector dr;			///< Grid size of position and momentum of classical degree of freedom for the grids
+	ClassicalPhaseVector SigmaR0;		///< Initial standard deviation of classical degree of freedom
+	Eigen::MatrixXd PhasePoints;		///< Grids for plot phase space distribution
+	double OutputTime;					///< The time interval to give outputs (in a.u.)
+	double ReoptimizationTime;			///< The time interval to redo the paramter optimization (in a.u.)
+	double dt;							///< The time interval for evolution
+	std::size_t NumberOfSelectedPoints; ///< The size of training set for parameter optimization
+	std::size_t TotalTicks;				///< The maximum number of dt to finish the evolution
 
 public:
 	/// @brief Constructor, read input from file
