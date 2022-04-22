@@ -22,8 +22,7 @@ using ElementTrainingSet = std::tuple<Eigen::MatrixXd, Eigen::VectorXd>;
 void construct_predictors(
 	OptionalKernels& kernels,
 	const QuantumArray<ParameterVector>& ParameterVectors,
-	const AllPoints& density,
-	const AllPoints& extra_points);
+	const AllPoints& density);
 
 /// @brief To store parameters, kernels and optimization algorithms to use.
 /// And, to optimize parameters, and then predict density matrix and given point.

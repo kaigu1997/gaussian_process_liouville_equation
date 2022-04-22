@@ -28,33 +28,26 @@ AllPoints generate_extra_points(const AllPoints& density, const std::size_t NumP
 				const std::size_t ElementIndex = iPES * NumPES + jPES;
 				if (!density[ElementIndex].empty())
 				{
-					// distributions
-					const ClassicalPhaseVector ave = std::get<0>(*std::max_element(
-						std::execution::par_unseq,
-						density[ElementIndex].cbegin(),
-						density[ElementIndex].cend(),
-						[iPES, jPES](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool
-						{
-							return std::abs(std::get<1>(psp1)(iPES, jPES)) < std::abs(std::get<1>(psp2)(iPES, jPES));
-						})); // ave for new generation, max of the current
-					const ClassicalPhaseVector stddev = 1.1 * calculate_standard_deviation_one_surface(density[ElementIndex]);
-					spdlog::info("Sampling for ({},{}) element, center at {} with width {}.", iPES, jPES, ave.format(VectorFormatter), stddev.format(VectorFormatter));
+					const ClassicalPhaseVector stddev = calculate_standard_deviation_one_surface(density[ElementIndex]);
 					for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 					{
-						normdists[iDim] = std::normal_distribution<double>(ave[iDim], stddev[iDim]);
+						normdists[iDim] = std::normal_distribution<double>(0.0, stddev[iDim]);
 					}
 					// generation
 					result[ElementIndex] = ElementPoints(NumPoints, std::make_tuple(ClassicalPhaseVector::Zero(), QuantumMatrix<std::complex<double>>::Zero()));
+					const std::vector<std::size_t> indices = get_indices(result[ElementIndex].size());
 					std::for_each(
 						std::execution::par_unseq,
-						result[ElementIndex].begin(),
-						result[ElementIndex].end(),
-						[&normdists, &distribution](PhaseSpacePoint& psp) -> void
+						indices.cbegin(),
+						indices.cend(),
+						[&density=density[ElementIndex], &result=result[ElementIndex], &normdists, &distribution](std::size_t iPoint) -> void
 						{
-							auto& [r, rho] = psp;
+							auto& [r, rho] = result[iPoint];
+							r = std::get<0>(density[iPoint % density.size()]);
 							for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 							{
-								r[iDim] = normdists[iDim](engine);
+								// a deviation from the center
+								r[iDim] += normdists[iDim](engine);
 							}
 							// current distribution
 							rho = distribution(r);

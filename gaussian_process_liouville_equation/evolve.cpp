@@ -506,9 +506,9 @@ static QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 				phi.block(2.0 * NBranch, 0, NBranch, phi.cols()),
 				omega1.block(2.0 * NBranch, 0, NBranch, omega1.cols()),
 				rho_predict.block(2.0 * NBranch, 0, NBranch, rho_predict.cols()),
-				(1.0 + phi(1 + 2.0 * NBranch, 0)) / 4.0,
-				-phi(1 + 2.0 * NBranch, 1) / 2.0,
-				(1.0 - phi(1 + 2.0 * NBranch, 0)) / 4.0);
+				(1.0 + phi(1 + 2 * NBranch, 0)) / 4.0,
+				-phi(1 + 2 * NBranch, 1) / 2.0,
+				(1.0 - phi(1 + 2 * NBranch, 0)) / 4.0);
 		}
 		else
 		{

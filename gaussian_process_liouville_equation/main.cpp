@@ -31,7 +31,7 @@ int main(void)
 	const std::size_t ReoptFreq = InitParams.get_reoptimize_freq();			  // save parameter re-optimization frequency
 	const double dt = InitParams.get_dt();									  // save dt directly
 	const std::size_t NumPoints = InitParams.get_number_of_selected_points(); // save the number of points for evolving/optimizing
-	const std::size_t NumExtraPoints = NumPoints * 2;						  // The number of points extra selected for density fitting
+	const std::size_t NumExtraPoints = NumPoints * 5;						  // The number of points extra selected for density fitting
 	const std::size_t NumMCPoints = NumPoints * 5;							  // The number of points for monte carlo integral
 	// get initial distribution
 	MCParameters MCParams(SigmaR0.minCoeff());
@@ -62,7 +62,7 @@ int main(void)
 	Optimization optimizer(InitParams, TotalEnergy, Purity);
 	Optimization::Result opt_result = optimizer.optimize(density, extra_points);
 	OptionalKernels kernels;
-	construct_predictors(kernels, optimizer.get_parameters(), density, extra_points);
+	construct_predictors(kernels, optimizer.get_parameters(), density);
 	const DistributionFunction& predict_distribution = std::bind(
 		predict_matrix_with_variance_comparison,
 		std::cref(kernels),
@@ -75,10 +75,10 @@ int main(void)
 		{
 			for (double& d : mc_params[iElement])
 			{
-				d *= M_SQRT2;
+				d *= 2;
 			}
 		}
-		construct_predictors(mc_kernels, mc_params, density, extra_points);
+		construct_predictors(mc_kernels, mc_params, density);
 	};
 	OptionalKernels mc_kernels;
 	generate_mc_kernels(mc_kernels);
@@ -137,7 +137,7 @@ int main(void)
 		{
 			new_element_point_selection(density, IsNew);
 			opt_result = optimizer.optimize(density, extra_points);
-			construct_predictors(kernels, optimizer.get_parameters(), density, extra_points);
+			construct_predictors(kernels, optimizer.get_parameters(), density);
 			extra_points = generate_extra_points(density, NumExtraPoints, predict_distribution);
 		}
 		// judge if it is time to re-optimize, or there are new elements having population
@@ -147,7 +147,7 @@ int main(void)
 			if (IsCouple)
 			{
 				opt_result = optimizer.optimize(density, extra_points);
-				construct_predictors(kernels, optimizer.get_parameters(), density, extra_points);
+				construct_predictors(kernels, optimizer.get_parameters(), density);
 				extra_points = generate_extra_points(density, NumExtraPoints, predict_distribution);
 			}
 			if (iTick % OutputFreq == 0)
@@ -161,7 +161,7 @@ int main(void)
 				{
 					// not coupled, optimize for output
 					opt_result = optimizer.optimize(density, extra_points);
-					construct_predictors(kernels, optimizer.get_parameters(), density, extra_points);
+					construct_predictors(kernels, optimizer.get_parameters(), density);
 					extra_points = generate_extra_points(density, NumExtraPoints, predict_distribution);
 				}
 				generate_mc_kernels(mc_kernels);
@@ -180,7 +180,7 @@ int main(void)
 		else
 		{
 			// otherwise, update the training set for prediction
-			construct_predictors(kernels, optimizer.get_parameters(), density, extra_points);
+			construct_predictors(kernels, optimizer.get_parameters(), density);
 		}
 		IsSmallOld = IsSmall;
 	}
