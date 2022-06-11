@@ -31,7 +31,7 @@ enum Model
 };
 
 #ifndef TestModel
-const Model TestModel = DAC; ///< The model to use
+constexpr Model TestModel = DAC; ///< The model to use
 #endif						 // !TestModel
 
 /// @brief To calculate the diagonalized subsystem Hamiltonian matrix
@@ -51,13 +51,6 @@ Tensor3d adiabatic_coupling(const ClassicalVector<double>& x);
 /// @return The force tensor of each direction
 /// @sa adiabatic_potential(), adiabatic_coupling()
 Tensor3d adiabatic_force(const ClassicalVector<double>& x);
-
-/// @brief To get a slice of the tensor
-/// @param[in] tensor The tensor which the slice is from
-/// @param[in] row The row index of the tensor
-/// @param[in] col The column index of the tensor
-/// @return A vector, that is tensor(0, row, col) to tensor(idx1_max, row, col)
-ClassicalVector<double> tensor_slice(const Tensor3d& tensor, const std::size_t row, const std::size_t col);
 
 /// @brief To transform density matrix from one basis to another
 /// @param[in] rho The partial Wigner-transformed denstiy matrix, a self-adjoint complex matrix

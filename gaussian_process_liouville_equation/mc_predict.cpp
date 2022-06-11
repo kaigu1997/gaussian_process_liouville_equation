@@ -40,7 +40,7 @@ AllPoints generate_extra_points(const AllPoints& density, const std::size_t NumP
 						std::execution::par_unseq,
 						indices.cbegin(),
 						indices.cend(),
-						[&density=density[ElementIndex], &result=result[ElementIndex], &normdists, &distribution](std::size_t iPoint) -> void
+						[&density = density[ElementIndex], &result = result[ElementIndex], &normdists, &distribution](std::size_t iPoint) -> void
 						{
 							auto& [r, rho] = result[iPoint];
 							r = std::get<0>(density[iPoint % density.size()]);

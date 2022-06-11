@@ -35,10 +35,9 @@ clean:
 distclean: clean
 	\rm -rf -- *log *.out* *.png *.gif gp_test core.* *.txt Doxyfile* html/ latex/
 
-CLANG_FORMAT := $(shell grep alias\ clang-format= ~/.bash_aliases | awk -F"'" '{print $$2}')
 .PHONY: format
 format:
 	for f in *.c* *.h* ; \
 	do \
-		$(CLANG_FORMAT) --style=file -i $${f} ; \
+		clang-format --style=file -i $${f} ; \
 	done

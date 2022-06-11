@@ -68,13 +68,13 @@ InitialParameters::InitialParameters(const std::string& input_file_name)
 	SigmaR0 << SigmaX0, SigmaP0;
 	// whole phase space grids
 	const std::size_t NumGrids = DirectionNumGrids.prod() * DirectionNumGrids.prod();
-	PhasePoints.resize(PhaseDim, NumGrids);
+	PhaseGrids.resize(Eigen::NoChange, NumGrids);
 	const std::vector<std::size_t> indices = get_indices(NumGrids);
 	std::for_each(
 		std::execution::par_unseq,
 		indices.cbegin(),
 		indices.cend(),
-		[&PhasePoints = PhasePoints, &DirectionNumGrids, &xmin, &pmin, &dx, &dp](std::size_t iPoint) -> void
+		[&PhaseGrids = PhaseGrids, &DirectionNumGrids, &xmin, &pmin, &dx, &dp](std::size_t iPoint) -> void
 		{
 			ClassicalVector<double> xPoint = xmin, pPoint = pmin;
 			std::size_t NextIndex = iPoint;
@@ -88,7 +88,7 @@ InitialParameters::InitialParameters(const std::string& input_file_name)
 				xPoint[idx] += dx[idx] * (NextIndex % DirectionNumGrids[idx]);
 				NextIndex /= DirectionNumGrids[idx];
 			}
-			PhasePoints.col(iPoint) << xPoint, pPoint;
+			PhaseGrids.col(iPoint) << xPoint, pPoint;
 		});
 	// limitations on time intervals
 	if (ReoptimizationTime < dt)

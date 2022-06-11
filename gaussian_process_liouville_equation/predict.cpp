@@ -87,9 +87,9 @@ QuantumVector<double> calculate_total_energy_average_each_surface(const AllPoint
 /// @f] @n
 /// where @f$ X_* @f$ is the test features, @f$ X @f$ is the training features,
 /// and @f$ \mathbf{y} @f$ is the training labels.
-Eigen::VectorXd predict_elements(const Kernel& kernel, const Eigen::MatrixXd& PhaseGrids)
+Eigen::VectorXd predict_elements(const Kernel& kernel, const PhasePoints& PhaseGrids)
 {
-	assert(kernel.is_same_feature() && PhaseGrids.rows() == PhaseDim);
+	assert(kernel.is_same_feature());
 	const Kernel k_new_old(kernel.get_parameters(), PhaseGrids, kernel.get_left_feature(), false);
 	return k_new_old.get_kernel() * kernel.get_inverse_label();
 }
@@ -122,14 +122,14 @@ ElementParameter prediction_derivative(const Kernel& kernel, const ClassicalPhas
 /// @f] @n
 /// and if the prediction is smaller than variance, the prediction will be set as 0. @n
 /// The variance matrix is generally too big and not necessary, so it will be calculated elementwise.
-Eigen::VectorXd predict_variances(const Kernel& kernel, const Eigen::MatrixXd& PhaseGrids)
+Eigen::VectorXd predict_variances(const Kernel& kernel, const PhasePoints& PhaseGrids)
 {
-	assert(kernel.is_same_feature() && PhaseGrids.rows() == PhaseDim);
+	assert(kernel.is_same_feature());
 	const Kernel k_new_old(kernel.get_parameters(), PhaseGrids, kernel.get_left_feature(), false);
 	auto calc_result = [&kernel, &k_new_old, &PhaseGrids](const std::size_t iCol) -> double
 	{
 		// construct two features so that K(X*,X*) does not contain noise
-		const Eigen::MatrixXd feature = PhaseGrids.col(iCol);
+		const auto& feature = PhaseGrids.col(iCol);
 		const Kernel k_new_new(kernel.get_parameters(), feature, feature, false);
 		const auto& k_new_old_row_i = k_new_old.get_kernel().row(iCol);
 		return (k_new_new.get_kernel() - k_new_old_row_i * kernel.get_inverse() * k_new_old_row_i.transpose()).value();
@@ -162,7 +162,7 @@ Eigen::VectorXd predict_variances(const Kernel& kernel, const Eigen::MatrixXd& P
  * In other words, its value and 1st order derivative is continuous with the other parts. @n
  * The prediction will then be @f$ f\bar{y} @f$.
  */
-Eigen::VectorXd predict_elements_with_variance_comparison(const Kernel& kernel, const Eigen::MatrixXd& PhaseGrids)
+Eigen::VectorXd predict_elements_with_variance_comparison(const Kernel& kernel, const PhasePoints& PhaseGrids)
 {
 	static constexpr double ConnectingPoint = 2.0;
 	static_assert(ConnectingPoint > 1.0);

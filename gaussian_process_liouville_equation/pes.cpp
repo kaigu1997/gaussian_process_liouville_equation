@@ -61,18 +61,18 @@ static Tensor3d diabatic_force(const ClassicalVector<double>& x)
 	switch (TestModel)
 	{
 	case SAC: // Tully's 1st model
-		Force[0](0, 0) = -SAC_A * SAC_B * std::exp(-sgn(x[0]) * SAC_B * x[0]);
-		Force[0](1, 1) = -Force[0](0, 0);
-		Force[0](0, 1) = Force[0](1, 0) = 2.0 * SAC_C * SAC_D * x[0] * std::exp(-SAC_D * power<2>(x[0]));
+		Force(0, 0, 0) = -SAC_A * SAC_B * std::exp(-sgn(x[0]) * SAC_B * x[0]);
+		Force(1, 1, 0) = -Force(0, 0, 0);
+		Force(0, 1, 0) = Force(1, 0, 0) = 2.0 * SAC_C * SAC_D * x[0] * std::exp(-SAC_D * power<2>(x[0]));
 		break;
 	case DAC: // Tully's 2nd model
-		Force[0](0, 0) = 0;
-		Force[0](1, 1) = -2 * DAC_A * DAC_B * x[0] * std::exp(-DAC_B * power<2>(x[0]));
-		Force[0](0, 1) = Force[0](1, 0) = 2 * DAC_C * DAC_D * x[0] * std::exp(-DAC_D * power<2>(x[0]));
+		Force(0, 0, 0) = 0;
+		Force(1, 1, 0) = -2 * DAC_A * DAC_B * x[0] * std::exp(-DAC_B * power<2>(x[0]));
+		Force(0, 1, 0) = Force(1, 0, 0) = 2 * DAC_C * DAC_D * x[0] * std::exp(-DAC_D * power<2>(x[0]));
 		break;
 	case ECR: // Tully's 3rd model
-		Force[0](0, 0) = Force[0](1, 1) = 0;
-		Force[0](0, 1) = Force[0](1, 0) = -ECR_B * ECR_C * std::exp(-sgn(x[0]) * ECR_C * x[0]);
+		Force(0, 0, 0) = Force(1, 1, 0) = 0;
+		Force(0, 1, 0) = Force(1, 0, 0) = -ECR_B * ECR_C * std::exp(-sgn(x[0]) * ECR_C * x[0]);
 		break;
 	}
 	return Force;
@@ -109,14 +109,23 @@ QuantumVector<double> adiabatic_potential(const ClassicalVector<double>& x)
 /// where C is the transformation matrix
 Tensor3d adiabatic_force(const ClassicalVector<double>& x)
 {
-	Tensor3d AdiaForce;
+	const Tensor3d& DiabaticForce = diabatic_force(x);
+	Tensor3d AdiabaticForce;
 	const QuantumMatrix<double>& TransformMatrix = diabatic_to_adiabatic_matrix(x);
-	const Tensor3d& DiaForce = diabatic_force(x);
-	for (std::size_t i = 0; i < Dim; i++)
+	for (std::size_t iDim = 0; iDim < Dim; iDim++)
 	{
-		AdiaForce[i] = (TransformMatrix.adjoint() * DiaForce[i] * TransformMatrix).selfadjointView<Eigen::Lower>();
+		// slice the force out
+		const Eigen::TensorFixedSize<double, Eigen::Sizes<NumPES, NumPES>> iDimDiabaticForceTensor = DiabaticForce.chip(iDim, 2);
+		// turn that into a matrix
+		const Eigen::Map<const QuantumMatrix<double>> iDimDiabaticForceMatrix = QuantumMatrix<double>::Map(iDimDiabaticForceTensor.data());
+		// calculate its adiabatic result by matmul
+		const QuantumMatrix<double> iDimAdiabaticForceMatrix = (TransformMatrix.adjoint() * iDimDiabaticForceMatrix * TransformMatrix).selfadjointView<Eigen::Lower>();
+		// mapping adiabatic matrix to a tensor
+		const Eigen::TensorMap<const Eigen::Tensor<const double, 2>> iDimAdiabaticForceTensor(iDimAdiabaticForceMatrix.data(), NumPES, NumPES);
+		// put the matrix into the tensor
+		AdiabaticForce.chip(iDim, 2) = iDimAdiabaticForceTensor;
 	}
-	return AdiaForce;
+	return AdiabaticForce;
 }
 
 /// @sa adiabatic_potential(), adiabatic_coupling()
@@ -125,31 +134,21 @@ Tensor3d adiabatic_force(const ClassicalVector<double>& x)
 Tensor3d adiabatic_coupling(const ClassicalVector<double>& x)
 {
 	Tensor3d NAC;
+	NAC.setZero();
 	const Eigen::VectorXd& E = adiabatic_potential(x);
 	const Tensor3d& F = adiabatic_force(x);
 	for (std::size_t i = 0; i < Dim; i++)
 	{
-		NAC[i] = QuantumMatrix<double>::Zero();
 		for (std::size_t j = 1; j < NumPES; j++)
 		{
 			for (std::size_t k = 0; k < j; k++)
 			{
-				NAC[i](j, k) = F[i](j, k) / (E[j] - E[k]);
+				NAC(j, k, i) = F(j, k, i) / (E[j] - E[k]);
+				NAC(k, j, i) = -NAC(j, k, i);
 			}
 		}
-		NAC[i] = NAC[i].triangularView<Eigen::StrictlyLower>();
 	}
 	return NAC;
-}
-
-ClassicalVector<double> tensor_slice(const Tensor3d& tensor, const std::size_t row, const std::size_t col)
-{
-	ClassicalVector<double> result;
-	for (std::size_t iDim = 0; iDim < Dim; iDim++)
-	{
-		result[iDim] = tensor[iDim](row, col);
-	}
-	return result;
 }
 
 // off-diagonal force basis
@@ -164,7 +163,10 @@ ClassicalVector<double> tensor_slice(const Tensor3d& tensor, const std::size_t r
 /// and is the transformation matrix at a certain position x.
 static QuantumMatrix<double> adiabatic_to_force_basis_matrix(const ClassicalVector<double>& x, const std::size_t idx)
 {
-	const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(adiabatic_force(x)[idx]);
+	// saves the slice of the force matrix
+	const Eigen::TensorFixedSize<double, Eigen::Sizes<NumPES, NumPES, 1>> iDimAdiabaticForceTensor = adiabatic_force(x).slice(std::array<std::size_t, 3>{0, 0, idx}, std::array<std::size_t, 3>{NumPES, NumPES, 1});
+	const Eigen::Map<const QuantumMatrix<double>> iDimAdiabaticForceMatrix(iDimAdiabaticForceTensor.data());
+	const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(iDimAdiabaticForceMatrix);
 	return solver.eigenvectors();
 }
 
@@ -173,7 +175,9 @@ static QuantumMatrix<double> adiabatic_to_force_basis_matrix(const ClassicalVect
 /// diagonalization of the corresponding (idx) direction of the adiabatic force.
 QuantumVector<double> force_basis_force(const ClassicalVector<double>& x, const std::size_t idx)
 {
-	const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(adiabatic_force(x)[idx]);
+	const Eigen::TensorFixedSize<double, Eigen::Sizes<NumPES, NumPES, 1>> iDimAdiabaticForceTensor = adiabatic_force(x).slice(std::array<std::size_t, 3>{0, 0, idx}, std::array<std::size_t, 3>{NumPES, NumPES, 1});
+	const Eigen::Map<const QuantumMatrix<double>> iDimAdiabaticForceMatrix(iDimAdiabaticForceTensor.data());
+	const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(iDimAdiabaticForceMatrix);
 	return solver.eigenvalues();
 }
 

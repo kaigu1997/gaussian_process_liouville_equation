@@ -12,12 +12,6 @@
 /// The type for saving all autocorrelations
 using AutoCorrelations = QuantumArray<Eigen::VectorXd>;
 
-/// @brief To check if all elements are very small or not
-/// @param[in] density The selected points in phase space for each element of density matrices
-/// @return A matrix of boolean type and same size as density matrix,
-/// containing each element of density matrix is smallor not
-QuantumMatrix<bool> is_very_small(const AllPoints& density);
-
 /// @brief To generate initial adiabatic partial Wigner-transformed density matrics at the given place
 /// @param[in] r0 Initial center of phase space
 /// @param[in] SigmaR0 Initial standard deviation of phase space
@@ -109,7 +103,8 @@ AutoCorrelations autocorrelation_optimize_displacement(
 
 /// @brief To select points for new elements of density matrix
 /// @param[inout] density The selected points in phase space for each element of density matrices
-/// @param[in] IsNew The matrix that saves whether the element is newly populated or not
-void new_element_point_selection(AllPoints& density, const QuantumMatrix<bool>& IsNew);
+/// @param[in] extra_points The extra selected points
+/// @param[in] ElementChange The matrix that saves whether the element is newly (un)populated or not
+void new_element_point_selection(AllPoints& density, const AllPoints& extra_points, const QuantumMatrix<int>& ElementChange);
 
 #endif // !MC_H

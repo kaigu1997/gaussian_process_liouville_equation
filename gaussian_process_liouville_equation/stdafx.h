@@ -39,6 +39,7 @@
 #include <numeric>
 #include <optional>
 #include <random>
+#include <set>
 #include <string>
 #include <thread>
 #include <tuple>
@@ -52,8 +53,7 @@
 #include <spdlog/fmt/ostr.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
-
-#include <mkl.h>
+#include <unsupported/Eigen/CXX11/Tensor>
 
 /// @brief To calculate power of numeric types
 /// @param t The value, could be integer or floating point
@@ -84,7 +84,6 @@ constexpr std::size_t PhaseDim = Dim * 2;							 ///< The dimension of the phase
 
 // other constants
 constexpr double PurityFactor = power<Dim>(2.0 * M_PI * hbar); ///< The factor for purity. @f$ S=(2\pi\hbar)^D\int\mathrm{d}\Gamma\mathrm{Tr}\rho^2 @f$
-constexpr double epsilon = 1e-2;							   ///< The threshold of whether an element is small or not
 
 // formatters
 const Eigen::IOFormat VectorFormatter(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", " ", "", "", "", "");	///< Formatter for output vector
@@ -107,11 +106,14 @@ using EigenVector = std::vector<T, Eigen::aligned_allocator<T>>;
 template <typename T>
 using QuantumArray = std::array<T, NumElements>;
 /// The vector to depict a phase space point (i.e. coordinate)
-using ClassicalPhaseVector = Eigen::Matrix<double, 2 * Dim, 1>;
-/// 3d tensor type for Force and NAC, based on Matrix with extra dimenstion from classical degree
-using Tensor3d = ClassicalVector<QuantumMatrix<double>>;
+using ClassicalPhaseVector = Eigen::Matrix<double, PhaseDim, 1>;
+/// rank-3 tensor type for Force and NAC, based on Matrix with extra dimenstion from classical degree
+/// 1st rank is column in mat, 2nd is row in mat, 3rd is classical dim
+using Tensor3d = Eigen::TensorFixedSize<double, Eigen::Sizes<NumPES, NumPES, Dim>>;
 /// The type for phase space point, first being x, second being p, third being the partial wigner-transformed density matrix
 using PhaseSpacePoint = std::tuple<ClassicalPhaseVector, QuantumMatrix<std::complex<double>>>;
+/// The type for bunches of phase space points, coordinates only, without information of density
+using PhasePoints = Eigen::Matrix<double, PhaseDim, Eigen::Dynamic>;
 /// Sets of selected phase space points of one density matrix element
 using ElementPoints = EigenVector<PhaseSpacePoint>;
 /// Sets of selected phase space points of all density matrix elements
@@ -128,14 +130,6 @@ inline std::vector<std::size_t> get_indices(const std::size_t N)
 	std::vector<std::size_t> result(N);
 	std::iota(result.begin(), result.end(), 0);
 	return result;
-}
-
-/// @brief To get the (editable) x and p of r
-/// @param r The editable phase space coordinates
-/// @return The x block and p block
-inline std::tuple<Eigen::Block<ClassicalPhaseVector, Dim, 1>, Eigen::Block<ClassicalPhaseVector, Dim, 1>> split_phase_coordinate(ClassicalPhaseVector& r)
-{
-	return std::make_tuple(r.block<Dim, 1>(0, 0), r.block<Dim, 1>(Dim, 0));
 }
 
 /// @brief To get the (constant) x and p of r

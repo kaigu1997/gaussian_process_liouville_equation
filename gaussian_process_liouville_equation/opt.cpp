@@ -48,6 +48,30 @@ static inline double get_density_matrix_element(const QuantumMatrix<std::complex
 	}
 }
 
+QuantumMatrix<bool> is_real_degree_very_small(const AllPoints& density)
+{
+	static constexpr double epsilon = 1e-4;  // The threshold of whether an element is small or not
+	// squared value below this are regarded as 0
+	QuantumMatrix<bool> result = QuantumMatrix<bool>::Ones();
+	// as density is symmetric, only lower-triangular elements needs evaluating
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	{
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
+		{
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
+			result(iPES, jPES) = std::all_of(
+				std::execution::par_unseq,
+				density[ElementIndex].cbegin(),
+				density[ElementIndex].cend(),
+				[iPES, jPES](const PhaseSpacePoint& psp) -> bool
+				{
+					return std::abs(get_density_matrix_element(std::get<1>(psp), iPES, jPES)) <= 0;
+				});
+		}
+	}
+	return result;
+}
+
 /// @brief To construct the training set for all elements
 /// @param[in] density The selected points in phase space for each element of density matrices
 /// @return The training set of all elements in density matrix
@@ -58,7 +82,7 @@ static AllTrainingSets construct_training_sets(const AllPoints& density)
 		const ElementPoints& ElementDensity = density[iPES * NumPES + jPES];
 		const std::size_t NumPoints = ElementDensity.size();
 		// construct training feature (PhaseDim*N) and training labels (N*1)
-		Eigen::MatrixXd feature = Eigen::MatrixXd::Zero(PhaseDim, NumPoints);
+		PhasePoints feature = PhasePoints::Zero(PhaseDim, NumPoints);
 		Eigen::VectorXd label = Eigen::VectorXd::Zero(NumPoints);
 		// first insert original points
 		const std::vector<std::size_t> indices = get_indices(NumPoints);
@@ -72,24 +96,18 @@ static AllTrainingSets construct_training_sets(const AllPoints& density)
 				feature.col(iPoint) = r;
 				label[iPoint] = get_density_matrix_element(rho, iPES, jPES);
 			});
-		// if all points are small, remove this element
-		if ((label.array().abs() < epsilon).all())
-		{
-			feature.resize(0, 0);
-			label.resize(0);
-		}
 		// this happens for coherence, where only real/imaginary part is important
 		return std::make_tuple(feature, label);
 	};
+	const QuantumMatrix<bool> IsSmall = is_real_degree_very_small(density);
 	AllTrainingSets result;
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
 		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
-			const std::size_t ElementIndex = iPES * NumPES + jPES;
-			if (!density[ElementIndex].empty())
+			if (!IsSmall(iPES, jPES))
 			{
-				result[ElementIndex] = construct_element_training_set(iPES, jPES);
+				result[iPES * NumPES + jPES] = construct_element_training_set(iPES, jPES);
 			}
 		}
 	}
@@ -149,7 +167,7 @@ void construct_predictors(
 }
 
 static const double InitialMagnitude = 1.0; ///< The initial weight for all kernels
-static const double InitialNoise = 1e-2;	///< The initial weight for noise
+static const double InitialNoise = 1e-3;	///< The initial weight for noise
 
 /// @brief To set up the values for the initial parameter
 /// @param[in] rSigma The variance of all classical degree of freedom
@@ -190,8 +208,8 @@ static Bounds calculate_bounds(const ClassicalPhaseVector& rSize)
 		UpperBound.push_back(rSize[iDim]);
 	}
 	// third, noise
-	LowerBound.push_back(InitialNoise * InitialNoise / InitialMagnitude);
-	UpperBound.push_back(std::sqrt(InitialNoise));
+	LowerBound.push_back(0.1 * InitialNoise);
+	UpperBound.push_back(10.0 * InitialNoise);
 	return result;
 }
 
@@ -214,8 +232,8 @@ static Bounds calculate_bounds(const ElementPoints& density)
 	UpperBound.insert(UpperBound.cend(), ub.data(), ub.data() + PhaseDim);
 	// third, noise
 	// diagonal weight is fixed
-	LowerBound.push_back(InitialNoise * InitialNoise / InitialMagnitude);
-	UpperBound.push_back(std::sqrt(InitialNoise));
+	LowerBound.push_back(0.1 * InitialNoise);
+	UpperBound.push_back(10.0 * InitialNoise);
 	return result;
 }
 
@@ -342,8 +360,7 @@ Optimization::Optimization(
 	TotalEnergy(InitialTotalEnergy),
 	Purity(InitialPurity),
 	mass(InitParams.get_mass()),
-	InitialParameter(set_initial_parameters(InitParams.get_sigma_r0())),
-	InitialParameterForGlobalOptimizer(local_parameter_to_global(InitialParameter))
+	InitialParameter(set_initial_parameters(InitParams.get_sigma_r0()))
 {
 	static constexpr std::size_t MaximumEvaluations = 100000; // Maximum evaluations for global optimizer
 
@@ -770,11 +787,11 @@ static Optimization::Result optimize_diagonal(
 			{
 				// off-diagonal elements, remove training set
 				auto& [feature, label] = ats[ElementIndex];
-				feature = Eigen::MatrixXd(0, 0);
-				label = Eigen::VectorXd(0);
+				feature.resize(Eigen::NoChange, 0);
+				label.resize(0);
 				auto& [extra_feature, extra_label] = extra_ats[ElementIndex];
-				extra_feature = Eigen::MatrixXd(0, 0);
-				extra_label = Eigen::VectorXd(0);
+				extra_feature.resize(Eigen::NoChange, 0);
+				extra_label.resize(0);
 			}
 		}
 	}
@@ -1180,46 +1197,51 @@ Optimization::Result Optimization::optimize(
 	const AllTrainingSets TrainingSets = construct_training_sets(density), ExtraTrainingSets = construct_training_sets(extra_points);
 	// set bounds for current bounds, and calculate energy on each surfaces
 	const QuantumVector<double> Energies = calculate_total_energy_average_each_surface(density, mass);
-	auto move_into_bounds = [](ParameterVector& params, const Bounds& bounds)
+	const QuantumArray<Bounds> ParameterBounds = [&density, &Optimizers=std::as_const(this->NLOptLocalMinimizers)](void) -> QuantumArray<Bounds>
 	{
-		const auto& [LowerBound, UpperBound] = bounds;
-		for (std::size_t iParam = 0; iParam < Kernel::NumTotalParameters; iParam++)
+		QuantumArray<Bounds> result;
+		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 		{
-			params[iParam] = std::max(params[iParam], LowerBound[iParam]);
-			params[iParam] = std::min(params[iParam], UpperBound[iParam]);
-		}
-	};
-	QuantumArray<Bounds> param_bounds;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-	{
-		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
-		{
-			const std::size_t ElementIndex = iPES * NumPES + jPES;
-			if (iPES <= jPES)
+			for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 			{
-				// only get upper-triangular bounds
-				if (!density[ElementIndex].empty())
+				const std::size_t ElementIndex = iPES * NumPES + jPES;
+				if (iPES <= jPES)
 				{
-					param_bounds[ElementIndex] = calculate_bounds(density[ElementIndex]);
+					// only get upper-triangular bounds
+					if (!density[ElementIndex].empty())
+					{
+						result[ElementIndex] = calculate_bounds(density[ElementIndex]);
+					}
+					else
+					{
+						auto& [lower_bound, upper_bound] = result[ElementIndex];
+						lower_bound = Optimizers[ElementIndex].get_lower_bounds();
+						upper_bound = Optimizers[ElementIndex].get_upper_bounds();
+					}
 				}
 				else
 				{
-					auto& [lower_bound, upper_bound] = param_bounds[ElementIndex];
-					lower_bound = NLOptLocalMinimizers[ElementIndex].get_lower_bounds();
-					upper_bound = NLOptLocalMinimizers[ElementIndex].get_upper_bounds();
+					// for strict lower-triangular bounds, copy from upper
+					result[ElementIndex] = result[jPES * NumPES + iPES];
 				}
 			}
-			else
-			{
-				// for strict lower-triangular bounds, copy from upper
-				param_bounds[ElementIndex] = param_bounds[jPES * NumPES + iPES];
-			}
-			// compare each element; if they are out of bounds, move it in
-			move_into_bounds(ParameterVectors[ElementIndex], param_bounds[ElementIndex]);
 		}
-	}
-	set_optimizer_bounds(NLOptLocalMinimizers, param_bounds);
-	set_optimizer_bounds(NLOptGlobalMinimizers, param_bounds);
+		return result;
+	}();
+	auto move_into_bounds = [&ParameterBounds](QuantumArray<ParameterVector>& parameter_vectors)
+	{
+		for (std::size_t iElement = 0; iElement < NumElements; iElement++)
+		{
+			const auto& [LowerBound, UpperBound] = ParameterBounds[iElement];
+			for (std::size_t iParam = 0; iParam < Kernel::NumTotalParameters; iParam++)
+			{
+				parameter_vectors[iElement][iParam] = std::max(parameter_vectors[iElement][iParam], LowerBound[iParam]);
+				parameter_vectors[iElement][iParam] = std::min(parameter_vectors[iElement][iParam], UpperBound[iParam]);
+			}
+		}
+	};
+	set_optimizer_bounds(NLOptLocalMinimizers, ParameterBounds);
+	set_optimizer_bounds(NLOptGlobalMinimizers, ParameterBounds);
 	// any offdiagonal element is not small
 	const bool OffDiagonalOptimization = [&density](void) -> bool
 	{
@@ -1241,14 +1263,16 @@ Optimization::Result Optimization::optimize(
 
 	// construct a function for code reuse
 	auto optimize_and_check =
-		[this, &density, &TrainingSets, &ExtraTrainingSets, &Energies, OffDiagonalOptimization](
+		[this, &density, &TrainingSets, &ExtraTrainingSets, &Energies, OffDiagonalOptimization, &ParameterBounds, &move_into_bounds](
 			QuantumArray<ParameterVector>& parameter_vectors) -> std::tuple<Optimization::Result, Eigen::Vector4d>
 	{
 		// initially, set the magnitude to be 1
+		// and move the parameters into bounds
 		for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 		{
 			parameter_vectors[iElement][0] = InitialMagnitude;
 		}
+		move_into_bounds(parameter_vectors);
 		Optimization::Result result = optimize_elementwise(TrainingSets, ExtraTrainingSets, NLOptLocalMinimizers, parameter_vectors);
 		auto& [err, steps] = result;
 		if (OffDiagonalOptimization)
@@ -1377,7 +1401,12 @@ Optimization::Result Optimization::optimize(
 	QuantumArray<ParameterVector> param_vec_global, param_vec_local;
 	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{
-		param_vec_global[iElement] = InitialParameterForGlobalOptimizer;
+		param_vec_global[iElement] = InitialParameter;
+	}
+	move_into_bounds(param_vec_global);
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
+	{
+		param_vec_global[iElement] = local_parameter_to_global(param_vec_global[iElement]);
 	}
 	[[maybe_unused]] const auto& [error_global_elem, steps_global_elem] = optimize_elementwise(TrainingSets, ExtraTrainingSets, NLOptGlobalMinimizers, param_vec_global);
 	for (std::size_t iElement = 0; iElement < NumElements; iElement++)

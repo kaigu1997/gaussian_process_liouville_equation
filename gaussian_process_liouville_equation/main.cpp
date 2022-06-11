@@ -24,7 +24,7 @@ int main(void)
 	const InitialParameters InitParams("input");							  // get mass, r0, sigma_r0, dt, output time
 	const ClassicalPhaseVector& r0 = InitParams.get_r0();					  // save initial phase space point
 	const ClassicalPhaseVector& SigmaR0 = InitParams.get_sigma_r0();		  // save initial standard deviation
-	const Eigen::MatrixXd& PhaseGrids = InitParams.get_phase_space_points();  // save output grids in phase space
+	const PhasePoints& PhaseGrids = InitParams.get_phase_space_points();	  // save output grids in phase space
 	const ClassicalVector<double>& mass = InitParams.get_mass();			  // save mass directly
 	const std::size_t TotalTicks = InitParams.calc_total_ticks();			  // calculate total time in unit of dt
 	const std::size_t OutputFreq = InitParams.get_output_freq();			  // save output frequency
@@ -47,10 +47,10 @@ int main(void)
 	}
 	density[1] = density[2] = EigenVector<PhaseSpacePoint>(NumPoints, std::make_tuple(r0, initdist(r0)));
 	monte_carlo_selection(MCParams, initdist, density);
-	QuantumMatrix<bool> IsSmall = is_very_small(density);	 // whether each element of density matrix is close to 0 everywhere or not
-	QuantumMatrix<bool> IsSmallOld = IsSmall;				 // whether each element is small at last moment; initially, not used
-	QuantumMatrix<bool> IsNew = QuantumMatrix<bool>::Zero(); // whether some element used to be small but is not small now; initially, not used
-	bool IsCouple = false;									 // whether the dynamics is adiabatic or not; initially, not used
+	QuantumMatrix<bool> IsSmall = is_real_degree_very_small(density); // whether each element of density matrix is close to 0 everywhere or not
+	QuantumMatrix<bool> IsSmallOld = IsSmall;						  // whether each element is small at last moment; initially, not used
+	QuantumMatrix<int> ElementChange = QuantumMatrix<int>::Zero();	  // whether some element used to be small but is not small now; initially, not used
+	bool IsCouple = false;											  // whether the dynamics is adiabatic or not; initially, not used
 	// calculate initial energy and purity
 	const double TotalEnergy = QuantumVector<double>::Map(InitialPopulation.data()).dot(calculate_total_energy_average_each_surface(density, mass))
 		/ std::reduce(InitialPopulation.begin(), InitialPopulation.end());
@@ -60,6 +60,7 @@ int main(void)
 	AllPoints extra_points = generate_extra_points(density, NumExtraPoints, initdist);
 	// generate initial parameters and predictors
 	Optimization optimizer(InitParams, TotalEnergy, Purity);
+	spdlog::info("Optimization initially...");
 	Optimization::Result opt_result = optimizer.optimize(density, extra_points);
 	OptionalKernels kernels;
 	construct_predictors(kernels, optimizer.get_parameters(), density);
@@ -129,13 +130,14 @@ int main(void)
 		// both density and extra points needs evolution, as they are both used for prediction
 		evolve(density, mass, dt, kernels);
 		evolve(extra_points, mass, dt, kernels);
-		IsSmall = is_very_small(density);
-		IsNew = IsSmallOld.array() > IsSmall.array();
+		IsSmall = is_real_degree_very_small(density);
+		ElementChange = IsSmallOld.cast<int>().array() - IsSmall.cast<int>().array();
 		IsCouple = is_coupling(density, mass);
 		// reselect; nothing new, nothing happens
-		if (IsNew.any())
+		if (ElementChange.cast<bool>().any())
 		{
-			new_element_point_selection(density, IsNew);
+			new_element_point_selection(density, extra_points, ElementChange);
+			spdlog::info("Optimization at T = {} because of element change", iTick * dt);
 			opt_result = optimizer.optimize(density, extra_points);
 			construct_predictors(kernels, optimizer.get_parameters(), density);
 			extra_points = generate_extra_points(density, NumExtraPoints, predict_distribution);
@@ -146,19 +148,16 @@ int main(void)
 			// model training if non-adiabatic
 			if (IsCouple)
 			{
+				spdlog::info("Optimization at T = {} as the re-optimization required by non-adiabaticity", iTick * dt);
 				opt_result = optimizer.optimize(density, extra_points);
 				construct_predictors(kernels, optimizer.get_parameters(), density);
 				extra_points = generate_extra_points(density, NumExtraPoints, predict_distribution);
 			}
 			if (iTick % OutputFreq == 0)
 			{
-				if (IsCouple)
+				if (!IsCouple)
 				{
-					// if in the coupling region, reselect points
-					monte_carlo_selection(MCParams, predict_distribution, density);
-				}
-				else
-				{
+					spdlog::info("Optimization at T = {} for output", iTick * dt);
 					// not coupled, optimize for output
 					opt_result = optimizer.optimize(density, extra_points);
 					construct_predictors(kernels, optimizer.get_parameters(), density);

@@ -40,7 +40,7 @@ void output_point(std::ostream& os, const AllPoints& Points);
 /// @param[inout] variance The output stream for variance
 /// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
 /// @param[in] PhaseGrids The phase space coordinates of the grids
-void output_phase(std::ostream& phase, std::ostream& variance, const OptionalKernels& Kernels, const Eigen::MatrixXd& PhaseGrids);
+void output_phase(std::ostream& phase, std::ostream& variance, const OptionalKernels& Kernels, const PhasePoints& PhaseGrids);
 
 /// @brief To output the process of setting monte carlo steps by calculating autocorrelation
 /// @param[inout] os The output stream

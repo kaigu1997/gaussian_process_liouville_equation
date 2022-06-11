@@ -16,7 +16,7 @@ private:
 	ClassicalPhaseVector rmax;			///< Lower bound of position and momentum of classical degree of freedom for the grids
 	ClassicalPhaseVector dr;			///< Grid size of position and momentum of classical degree of freedom for the grids
 	ClassicalPhaseVector SigmaR0;		///< Initial standard deviation of classical degree of freedom
-	Eigen::MatrixXd PhasePoints;		///< Grids for plot phase space distribution
+	PhasePoints PhaseGrids;				///< Grids for plot phase space distribution
 	double OutputTime;					///< The time interval to give outputs (in a.u.)
 	double ReoptimizationTime;			///< The time interval to redo the paramter optimization (in a.u.)
 	double dt;							///< The time interval for evolution
@@ -73,9 +73,9 @@ public:
 
 	/// @brief To get all the phase space grids
 	/// @return All the phase space points, one in a column
-	const Eigen::MatrixXd& get_phase_space_points(void) const
+	const PhasePoints& get_phase_space_points(void) const
 	{
-		return PhasePoints;
+		return PhaseGrids;
 	}
 
 	/// @brief To get re-selection frequency

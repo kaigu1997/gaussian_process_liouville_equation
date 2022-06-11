@@ -31,7 +31,7 @@ public:
 	/// @param[in] IsCalculateDerivative Whether to calculate derivative of each kernel or not
 	Kernel(
 		const ParameterVector& Parameter,
-		const Eigen::MatrixXd& feature,
+		const PhasePoints& feature,
 		const Eigen::VectorXd& label,
 		const bool IsCalculateAverage,
 		const bool IsCalculateDerivative);
@@ -43,8 +43,8 @@ public:
 	/// @param[in] IsCalculateDerivative Whether to calculate derivative of kernel matrix over parameters
 	Kernel(
 		const ParameterVector& Parameter,
-		const Eigen::MatrixXd& left_feature,
-		const Eigen::MatrixXd& right_feature,
+		const PhasePoints& left_feature,
+		const PhasePoints& right_feature,
 		const bool IsCalculateDerivative);
 
 	// The interface for data accessing, inline will make them faster
@@ -57,14 +57,14 @@ public:
 
 	/// @brief To get the feature on the left
 	/// @return The left feature
-	const Eigen::MatrixXd& get_left_feature(void) const
+	const PhasePoints& get_left_feature(void) const
 	{
 		return LeftFeature;
 	}
 
 	/// @brief To get the feature on the right
 	/// @return The right feature
-	const Eigen::MatrixXd& get_right_feature(void) const
+	const PhasePoints& get_right_feature(void) const
 	{
 		return RightFeature;
 	}
@@ -204,8 +204,8 @@ public:
 private:
 	const ParameterVector Params;										 ///< Parameters in vector
 	const KernelParameter KernelParams;									 ///< All parameters used in the kernel
-	const Eigen::MatrixXd LeftFeature;									 ///< The left feature
-	const Eigen::MatrixXd RightFeature;									 ///< The right feature
+	const PhasePoints LeftFeature;										 ///< The left feature
+	const PhasePoints RightFeature;										 ///< The right feature
 	const Eigen::MatrixXd KernelMatrix;									 ///< The kernel matrix
 	const std::optional<Eigen::VectorXd> Label;							 ///< The labels corresponding to feature when the features are the same
 	const std::optional<Eigen::LLT<Eigen::MatrixXd>> DecompOfKernel;	 ///< The Cholesky decomposition of the kernel matrix (if necessary)

@@ -45,8 +45,7 @@ void output_average(
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
 		const std::size_t ElementIndex = iPES * NumPES + iPES;
-		assert(!density[ElementIndex].empty() == Kernels[ElementIndex].has_value() && density[ElementIndex].empty() == mc_points[ElementIndex].empty());
-		if (!density[ElementIndex].empty())
+		if (Kernels[ElementIndex].has_value())
 		{
 			const ClassicalPhaseVector r_prm = calculate_1st_order_average_one_surface(Kernels[ElementIndex].value());
 			const ClassicalPhaseVector r_ave = calculate_1st_order_average_one_surface(density[ElementIndex]);
@@ -132,7 +131,7 @@ void output_point(std::ostream& os, const AllPoints& Points)
 {
 	const std::size_t NumPoints = get_num_points(Points);
 	const std::vector<std::size_t> indices = get_indices(NumPoints);
-	QuantumArray<Eigen::MatrixXd> point_coordinates;
+	QuantumArray<PhasePoints> point_coordinates;
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
 		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
@@ -140,19 +139,17 @@ void output_point(std::ostream& os, const AllPoints& Points)
 			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			if (iPES <= jPES)
 			{
-				point_coordinates[ElementIndex] = Eigen::MatrixXd::Zero(PhaseDim, NumPoints);
+				point_coordinates[ElementIndex] = PhasePoints::Zero(PhaseDim, NumPoints);
 				// for row-major, visit upper triangular elements earlier
 				// so selection for the upper triangular elements
 				const ElementPoints& ElementPoints = Points[ElementIndex];
-				Eigen::MatrixXd& element_point_coordinates = point_coordinates[ElementIndex];
-				const std::size_t StartRow = ElementIndex * PhaseDim;
 				if (!ElementPoints.empty())
 				{
 					std::for_each(
 						std::execution::par_unseq,
 						indices.cbegin(),
 						indices.cend(),
-						[&ElementPoints, &element_point_coordinates, StartRow](std::size_t iPoint) -> void
+						[&ElementPoints, &element_point_coordinates = point_coordinates[ElementIndex]](const std::size_t iPoint) -> void
 						{
 							[[maybe_unused]] const auto& [r, rho] = ElementPoints[iPoint];
 							element_point_coordinates.col(iPoint) = r;
@@ -171,7 +168,7 @@ void output_point(std::ostream& os, const AllPoints& Points)
 	os << '\n';
 }
 
-void output_phase(std::ostream& phase, std::ostream& variance, const OptionalKernels& Kernels, const Eigen::MatrixXd& PhaseGrids)
+void output_phase(std::ostream& phase, std::ostream& variance, const OptionalKernels& Kernels, const PhasePoints& PhaseGrids)
 {
 	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 	{

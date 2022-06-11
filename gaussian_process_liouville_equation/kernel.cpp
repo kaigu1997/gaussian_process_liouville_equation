@@ -35,8 +35,8 @@ static Kernel::KernelParameter unpack_parameters(const ParameterVector& Paramete
 /// @return The Gaussian kernel matrix
 static Eigen::MatrixXd gaussian_kernel(
 	const Eigen::VectorXd& CharacteristicLength,
-	const Eigen::MatrixXd& LeftFeature,
-	const Eigen::MatrixXd& RightFeature)
+	const PhasePoints& LeftFeature,
+	const PhasePoints& RightFeature)
 {
 	auto calculate_element = [&CharacteristicLength, &LeftFeature, &RightFeature](const std::size_t iRow, const std::size_t iCol) -> double
 	{
@@ -118,10 +118,9 @@ static Eigen::MatrixXd gaussian_kernel(
 /// When there are more than one feature, the kernel matrix follows @f$ K_{ij}=k(X_{1_{\cdot i}}, X_{2_{\cdot j}}) @f$.
 static inline Eigen::MatrixXd get_kernel_matrix(
 	const Kernel::KernelParameter& KernelParams,
-	const Eigen::MatrixXd& LeftFeature,
-	const Eigen::MatrixXd& RightFeature)
+	const PhasePoints& LeftFeature,
+	const PhasePoints& RightFeature)
 {
-	assert(LeftFeature.rows() == PhaseDim && RightFeature.rows() == PhaseDim);
 	const std::size_t Rows = LeftFeature.cols(), Cols = RightFeature.cols();
 	Eigen::MatrixXd result = Eigen::MatrixXd::Zero(Rows, Cols);
 	const auto& [Magnitude, CharLength, Noise] = KernelParams;
@@ -167,7 +166,7 @@ static inline double calculate_population(const Kernel::KernelParameter& KernelP
 /// and similar for other @f$ x_i @f$ and @f$ p_i @f$.
 static inline ClassicalPhaseVector calculate_1st_order_average(
 	const Kernel::KernelParameter& KernelParams,
-	const Eigen::MatrixXd& Features,
+	const PhasePoints& Features,
 	const Eigen::VectorXd& InvLbl)
 {
 	static constexpr double GlobalFactor = power<Dim>(2.0 * M_PI);
@@ -190,7 +189,7 @@ static inline ClassicalPhaseVector calculate_1st_order_average(
 /// if denote @f$ x_{mni}=\frac{[\mathbf{x}_m]_i-[\mathbf{x}_n]_i}{l_i} @f$.
 static inline double calculate_purity(
 	const Kernel::KernelParameter& KernelParams,
-	const Eigen::MatrixXd& Features,
+	const PhasePoints& Features,
 	const Eigen::VectorXd& InvLbl)
 {
 	static constexpr double GlobalFactor = PurityFactor * power<Dim>(M_PI);
@@ -213,8 +212,8 @@ static inline double calculate_purity(
 /// and thus the derivative matrix is constructed.
 static EigenVector<Eigen::MatrixXd> gaussian_derivative_over_char_length(
 	const ClassicalPhaseVector& CharacteristicLength,
-	const Eigen::MatrixXd& LeftFeature,
-	const Eigen::MatrixXd& RightFeature)
+	const PhasePoints& LeftFeature,
+	const PhasePoints& RightFeature)
 {
 	const Eigen::MatrixXd& GaussianKernelMatrix = gaussian_kernel(CharacteristicLength, LeftFeature, RightFeature);
 	auto calculate_factor = [&CharacteristicLength, &LeftFeature, &RightFeature](const std::size_t iRow, const std::size_t iCol) -> ClassicalPhaseVector
@@ -313,11 +312,10 @@ static EigenVector<Eigen::MatrixXd> gaussian_derivative_over_char_length(
 /// @return The derivative of kernel matrix over parameters
 static EigenVector<Eigen::MatrixXd> calculate_derivatives(
 	const Kernel::KernelParameter& KernelParams,
-	const Eigen::MatrixXd& LeftFeature,
-	const Eigen::MatrixXd& RightFeature,
+	const PhasePoints& LeftFeature,
+	const PhasePoints& RightFeature,
 	const Eigen::MatrixXd& KernelMatrix)
 {
-	assert(LeftFeature.rows() == PhaseDim && RightFeature.rows() == PhaseDim);
 	const std::size_t Rows = LeftFeature.cols(), Cols = RightFeature.cols();
 	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 	EigenVector<Eigen::MatrixXd> result;
@@ -436,7 +434,7 @@ static ParameterVector population_derivatives(
 /// @return The derivative of @f$ \langle\rho\rangle @f$ over all parameters
 static ParameterVector purity_derivatives(
 	const Kernel::KernelParameter& KernelParams,
-	const Eigen::MatrixXd& Feature,
+	const PhasePoints& Feature,
 	const EigenVector<Eigen::VectorXd>& NegInvDerivInvLbl,
 	const Eigen::VectorXd& InvLbl)
 {
@@ -481,7 +479,7 @@ static ParameterVector purity_derivatives(
 
 Kernel::Kernel(
 	const ParameterVector& Parameter,
-	const Eigen::MatrixXd& feature,
+	const PhasePoints& feature,
 	const Eigen::VectorXd& label,
 	const bool IsCalculateAverage,
 	const bool IsCalculateDerivative) :
@@ -522,8 +520,8 @@ Kernel::Kernel(
 
 Kernel::Kernel(
 	const ParameterVector& Parameter,
-	const Eigen::MatrixXd& left_feature,
-	const Eigen::MatrixXd& right_feature,
+	const PhasePoints& left_feature,
+	const PhasePoints& right_feature,
 	const bool IsCalculateDerivative) :
 	Params(Parameter),
 	KernelParams(unpack_parameters(Parameter)),

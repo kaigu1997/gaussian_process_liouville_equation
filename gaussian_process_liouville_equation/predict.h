@@ -38,7 +38,7 @@ QuantumVector<double> calculate_total_energy_average_each_surface(const AllPoint
 /// @param[in] kernel The kernel of the training set
 /// @param[in] PhaseGrids All the grids required to calculate in phase space
 /// @return A N-by-1 matrix, N is the number of required grids
-Eigen::VectorXd predict_elements(const Kernel& kernel, const Eigen::MatrixXd& PhaseGrids);
+Eigen::VectorXd predict_elements(const Kernel& kernel, const PhasePoints& PhaseGrids);
 
 /// @brief To calculate the derivative of the prediction over parameters
 /// @param[in] kernel The kernel of the training set
@@ -50,13 +50,13 @@ ElementParameter prediction_derivative(const Kernel& kernel, const ClassicalPhas
 /// @param[in] kernel The kernel of the training set
 /// @param[in] PhaseGrids All the grids required to calculate in phase space
 /// @return A N-by-1 matrix, N is the number of required grids
-Eigen::VectorXd predict_variances(const Kernel& kernel, const Eigen::MatrixXd& PhaseGrids);
+Eigen::VectorXd predict_variances(const Kernel& kernel, const PhasePoints& PhaseGrids);
 
 /// @brief To calculate the prediction of a certain element of density matrix with comparison to the variance
 /// @param[in] kernel The kernel of the training set
 /// @param[in] PhaseGrids All the grids required to calculate in phase space
 /// @return A N-by-1 matrix, N is the number of required grids
-Eigen::VectorXd predict_elements_with_variance_comparison(const Kernel& kernel, const Eigen::MatrixXd& PhaseGrids);
+Eigen::VectorXd predict_elements_with_variance_comparison(const Kernel& kernel, const PhasePoints& PhaseGrids);
 
 /// @brief To calculate the population on one surface by analytica integration of parameters
 /// @param[in] kernel The kernel for prediction

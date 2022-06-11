@@ -1,14 +1,15 @@
-# This format file is based on clang-format 11
+# This format file is based on clang-format 14
 # and may not work for previous versions where key/value changes.
 BasedOnStyle: Microsoft
 ---
 Language: Cpp
 AccessModifierOffset: -4
 AlignAfterOpenBracket: DontAlign
-AlignConsecutiveAssignments: false
-AlignConsecutiveBitFields: false
-AlignConsecutiveDeclarations: false
-AlignConsecutiveMacros: false
+AlignArrayOfStructures: Right
+AlignConsecutiveAssignments: None
+AlignConsecutiveBitFields: None
+AlignConsecutiveDeclarations: None
+AlignConsecutiveMacros: None
 AlignEscapedNewlines: Left
 AlignOperands: DontAlign
 AlignTrailingComments: true
@@ -26,8 +27,10 @@ AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
 AlwaysBreakBeforeMultilineStrings: false
 AlwaysBreakTemplateDeclarations: Yes
+# AttributeMacros
 BinPackArguments: false
 BinPackParameters: false
+BitFieldColonSpacing: After
 BraceWrapping:
   AfterCaseLabel: true
   AfterClass: true
@@ -50,28 +53,27 @@ BraceWrapping:
 # BreakAfterJavaFieldAnnotations
 BreakBeforeBinaryOperators: NonAssignment
 BreakBeforeBraces: Custom
-BreakBeforeInheritanceComma: false
+BreakBeforeConceptDeclarations: true
 BreakBeforeTernaryOperators: true
-BreakConstructorInitializersBeforeComma: false
 BreakConstructorInitializers: AfterColon
 BreakInheritanceList: AfterColon
 BreakStringLiterals: false
 ColumnLimit: 0
 # CommentPragmas
 CompactNamespaces: false
-ConstructorInitializerAllOnOneLineOrOnePerLine: true
+# ConstructorInitializerAllOnOneLineOrOnePerLine
 ConstructorInitializerIndentWidth: 4
 ContinuationIndentWidth: 4
 Cpp11BracedListStyle: true
 DeriveLineEnding: false
 DerivePointerAlignment: false
 DisableFormat: false
-ExperimentalAutoDetectBinPacking: false
+EmptyLineAfterAccessModifier: Never
+EmptyLineBeforeAccessModifier: Always
+# ExperimentalAutoDetectBinPacking
 FixNamespaceComments: true
-ForEachMacros:
-  - foreach
-  - Q_FOREACH
-  - BOOST_FOREACH
+ForEachMacros: ['foreach', 'BOOST_FOREACH']
+# IfMacros
 IncludeBlocks: Regroup
 IncludeCategories:
   - Regex: '"stdafx.h"' # precompiled header
@@ -84,6 +86,7 @@ IncludeCategories:
     Priority: 3
 IncludeIsMainRegex: '$'
 IncludeIsMainSourceRegex: '([.]h[hpx+])?$'
+IndentAccessModifiers: false
 IndentCaseBlocks: false
 IndentCaseLabels: false
 IndentExternBlock: AfterExternBlock
@@ -96,6 +99,7 @@ IndentWrappedFunctionNames: true
 # JavaScriptQuotes
 # JavaScriptWrapImports
 KeepEmptyLinesAtTheStartOfBlocks: false
+LambdaBodyIndentation: Signature
 # MacroBlockBegin
 # MacroBlockEnd
 MaxEmptyLinesToKeep: 2
@@ -105,49 +109,68 @@ NamespaceIndentation: All
 # ObjCBlockIndentWidth
 # ObjCSpaceAfterProperty
 # ObjCSpaceBeforeProtocolList
+PPIndentWidth: 0
+PackConstructorInitializers: NextLine
 # PenaltyBreakAssignment
 # PenaltyBreakBeforeFirstCallParameter
 # PenaltyBreakComment
 # PenaltyBreakFirstLessLess
 # PenaltyBreakString
 # PenaltyBreakTemplateDeclaration
+# PenaltyIndentedWhitespace
 # PenaltyExcessCharacter
 # PenaltyReturnTypeOnItsOwnLine
 PointerAlignment: Left
+QualifierAlignment: Custom
+QualifierOrder: ['static', 'inline', 'constexpr', 'const', 'volatile', 'type', 'restrict']
 # RawStringFormats
-ReflowComments: true
-SortIncludes: true
+ReferenceAlignment: Left
+ReflowComments: false
+RemoveBracesLLVM: false
+SeparateDefinitionBlocks: Leave
+ShortNamespaceLines: 0
+SortIncludes: CaseInsensitive
+# SortJavaStaticImport
 SortUsingDeclarations: true
 SpaceAfterCStyleCast: false
 SpaceAfterLogicalNot: false
 SpaceAfterTemplateKeyword: true
+SpaceAroundPointerQualifiers: Both
 SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
 SpaceBeforeCpp11BracedList: false
 SpaceBeforeCtorInitializerColon: true
-SpaceBeforeInheritanceColon: true
-SpaceBeforeParens: ControlStatements
+SpaceBeforeInheritanceColon: false
+SpaceBeforeParens: Custom
+SpaceBeforeParensOptions:
+  AfterControlStatements: true
+  AfterForeachMacros: false
+  AfterFunctionDeclarationName: false
+  AfterFunctionDefinitionName: false
+  AfterIfMacros: false
+  BeforeNonEmptyParentheses: false
+  AfterOverloadedOperator: false
 SpaceBeforeRangeBasedForLoopColon: true
 SpaceBeforeSquareBrackets: false
 SpaceInEmptyBlock: false
 SpaceInEmptyParentheses: false
 SpacesBeforeTrailingComments: 1
-SpacesInAngles: false
+SpacesInAngles: Never
 SpacesInCStyleCastParentheses: false
 SpacesInConditionalStatement: false
 SpacesInContainerLiterals: false
+SpacesInLineCommentPrefix:
+  Maximum: -1
+  Minimum: 1
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
-Standard: c++17
-StatementMacros:
-  - Q_UNUSED
-  - QT_REQUIRE_VERSION
+Standard: c++20
+# StatementAttributeLikeMacros
+# StatementMacros
 TabWidth: 4
 # TypenameMacros
 UseCRLF: false
 UseTab: Always
 WhitespaceSensitiveMacros:
   - STRINGIZE
-  - PP_STRINGIZE
   - BOOST_PP_STRINGIZE
-...
-
