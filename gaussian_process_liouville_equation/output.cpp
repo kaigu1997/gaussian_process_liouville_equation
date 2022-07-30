@@ -5,22 +5,26 @@
 
 #include "output.h"
 
+#include "complex_kernel.h"
 #include "input.h"
 #include "kernel.h"
 #include "mc.h"
-#include "mc_predict.h"
 #include "opt.h"
 #include "predict.h"
 
 /// @brief To output std vector
+/// @tparam T The data type in the vector
 /// @param[inout] os The output stream
 /// @param[in] vec The vector
 /// @return @p os after output
 template <typename T>
 inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec)
 {
-	std::copy(vec.cbegin(), vec.cend() - 1, std::ostream_iterator<T>(os, " "));
-	os << *(vec.cend() - 1);
+	if (vec.cbegin() != vec.cend())
+	{
+		std::copy(vec.cbegin(), vec.cend() - 1, std::ostream_iterator<T>(os, " "));
+		os << *(vec.cend() - 1);
+	}
 	return os;
 }
 
@@ -36,7 +40,6 @@ void output_average(
 	std::ostream& os,
 	const OptionalKernels& Kernels,
 	const AllPoints& density,
-	const AllPoints& mc_points,
 	const ClassicalVector<double>& mass)
 {
 	// average: time, population, x, p, V, T, E of each PES
@@ -45,72 +48,48 @@ void output_average(
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
 		const std::size_t ElementIndex = iPES * NumPES + iPES;
-		if (Kernels[ElementIndex].has_value())
-		{
-			const ClassicalPhaseVector r_prm = calculate_1st_order_average_one_surface(Kernels[ElementIndex].value());
-			const ClassicalPhaseVector r_ave = calculate_1st_order_average_one_surface(density[ElementIndex]);
-			const ClassicalPhaseVector r_mci = calculate_1st_order_average_one_surface(Kernels[ElementIndex].value(), mc_points);
-			const double ppl_prm = calculate_population_one_surface(Kernels[ElementIndex].value());
-			const double ppl_mci = calculate_population_one_surface(Kernels[ElementIndex].value(), mc_points);
-			const double e_ave = calculate_total_energy_average_one_surface(density[ElementIndex], mass, iPES);
-			const double e_mci = calculate_total_energy_average_one_surface(Kernels[ElementIndex].value(), mc_points, mass, iPES);
-			// output for analytcal integral by parameters; energy is NAN
-			os << ' ' << r_prm.format(VectorFormatter) << ' ' << ppl_prm << ' ' << NAN;
-			// output for direct averaging; population is NAN
-			os << ' ' << r_ave.format(VectorFormatter) << ' ' << NAN << ' ' << e_ave;
-			// output for monte carlo integral
-			os << ' ' << r_mci.format(VectorFormatter) << ' ' << ppl_mci << ' ' << e_mci;
-			r_ave_all += ppl_prm * r_ave;
-			e_ave_all += ppl_prm * e_ave;
-		}
-		else
-		{
-			// output for analytcal integral by parameters; energy is NAN
-			os << ' ' << ClassicalPhaseVector::Zero().format(VectorFormatter) << ' ' << 0.0 << ' ' << NAN;
-			// output for direct averaging; population is NAN
-			os << ' ' << ClassicalPhaseVector::Zero().format(VectorFormatter) << ' ' << NAN << ' ' << 0.0;
-			// output for monte carlo integral
-			os << ' ' << ClassicalPhaseVector::Zero().format(VectorFormatter) << ' ' << 0.0 << ' ' << 0.0;
-		}
+		const ClassicalPhaseVector r_prm = calculate_1st_order_average_one_surface(Kernels[ElementIndex]);
+		const ClassicalPhaseVector r_ave = calculate_1st_order_average_one_surface(density[ElementIndex]);
+		const double ppl_prm = calculate_population_one_surface(Kernels[ElementIndex]);
+		const double e_ave = calculate_total_energy_average_one_surface(density[ElementIndex], mass, iPES);
+		// output for analytcal integral by parameters; energy is NAN
+		os << ' ' << r_prm.format(VectorFormatter) << ' ' << ppl_prm;
+		// output for direct averaging; population is NAN
+		os << ' ' << r_ave.format(VectorFormatter) << ' ' << e_ave;
+		r_ave_all += ppl_prm * r_ave;
+		e_ave_all += ppl_prm * e_ave;
 	}
 	const ClassicalPhaseVector r_prm_all = calculate_1st_order_average(Kernels);
 	// r_ave_all is already calculated
-	const ClassicalPhaseVector r_mci_all = calculate_1st_order_average(Kernels, mc_points);
 	const double ppl_prm_all = calculate_population(Kernels);
-	const double ppl_mci_all = calculate_population(Kernels, mc_points);
 	// e_ave_all is already calculated
-	const double e_mci_all = calculate_total_energy_average(Kernels, mc_points, mass);
 	// output for analytcal integral by parameters; energy is NAN
-	os << ' ' << (r_prm_all / ppl_prm_all).format(VectorFormatter) << ' ' << ppl_prm_all << ' ' << NAN;
+	os << ' ' << (r_prm_all / ppl_prm_all).format(VectorFormatter) << ' ' << ppl_prm_all;
 	// output for direct averaging; population is NAN
-	os << ' ' << (r_ave_all / ppl_prm_all).format(VectorFormatter) << ' ' << NAN << ' ' << e_ave_all / ppl_prm_all;
-	// output for monte carlo integral
-	os << ' ' << (r_mci_all / ppl_mci_all).format(VectorFormatter) << ' ' << ppl_mci_all << ' ' << (e_mci_all / ppl_mci_all);
+	os << ' ' << (r_ave_all / ppl_prm_all).format(VectorFormatter) << ' ' << e_ave_all / ppl_prm_all;
 	// output purity
-	QuantumMatrix<double> prt_prm = QuantumMatrix<double>::Zero(), prt_mci = QuantumMatrix<double>::Zero();
+	QuantumMatrix<double> prt_prm = QuantumMatrix<double>::Zero();
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
 		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
 		{
-			if (Kernels[iPES * NumPES + jPES].has_value())
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
+			if (iPES == jPES)
 			{
-				prt_prm(iPES, jPES) += Kernels[iPES * NumPES + jPES]->get_purity();
+				prt_prm(iPES, jPES) = dynamic_cast<const Kernel&>(*Kernels[ElementIndex].get()).get_purity();
 			}
-			if (iPES != jPES && Kernels[jPES * NumPES + iPES].has_value())
+			else
 			{
-				prt_prm(iPES, jPES) += Kernels[jPES * NumPES + iPES]->get_purity();
+				prt_prm(iPES, jPES) = dynamic_cast<const ComplexKernel&>(*Kernels[ElementIndex].get()).get_purity();
 			}
-			prt_mci(iPES, jPES) = calculate_purity_one_element(Kernels, mc_points, iPES, jPES);
 		}
 	}
 	prt_prm = prt_prm.selfadjointView<Eigen::Lower>();
-	prt_mci = prt_mci.selfadjointView<Eigen::Lower>();
 	// output elementwise
-	os << ' ' << prt_prm.format(VectorFormatter) << ' ' << prt_mci.format(VectorFormatter);
+	os << ' ' << prt_prm.format(VectorFormatter);
 	// output sum
 	const double prt_prm_all = calculate_purity(Kernels);
-	const double prt_mci_all = calculate_purity(Kernels, mc_points);
-	os << ' ' << prt_prm_all << ' ' << prt_mci_all;
+	os << ' ' << prt_prm_all;
 	// finish
 	os << std::endl;
 }
@@ -129,8 +108,9 @@ void output_param(std::ostream& os, const Optimization& Optimizer)
 
 void output_point(std::ostream& os, const AllPoints& Points)
 {
-	const std::size_t NumPoints = get_num_points(Points);
-	const std::vector<std::size_t> indices = get_indices(NumPoints);
+	const std::size_t NumPoints = Points[0].size();
+	const auto indices = xt::arange(NumPoints);
+	const QuantumMatrix<bool> IsSmall = is_very_small(Points);
 	QuantumArray<PhasePoints> point_coordinates;
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
@@ -139,11 +119,11 @@ void output_point(std::ostream& os, const AllPoints& Points)
 			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			if (iPES <= jPES)
 			{
-				point_coordinates[ElementIndex] = PhasePoints::Zero(PhaseDim, NumPoints);
+				point_coordinates[ElementIndex] = PhasePoints::Zero(PhasePoints::RowsAtCompileTime, NumPoints);
 				// for row-major, visit upper triangular elements earlier
 				// so selection for the upper triangular elements
 				const ElementPoints& ElementPoints = Points[ElementIndex];
-				if (!ElementPoints.empty())
+				if (!IsSmall(iPES, jPES))
 				{
 					std::for_each(
 						std::execution::par_unseq,
@@ -170,20 +150,33 @@ void output_point(std::ostream& os, const AllPoints& Points)
 
 void output_phase(std::ostream& phase, std::ostream& variance, const OptionalKernels& Kernels, const PhasePoints& PhaseGrids)
 {
-	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
+	QuantumArray<std::optional<ComplexKernel>> offdiag_predictor;
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		if (Kernels[iElement].has_value())
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
-			phase << predict_elements(Kernels[iElement].value(), PhaseGrids).format(VectorFormatter);
-			variance << predict_variances(Kernels[iElement].value(), PhaseGrids).format(VectorFormatter);
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
+			if (iPES < jPES)
+			{
+				const std::size_t SymmetricElementIndex = jPES * NumPES + iPES;
+				offdiag_predictor[SymmetricElementIndex].emplace(PhaseGrids, dynamic_cast<const ComplexKernel&>(*Kernels[SymmetricElementIndex].get()), false);
+				phase << offdiag_predictor[SymmetricElementIndex]->get_prediction().real().format(VectorFormatter);
+				variance << offdiag_predictor[SymmetricElementIndex]->get_variance().format(VectorFormatter);
+			}
+			else if (iPES > jPES)
+			{
+				phase << offdiag_predictor[ElementIndex]->get_prediction().imag().format(VectorFormatter);
+				variance << offdiag_predictor[ElementIndex]->get_variance().format(VectorFormatter);
+			}
+			else // if (iPES == jPES)
+			{
+				const Kernel k(PhaseGrids, dynamic_cast<const Kernel&>(*Kernels[ElementIndex].get()), false);
+				phase << k.get_prediction().format(VectorFormatter);
+				variance << k.get_variance().format(VectorFormatter);
+			}
+			phase << '\n';
+			variance << '\n';
 		}
-		else
-		{
-			phase << Eigen::VectorXd::Zero(PhaseGrids.cols()).format(VectorFormatter);
-			variance << Eigen::VectorXd::Zero(PhaseGrids.cols()).format(VectorFormatter);
-		}
-		phase << '\n';
-		variance << '\n';
 	}
 	phase << '\n';
 	variance << '\n';

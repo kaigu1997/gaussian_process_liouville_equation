@@ -30,10 +30,12 @@ QuantumMatrix<std::complex<double>> initial_distribution(
 	const double SumWeight = std::reduce(InitialPopulation.begin(), InitialPopulation.end());
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		result(iPES, iPES) = GaussWeight * InitialPopulation[iPES] / SumWeight;
+		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		{
+			result(iPES, jPES) = GaussWeight * std::sqrt(InitialPopulation[iPES] * InitialPopulation[jPES]) / SumWeight * (iPES == jPES ? 1 : std::complex<double>(M_SQRT1_2, M_SQRT1_2));
+		}
 	}
-	result(0, 1) = result(1, 0) = GaussWeight * std::sqrt(QuantumVector<double>::Map(InitialPopulation.data()).prod());
-	return result;
+	return result.selfadjointView<Eigen::Lower>();
 }
 
 MCParameters::MCParameters(const double InitialDisplacement, const std::size_t InitialSteps) :
@@ -42,27 +44,12 @@ MCParameters::MCParameters(const double InitialDisplacement, const std::size_t I
 {
 }
 
-/// @details There should be at least one diagonal element that is non-zero.
-std::size_t get_num_points(const AllPoints& Points)
-{
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-	{
-		const std::size_t ElementIndex = iPES * NumPES + iPES;
-		if (!Points[ElementIndex].empty())
-		{
-			return Points[ElementIndex].size();
-		}
-	}
-	assert(!"NO DIAGONAL ELEMENT IS NON-ZERO!\n");
-}
-
 /// @brief To combine density into one array
 /// @param[in] density The selected points in phase space for each element of density matrices
-/// @return The combination points, and whether each element is small or not
-static std::tuple<ElementPoints, QuantumMatrix<bool>> pack_density(const AllPoints& density)
+/// @return The combined points
+static ElementPoints pack_density(const AllPoints& density)
 {
 	ElementPoints combination;
-	QuantumMatrix<bool> is_element_small = QuantumMatrix<bool>::Zero();
 	// as density is symmetric, only lower-triangular elements needs evaluating
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
@@ -70,22 +57,19 @@ static std::tuple<ElementPoints, QuantumMatrix<bool>> pack_density(const AllPoin
 		{
 			const std::size_t ElementIndex = iPES * NumPES + jPES;
 			combination.insert(combination.cend(), density[ElementIndex].cbegin(), density[ElementIndex].cend());
-			is_element_small(iPES, jPES) = density[ElementIndex].empty();
 		}
 	}
-	return std::make_tuple(combination, is_element_small.selfadjointView<Eigen::Lower>());
+	return combination;
 }
 
 /// @brief To select phase points as the initial phase coordinates for monte carlo
 /// @param[in] NumPoints Number of points for each element
-/// @param[in] IsElementSmall The matrix that saves whether each element is small or not
 /// @param[in] density The combination of selected points in phase space for each element of density matrices
 /// @return The phase points with their density matrices
 /// @details For each element, this function chooses the n points with largest weight of that element. @n
 /// For off-diagonal element, the weight is its squared norm, so the return will be @"symmetric@".
 static AllPoints get_maximums(
 	const std::size_t NumPoints,
-	const QuantumMatrix<bool>& IsElementSmall,
 	const ElementPoints& density)
 {
 	AllPoints maxs;
@@ -97,22 +81,19 @@ static AllPoints get_maximums(
 			{
 				// for row-major, visit upper triangular elements earlier
 				// so only deal with upper-triangular
-				if (!IsElementSmall(iPES, jPES))
-				{
-					const std::size_t ElementIndex = iPES * NumPES + jPES;
-					maxs[ElementIndex] = density;
-					// find the max n elements
-					std::nth_element(
-						std::execution::par_unseq,
-						maxs[ElementIndex].begin(),
-						maxs[ElementIndex].begin() + NumPoints,
-						maxs[ElementIndex].end(),
-						[iPES, jPES](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool
-						{
-							return std::abs(std::get<1>(psp1)(iPES, jPES)) > std::abs(std::get<1>(psp2)(iPES, jPES));
-						});
-					maxs[ElementIndex].erase(maxs[ElementIndex].cbegin() + NumPoints, maxs[ElementIndex].cend());
-				}
+				const std::size_t ElementIndex = iPES * NumPES + jPES;
+				maxs[ElementIndex] = density;
+				// find the max n elements
+				std::nth_element(
+					std::execution::par_unseq,
+					maxs[ElementIndex].begin(),
+					maxs[ElementIndex].begin() + NumPoints,
+					maxs[ElementIndex].end(),
+					[iPES, jPES](const PhaseSpacePoint& psp1, const PhaseSpacePoint& psp2) -> bool
+					{
+						return std::norm(std::get<1>(psp1)(iPES, jPES)) > std::norm(std::get<1>(psp2)(iPES, jPES));
+					});
+				maxs[ElementIndex].erase(maxs[ElementIndex].cbegin() + NumPoints, maxs[ElementIndex].cend());
 			}
 			else
 			{
@@ -162,13 +143,14 @@ static EigenVector<ClassicalPhaseVector> generate_markov_chain(
 	// going the chain
 	for (std::size_t iIter = 1; iIter <= NumSteps; iIter++)
 	{
-		const ClassicalPhaseVector r_new = [&Displ](ClassicalPhaseVector r_init) -> ClassicalPhaseVector
+		const ClassicalPhaseVector r_new = [&Displ](const ClassicalPhaseVector& r_init) -> ClassicalPhaseVector
 		{
+			ClassicalPhaseVector result = r_init;
 			for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
 			{
-				r_init[iDim] += Displ[iDim](engine);
+				result[iDim] += Displ[iDim](engine);
 			}
-			return r_init;
+			return result;
 		}(r_all.back());
 		const double weight_new = std::abs(distribution(r_new)(iPES, jPES));
 		if (weight_new > weight_old || weight_new / weight_old > mc_selection(engine))
@@ -196,8 +178,7 @@ void monte_carlo_selection(
 	AllPoints& density)
 {
 	// get maximum, then evolve the points adiabatically
-	auto [combined_density, IsElementSmall] = pack_density(density);
-	AllPoints maxs = get_maximums(get_num_points(density), IsElementSmall, combined_density);
+	AllPoints maxs = get_maximums(density[0].size(), pack_density(density));
 
 	// moving random number generator and MC random number generator
 	Displacements displacements = generate_displacements(MCParams.get_max_displacement());
@@ -212,35 +193,28 @@ void monte_carlo_selection(
 				const std::size_t ElementIndex = iPES * NumPES + jPES;
 				// for row-major, visit upper triangular elements earlier
 				// so selection for the upper triangular elements
-				if (!IsElementSmall(iPES, jPES))
-				{
-					// begin from an old point
-					std::for_each(
-						std::execution::par_unseq,
-						maxs[ElementIndex].begin(),
-						maxs[ElementIndex].end(),
-						[NumSteps = MCParams.get_num_MC_steps(), &distribution, &displacements, iPES, jPES](PhaseSpacePoint& psp) -> void
-						{
-							auto& [r, rho] = psp;
-							const EigenVector<ClassicalPhaseVector> WholeChain = generate_markov_chain(
-								NumSteps,
-								distribution,
-								displacements,
-								iPES,
-								jPES,
-								r);
-							r = WholeChain.back();
-							rho = distribution(r);
-						});
-					// after MC, the new point is at the original place
-					// TODO: then update the number of MC steps
-					// after all points updated, insert into the ElementPoints
-					density[ElementIndex] = maxs[ElementIndex];
-				}
-				else
-				{
-					density[ElementIndex].clear();
-				}
+				// begin from an old point
+				std::for_each(
+					std::execution::par_unseq,
+					maxs[ElementIndex].begin(),
+					maxs[ElementIndex].end(),
+					[NumSteps = MCParams.get_num_MC_steps(), &distribution, &displacements, iPES, jPES](PhaseSpacePoint& psp) -> void
+					{
+						auto& [r, rho] = psp;
+						const EigenVector<ClassicalPhaseVector> WholeChain = generate_markov_chain(
+							NumSteps,
+							distribution,
+							displacements,
+							iPES,
+							jPES,
+							r);
+						r = WholeChain.back();
+						rho = distribution(r);
+					});
+				// after MC, the new point is at the original place
+				// TODO: then update the number of MC steps
+				// after all points updated, insert into the ElementPoints
+				density[ElementIndex] = maxs[ElementIndex];
 			}
 			else
 			{
@@ -301,8 +275,7 @@ AutoCorrelations autocorrelation_optimize_steps(
 	// parameters needed for MC
 	static const std::size_t MaxNOMC = PhaseDim * 400; // The number of monte carlo steps (including head and tail)
 	static const std::size_t MaxAutoCorStep = (MaxNOMC + 1) / 2;
-	const auto& [CombinedDensity, IsElementSmall] = pack_density(density);
-	const AllPoints maxs = get_maximums(get_num_points(density), IsElementSmall, CombinedDensity);
+	const AllPoints maxs = get_maximums(density[0].size(), pack_density(density));
 
 	// moving random number generator and MC random number generator
 	Displacements displacements = generate_displacements(MCParams.get_max_displacement());
@@ -319,41 +292,38 @@ AutoCorrelations autocorrelation_optimize_steps(
 			{
 				// for row-major, visit upper triangular elements earlier
 				// so only deal with upper-triangular
-				if (!IsElementSmall(iPES, jPES))
-				{
-					const std::size_t ElementIndex = iPES * NumPES + jPES;
-					result[ElementIndex] =
-						std::transform_reduce(
-							std::execution::par_unseq,
-							maxs[ElementIndex].cbegin(),
-							maxs[ElementIndex].cend(),
-							Eigen::VectorXd(Eigen::VectorXd::Zero(MaxAutoCorStep)),
-							std::plus<Eigen::VectorXd>(),
-							[&distribution, &displacements, iPES, jPES](const PhaseSpacePoint& psp) -> Eigen::VectorXd
-							{
-								const auto& [r, rho] = psp;
-								return calculate_autocorrelation(generate_markov_chain(
-									MaxNOMC,
-									distribution,
-									displacements,
-									iPES,
-									jPES,
-									r));
-							})
-						/ maxs[ElementIndex].size();
-					// find the best step
-					std::size_t min_step = result[ElementIndex].size();
-					const double MinAutoCor = result[ElementIndex].array().abs().minCoeff(&min_step);
-					for (std::size_t iStep = 1; iStep < min_step; iStep++)
-					{
-						if (std::abs(result[ElementIndex][iStep]) <= MCParameters::AboveMinFactor * MinAutoCor)
+				const std::size_t ElementIndex = iPES * NumPES + jPES;
+				result[ElementIndex] =
+					std::transform_reduce(
+						std::execution::par_unseq,
+						maxs[ElementIndex].cbegin(),
+						maxs[ElementIndex].cend(),
+						Eigen::VectorXd(Eigen::VectorXd::Zero(MaxAutoCorStep)),
+						std::plus<Eigen::VectorXd>(),
+						[&distribution, &displacements, iPES, jPES](const PhaseSpacePoint& psp) -> Eigen::VectorXd
 						{
-							min_step = iStep;
-							break;
-						}
+							const auto& [r, rho] = psp;
+							return calculate_autocorrelation(generate_markov_chain(
+								MaxNOMC,
+								distribution,
+								displacements,
+								iPES,
+								jPES,
+								r));
+						})
+					/ maxs[ElementIndex].size();
+				// find the best step
+				std::size_t min_step = result[ElementIndex].size();
+				const double MinAutoCor = result[ElementIndex].array().abs().minCoeff(&min_step);
+				for (std::size_t iStep = 1; iStep < min_step; iStep++)
+				{
+					if (std::abs(result[ElementIndex][iStep]) <= MCParameters::AboveMinFactor * MinAutoCor)
+					{
+						min_step = iStep;
+						break;
 					}
-					best_MC_steps = std::max(min_step, best_MC_steps);
 				}
+				best_MC_steps = std::max(min_step, best_MC_steps);
 			}
 			else
 			{
@@ -375,8 +345,7 @@ AutoCorrelations autocorrelation_optimize_displacement(
 	// parameters needed for MC
 	static constexpr std::array<double, 9> PossibleDisplacement = {1e-3, 2e-3, 5e-3, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5};
 	static constexpr std::size_t NPossibleDisplacement = PossibleDisplacement.size();
-	const auto& [CombinedDensity, IsElementSmall] = pack_density(density);
-	const AllPoints maxs = get_maximums(get_num_points(density), IsElementSmall, CombinedDensity);
+	const AllPoints maxs = get_maximums(density[0].size(), pack_density(density));
 
 	// calculation
 	AutoCorrelations result; // save the return value, the autocorrelations
@@ -392,31 +361,28 @@ AutoCorrelations autocorrelation_optimize_displacement(
 				{
 					// for row-major, visit upper triangular elements earlier
 					// so only deal with upper-triangular
-					if (!IsElementSmall(iPES, jPES))
-					{
-						const std::size_t ElementIndex = iPES * NumPES + jPES;
-						result[ElementIndex][iDisp] =
-							std::transform_reduce(
-								std::execution::par_unseq,
-								maxs[ElementIndex].cbegin(),
-								maxs[ElementIndex].cend(),
-								0.0,
-								std::plus<double>(),
-								[NumSteps = MCParams.get_num_MC_steps(), &distribution, &displacements, iPES, jPES](const PhaseSpacePoint& psp) -> double
-								{
-									const auto& [r, rho] = psp;
-									return calculate_autocorrelation(
-										generate_markov_chain(
-											NumSteps,
-											distribution,
-											displacements,
-											iPES,
-											jPES,
-											r),
-										NumSteps);
-								})
-							/ maxs[ElementIndex].size();
-					}
+					const std::size_t ElementIndex = iPES * NumPES + jPES;
+					result[ElementIndex][iDisp] =
+						std::transform_reduce(
+							std::execution::par_unseq,
+							maxs[ElementIndex].cbegin(),
+							maxs[ElementIndex].cend(),
+							0.0,
+							std::plus<double>(),
+							[NumSteps = MCParams.get_num_MC_steps(), &distribution, &displacements, iPES, jPES](const PhaseSpacePoint& psp) -> double
+							{
+								const auto& [r, rho] = psp;
+								return calculate_autocorrelation(
+									generate_markov_chain(
+										NumSteps,
+										distribution,
+										displacements,
+										iPES,
+										jPES,
+										r),
+									NumSteps);
+							})
+						/ maxs[ElementIndex].size();
 				}
 				else
 				{
@@ -433,21 +399,18 @@ AutoCorrelations autocorrelation_optimize_displacement(
 		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
 		{
 			// only deal with lower-triangular
-			if (!IsElementSmall(iPES, jPES))
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
+			std::size_t min_dist_index = result[ElementIndex].size();
+			const double MinAutoCor = result[ElementIndex].array().abs().minCoeff(&min_dist_index);
+			for (std::size_t iDispl = NPossibleDisplacement - 1; iDispl > min_dist_index; iDispl--)
 			{
-				const std::size_t ElementIndex = iPES * NumPES + jPES;
-				std::size_t min_dist_index = result[ElementIndex].size();
-				const double MinAutoCor = result[ElementIndex].array().abs().minCoeff(&min_dist_index);
-				for (std::size_t iDispl = NPossibleDisplacement - 1; iDispl > min_dist_index; iDispl--)
+				if (std::abs(result[ElementIndex][iDispl]) <= MCParameters::AboveMinFactor * MinAutoCor)
 				{
-					if (std::abs(result[ElementIndex][iDispl]) <= MCParameters::AboveMinFactor * MinAutoCor)
-					{
-						min_dist_index = iDispl;
-						break;
-					}
+					min_dist_index = iDispl;
+					break;
 				}
-				best_displacement_index = std::max(min_dist_index, best_displacement_index);
 			}
+			best_displacement_index = std::max(min_dist_index, best_displacement_index);
 		}
 	}
 	MCParams.set_displacement(PossibleDisplacement[best_displacement_index]);
@@ -456,18 +419,18 @@ AutoCorrelations autocorrelation_optimize_displacement(
 
 /// @details This function fills the newly populated density matrix element
 /// with density matrices of the greatest weight.
-void new_element_point_selection(AllPoints& density, const AllPoints& extra_points, const QuantumMatrix<int>& ElementChange)
+void new_element_point_selection(AllPoints& density, const AllPoints& extra_points, const QuantumMatrix<bool>& IsNew)
 {
 	// In ElementChange, 1 for newly populated, -1 for newly unpopulated, 0 for unchanged
-	if (ElementChange.cast<bool>().any())
+	if (IsNew.any())
 	{
 		// find the number of points for each elements
 		// after all, at least one of the diagonal elements is non-zero
-		const std::size_t NumPoints = get_num_points(density);
+		const std::size_t NumPoints = density[0].size();
 		const ElementPoints CombinedDensity = [&density, &extra_points](void) -> ElementPoints
 		{
-			[[maybe_unused]] auto [combined_density, is_small] = pack_density(density);
-			[[maybe_unused]] const auto [combined_extra, is_extra_small] = pack_density(extra_points);
+			ElementPoints combined_density = pack_density(density);
+			const ElementPoints combined_extra = pack_density(extra_points);
 			combined_density.insert(combined_density.end(), combined_extra.cbegin(), combined_extra.end());
 			return combined_density;
 		}();
@@ -479,12 +442,13 @@ void new_element_point_selection(AllPoints& density, const AllPoints& extra_poin
 				{
 					// for row-major, visit upper triangular elements earlier
 					// so selection for the upper triangular elements
-					if (ElementChange(iPES, jPES) + ElementChange(jPES, iPES) > 0 && density[iPES * NumPES + jPES].empty())
+					if (IsNew(iPES, jPES))
 					{
+						const std::size_t ElementIndex = iPES * NumPES + jPES;
 						// new element appears
 						const std::vector<double> Weights = [&CombinedDensity, iPES, jPES](void) -> std::vector<double>
 						{
-							const std::vector<std::size_t> Indices = get_indices(CombinedDensity.size());
+							const auto Indices = xt::arange(CombinedDensity.size());
 							std::vector<double> result(Indices.size(), 0);
 							std::for_each(
 								std::execution::par_unseq,
@@ -492,27 +456,22 @@ void new_element_point_selection(AllPoints& density, const AllPoints& extra_poin
 								Indices.cend(),
 								[&result, &CombinedDensity, iPES, jPES](std::size_t i) -> void
 								{
-									result[i] = std::abs(std::get<1>(CombinedDensity[i])(iPES, jPES));
+									result[i] = std::norm(std::get<1>(CombinedDensity[i])(iPES, jPES));
 								});
 							return result;
 						}();
 						// sample N different points into it
 						std::discrete_distribution<std::size_t> dist(Weights.cbegin(), Weights.cend());
 						std::set<std::size_t> indices;
-						while (density[iPES * NumPES + jPES].size() < NumPoints)
+						while (density[ElementIndex].size() < NumPoints)
 						{
 							const std::size_t val = dist(engine);
 							[[maybe_unused]] const auto [iter, success] = indices.insert(val);
 							if (success)
 							{
-								density[iPES * NumPES + jPES].push_back(CombinedDensity[val]);
+								density[ElementIndex].push_back(CombinedDensity[val]);
 							}
 						}
-					}
-					if (iPES == jPES && ElementChange(iPES, jPES) == -1)
-					{
-						// excited state disappears
-						density[iPES * NumPES + jPES].clear();
 					}
 				}
 				else

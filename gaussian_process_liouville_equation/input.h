@@ -10,23 +10,48 @@
 class InitialParameters final
 {
 private:
-	ClassicalVector<double> mass;		///< Mass of classical degree of freedom
-	ClassicalPhaseVector r0;			///< Initial position and momentum of classical degree of freedom
-	ClassicalPhaseVector rmin;			///< Lower bound of position and momentum of classical degree of freedom for the grids
-	ClassicalPhaseVector rmax;			///< Lower bound of position and momentum of classical degree of freedom for the grids
-	ClassicalPhaseVector dr;			///< Grid size of position and momentum of classical degree of freedom for the grids
-	ClassicalPhaseVector SigmaR0;		///< Initial standard deviation of classical degree of freedom
-	PhasePoints PhaseGrids;				///< Grids for plot phase space distribution
-	double OutputTime;					///< The time interval to give outputs (in a.u.)
-	double ReoptimizationTime;			///< The time interval to redo the paramter optimization (in a.u.)
-	double dt;							///< The time interval for evolution
-	std::size_t NumberOfSelectedPoints; ///< The size of training set for parameter optimization
-	std::size_t TotalTicks;				///< The maximum number of dt to finish the evolution
+	const ClassicalVector<double> mass;		  ///< Mass of classical degree of freedom
+	const ClassicalPhaseVector r0;			  ///< Initial position and momentum of classical degree of freedom
+	const ClassicalVector<double> xmin;		  ///< Lower bound of position
+	const ClassicalVector<double> xmax;		  ///< Upper bound of position
+	const std::size_t NumGridsForOneDim;	  ///< Number of grids for one of the (position/momentum) dimensions
+	const std::size_t NumGridsTotal;		  ///< Number of grids for all phase space dimensions
+	const ClassicalVector<double> dx;		  ///< Grid spacing of position
+	const ClassicalVector<double> pmin;		  ///< Lower bound of momentum
+	const ClassicalVector<double> pmax;		  ///< Upper bound of momentum
+	const ClassicalVector<double> dp;		  ///< Grid spacing of momentum
+	const ClassicalPhaseVector rmin;		  ///< Lower bound of position and momentum of classical degree of freedom for the grids
+	const ClassicalPhaseVector rmax;		  ///< Lower bound of position and momentum of classical degree of freedom for the grids
+	const ClassicalPhaseVector dr;			  ///< Grid size of position and momentum of classical degree of freedom for the grids
+	const ClassicalPhaseVector SigmaR0;		  ///< Initial standard deviation of classical degree of freedom
+	const PhasePoints PhaseGrids;			  ///< Grids for plot phase space distribution
+	const double dt;						  ///< The time interval for evolution
+	const double ReoptimizationTime;		  ///< The time interval to redo the paramter optimization (in a.u.)
+	const double OutputTime;				  ///< The time interval to give outputs (in a.u.)
+	const std::size_t NumberOfSelectedPoints; ///< The size of training set for parameter optimization
+	const std::size_t TotalTicks;			  ///< The maximum number of dt to finish the evolution
 
 public:
-	/// @brief Constructor, read input from file
-	/// @param[in] input_file_name The input file name
-	InitialParameters(const std::string& input_file_name);
+	InitialParameters(void) = delete;
+
+	/// @brief Constructor
+	/// @param[in] mass Mass of classical degree of freedom
+	/// @param[in] x0 Initial position
+	/// @param[in] p0 Initial momentum
+	/// @param[in] sigma_p0 Initial standard deviation of momentum
+	/// @param[in] output_time The interval of output in unit of atomic unit time
+	/// @param[in] re_optimization_time The inverval of optimizations in unit of atomic unit time
+	/// @param[in] dt_ The interval of evolution in unit of atomic unit time
+	/// @param[in] num_points The number of points selected for each elements
+	InitialParameters(
+		const ClassicalVector<double>& mass_,
+		const ClassicalVector<double>& x0,
+		const ClassicalVector<double>& p0,
+		const ClassicalVector<double>& sigma_p0,
+		const double output_time,
+		const double re_optimization_time,
+		const double dt_,
+		const std::size_t num_points);
 
 	// The interface for data accessing, inline will make them faster
 	/// @brief To get classical mass(es)
@@ -116,5 +141,10 @@ public:
 		return TotalTicks;
 	}
 };
+
+/// @brief To return the instance of @p InitialParameters
+/// @param[in] input_file_name The input file name
+/// @return Initial parameters
+InitialParameters read_input(const std::string_view& input_file_name);
 
 #endif // !INPUT_H

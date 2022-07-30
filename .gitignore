@@ -16,7 +16,7 @@
 *.png
 *.gif
 *log
-out*
+*out*
 *put
 *result*/
 

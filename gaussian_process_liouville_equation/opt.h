@@ -9,26 +9,17 @@
 #include "input.h"
 #include "predict.h"
 
-/// The training set for parameter optimization of one element of density matrix
-/// passed as parameter to the optimization function.
-/// First is feature, second is label
-using ElementTrainingSet = std::tuple<PhasePoints, Eigen::VectorXd>;
-
-/// @brief To check each real degree of freedom (diagonal elements, Re and Im of off-diagonal elements) is small or not
+/// @brief To check each element is small or not
 /// @param[in] density The selected points in phase space for each element of density matrices
 /// @return A matrix of boolean type and same size as density matrix,
-/// containing each element of density matrix is smallor not.
-///
-/// Strict upper-triangular parts corresponds to real part, and lower to imaginary part.
-QuantumMatrix<bool> is_real_degree_very_small(const AllPoints& density);
+/// containing each element of density matrix is small or not.
+QuantumMatrix<bool> is_very_small(const AllPoints& density);
 
 /// @brief To update the kernels
-/// @param[out] kernels Array of constructed kernels
 /// @param[in] ParameterVectors The parameters for all elements of density matrix
 /// @param[in] density The selected points in phase space for each element of density matrices
-/// @param[in] extra_points The extra selected points to reduce overfitting
-void construct_predictors(
-	OptionalKernels& kernels,
+/// @return The kernels
+OptionalKernels construct_predictors(
 	const QuantumArray<ParameterVector>& ParameterVectors,
 	const AllPoints& density);
 
@@ -85,13 +76,14 @@ public:
 
 private:
 	// local variables
-	const double TotalEnergy;						///< The initial energy of the density matrix, and should be kept to the end
-	const double Purity;							///< The initial purity of the density matrix, and should be kept to the end
-	const ClassicalVector<double> mass;				///< The mass of classical degree of freedom
-	const ParameterVector InitialParameter;			///< The initial parameter for each of the element and for reopt
-	std::vector<nlopt::opt> NLOptLocalMinimizers;	///< The vector containing all local NLOPT optimizers, one non-grad for each element
-	std::vector<nlopt::opt> NLOptGlobalMinimizers;	///< The vector containing all global NLOPT optimizers
-	QuantumArray<ParameterVector> ParameterVectors; ///< The parameters for all elements of density matrix
+	const double TotalEnergy;							 ///< The initial energy of the density matrix, and should be kept to the end
+	const double Purity;								 ///< The initial purity of the density matrix, and should be kept to the end
+	const ClassicalVector<double> mass;					 ///< The mass of classical degree of freedom
+	const ParameterVector InitialKernelParameter;		 ///< The initial parameter for each of the element and for reopt
+	const ParameterVector InitialComplexKernelParameter; ///< The initial parameter for complex kernels
+	std::vector<nlopt::opt> NLOptLocalMinimizers;		 ///< The vector containing all local NLOPT optimizers, one non-grad for each element
+	std::vector<nlopt::opt> NLOptGlobalMinimizers;		 ///< The vector containing all global NLOPT optimizers
+	QuantumArray<ParameterVector> ParameterVectors; 	 ///< The parameters for all elements of density matrix
 };
 
 #endif // !OPT_H

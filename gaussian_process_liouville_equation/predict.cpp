@@ -5,13 +5,13 @@
 
 #include "predict.h"
 
+#include "complex_kernel.h"
 #include "kernel.h"
 #include "pes.h"
 
 /// @details The reduction is not combined in return because of STUPID clang-format.
 ClassicalPhaseVector calculate_1st_order_average_one_surface(const ElementPoints& density)
 {
-	assert(!density.empty());
 	const ClassicalPhaseVector result =
 		std::transform_reduce(
 			std::execution::par_unseq,
@@ -29,7 +29,6 @@ ClassicalPhaseVector calculate_1st_order_average_one_surface(const ElementPoints
 
 ClassicalPhaseVector calculate_standard_deviation_one_surface(const ElementPoints& density)
 {
-	assert(!density.empty());
 	const ClassicalPhaseVector sum_square_r =
 		std::transform_reduce(
 			std::execution::par_unseq,
@@ -50,7 +49,6 @@ double calculate_total_energy_average_one_surface(
 	const ClassicalVector<double>& mass,
 	const std::size_t PESIndex)
 {
-	assert(!density.empty());
 	const double result =
 		std::transform_reduce(
 			std::execution::par_unseq,
@@ -72,157 +70,30 @@ QuantumVector<double> calculate_total_energy_average_each_surface(const AllPoint
 	QuantumVector<double> result = QuantumVector<double>::Zero();
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const std::size_t ElementIndex = iPES * NumPES + iPES;
-		if (!density[ElementIndex].empty())
-		{
-			result[iPES] = calculate_total_energy_average_one_surface(density[ElementIndex], mass, iPES);
-		}
+		result[iPES] = calculate_total_energy_average_one_surface(density[iPES * NumPES + iPES], mass, iPES);
 	}
-	return result;
-}
-
-/// @details Using Gaussian Process Regression to predict by @n
-/// @f[
-/// \mathbb{E}[p(\mathbf{f}_*|X_*,X,\mathbf{y})]=K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}\mathbf{y}
-/// @f] @n
-/// where @f$ X_* @f$ is the test features, @f$ X @f$ is the training features,
-/// and @f$ \mathbf{y} @f$ is the training labels.
-Eigen::VectorXd predict_elements(const Kernel& kernel, const PhasePoints& PhaseGrids)
-{
-	assert(kernel.is_same_feature());
-	const Kernel k_new_old(kernel.get_parameters(), PhaseGrids, kernel.get_left_feature(), false);
-	return k_new_old.get_kernel() * kernel.get_inverse_label();
-}
-
-/**
- * @details The derivative is given by @n
- * @f{eqnarray*}{
- * \frac{\partial}{\partial\theta}\mathbb{E}[p(\mathbf{f}_*|X_*,X,\mathbf{y})]
- * &=&\frac{\partial K(X_*,X)}{\partial\theta}[K(X,X)+\sigma_n^2I]^{-1}\mathbf{y} \\
- * &-&K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}\frac{\partial[K(X,X)+\sigma_n^2I]}{\partial\theta}[K(X,X)+\sigma_n^2I]^{-1}\mathbf{y}
- * @f} @n
- * where @f$ \theta @f$ stands for the parameters.
- */
-ElementParameter prediction_derivative(const Kernel& kernel, const ClassicalPhaseVector& r)
-{
-	assert(kernel.is_same_feature() && kernel.is_derivative_calculated());
-	const Kernel k_new_old(kernel.get_parameters(), r, kernel.get_left_feature(), true);
-	ElementParameter result = ElementParameter::Zero();
-	for (std::size_t iParam = 0; iParam < Kernel::NumTotalParameters; iParam++)
-	{
-		result[iParam] = (k_new_old.get_derivatives()[iParam] * kernel.get_inverse_label()).value()
-			+ (k_new_old.get_kernel() * kernel.get_negative_inv_deriv_inv_lbl()[iParam]).value();
-	}
-	return result;
-}
-
-/// @details The variance is given by @n
-/// @f[
-/// \mathrm{Var}=K(X_*,X_*)-K(X_*,X)[K(X,X)+\sigma_n^2I]^{-1}K(X,X_*)
-/// @f] @n
-/// and if the prediction is smaller than variance, the prediction will be set as 0. @n
-/// The variance matrix is generally too big and not necessary, so it will be calculated elementwise.
-Eigen::VectorXd predict_variances(const Kernel& kernel, const PhasePoints& PhaseGrids)
-{
-	assert(kernel.is_same_feature());
-	const Kernel k_new_old(kernel.get_parameters(), PhaseGrids, kernel.get_left_feature(), false);
-	auto calc_result = [&kernel, &k_new_old, &PhaseGrids](const std::size_t iCol) -> double
-	{
-		// construct two features so that K(X*,X*) does not contain noise
-		const auto& feature = PhaseGrids.col(iCol);
-		const Kernel k_new_new(kernel.get_parameters(), feature, feature, false);
-		const auto& k_new_old_row_i = k_new_old.get_kernel().row(iCol);
-		return (k_new_new.get_kernel() - k_new_old_row_i * kernel.get_inverse() * k_new_old_row_i.transpose()).value();
-	};
-	const std::size_t NumPoints = PhaseGrids.cols();
-	Eigen::VectorXd result(NumPoints);
-	const std::vector<std::size_t> indices = get_indices(NumPoints);
-	std::for_each(
-		std::execution::par_unseq,
-		indices.cbegin(),
-		indices.cend(),
-		[&result, &calc_result](std::size_t iCol) -> void
-		{
-			result[iCol] = calc_result(iCol);
-		});
-	return result;
-}
-
-/**
- * @details This function uses a connection procedure. @n
- * When @f$ \bar{y}^2<\mathrm{Var}(y) @f$, predicts 0; @n
- * when @f$ \bar{y}^2>t^2\mathrm{Var}(y) @f$, predicts @f$ \bar{y} @f$, where @f$ t>1 @f$ is a parameter; @n
- * Otherwise, use a cubic function to connect them. This cubic function @f$ f @f$ satisfies
- * @f{eqnarray*}{
- * f(\bar{y})&=&0\\
- * f(t(\bar{y}))&=&1\\
- * f^{\prime}(\bar{y})&=&0\\
- * f^{\prime}(t\bar{y})&=&0
- * @f} @n
- * In other words, its value and 1st order derivative is continuous with the other parts. @n
- * The prediction will then be @f$ f\bar{y} @f$.
- */
-Eigen::VectorXd predict_elements_with_variance_comparison(const Kernel& kernel, const PhasePoints& PhaseGrids)
-{
-	static constexpr double ConnectingPoint = 2.0;
-	static_assert(ConnectingPoint > 1.0);
-	assert(PhaseGrids.rows() == PhaseDim);
-	const Eigen::VectorXd prediction = predict_elements(kernel, PhaseGrids), variance = predict_variances(kernel, PhaseGrids);
-	const std::size_t NumPoints = PhaseGrids.cols();
-	Eigen::VectorXd result(NumPoints);
-	const std::vector<std::size_t> indices = get_indices(NumPoints);
-	std::for_each(
-		std::execution::par_unseq,
-		indices.cbegin(),
-		indices.cend(),
-		[&prediction, &variance, &result](std::size_t i) -> void
-		{
-			if (power<2>(prediction[i]) >= power<2>(ConnectingPoint) * variance[i])
-			{
-				result[i] = prediction[i];
-			}
-			else if (power<2>(prediction[i]) <= variance[i])
-			{
-				result[i] = 0.0;
-			}
-			else
-			{
-				const double AbsoluteRelativePrediction = std::abs(prediction[i]) / std::sqrt(variance[i]);
-				result[i] = prediction[i] * (3.0 * ConnectingPoint - 2.0 * AbsoluteRelativePrediction - 1.0)
-					* power<2>(AbsoluteRelativePrediction - 1) / power<3>(ConnectingPoint - 1);
-			}
-		});
 	return result;
 }
 
 QuantumMatrix<std::complex<double>> predict_matrix(const OptionalKernels& Kernels, const ClassicalPhaseVector& r)
 {
-	using namespace std::literals::complex_literals;
-	auto predict = [&Kernels, &r](const std::size_t iPES, const std::size_t jPES) -> double
-	{
-		const std::size_t ElementIndex = iPES * NumPES + jPES;
-		if (Kernels[ElementIndex].has_value())
-		{
-			return predict_elements(Kernels[ElementIndex].value(), r).value();
-		}
-		else
-		{
-			return 0.0;
-		}
-	};
 	QuantumMatrix<std::complex<double>> result = QuantumMatrix<std::complex<double>>::Zero();
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
 		{
-			const double ElementValue = predict(iPES, jPES);
-			if (iPES <= jPES)
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
+			if (iPES == jPES)
 			{
-				result(jPES, iPES) += ElementValue;
+				// diagonal elements, convert to Kernel
+				const Kernel& TrainingKernel = dynamic_cast<const Kernel&>(*Kernels[ElementIndex].get());
+				result(iPES, jPES) = Kernel(r, TrainingKernel, false).get_prediction().value();
 			}
 			else
 			{
-				result(iPES, jPES) += 1.0i * ElementValue;
+				// off-diagonal elements, convert to ComplexKernel
+				const ComplexKernel& TrainingKernel = dynamic_cast<const ComplexKernel&>(*Kernels[ElementIndex].get());
+				result(iPES, jPES) = ComplexKernel(r, TrainingKernel, false).get_prediction().value();
 			}
 		}
 	}
@@ -231,32 +102,23 @@ QuantumMatrix<std::complex<double>> predict_matrix(const OptionalKernels& Kernel
 
 QuantumMatrix<std::complex<double>> predict_matrix_with_variance_comparison(const OptionalKernels& Kernels, const ClassicalPhaseVector& r)
 {
-	using namespace std::literals::complex_literals;
-	auto predict = [&Kernels, &r](const std::size_t iPES, const std::size_t jPES) -> double
-	{
-		const std::size_t ElementIndex = iPES * NumPES + jPES;
-		if (Kernels[ElementIndex].has_value())
-		{
-			return predict_elements_with_variance_comparison(Kernels[ElementIndex].value(), r).value();
-		}
-		else
-		{
-			return 0.0;
-		}
-	};
 	QuantumMatrix<std::complex<double>> result = QuantumMatrix<std::complex<double>>::Zero();
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
 		{
-			const double ElementValue = predict(iPES, jPES);
-			if (iPES <= jPES)
+			const std::size_t ElementIndex = iPES * NumPES + jPES;
+			if (iPES == jPES)
 			{
-				result(jPES, iPES) += ElementValue;
+				// diagonal elements, convert to Kernel
+				const Kernel& TrainingKernel = dynamic_cast<const Kernel&>(*Kernels[ElementIndex].get());
+				result(iPES, jPES) = Kernel(r, TrainingKernel, false).get_prediction_compared_with_variance().value();
 			}
 			else
 			{
-				result(iPES, jPES) += 1.0i * ElementValue;
+				// off-diagonal elements, convert to ComplexKernel
+				const ComplexKernel& TrainingKernel = dynamic_cast<const ComplexKernel&>(*Kernels[ElementIndex].get());
+				result(iPES, jPES) = ComplexKernel(r, TrainingKernel, false).get_prediction_compared_with_variance().value();
 			}
 		}
 	}
@@ -268,11 +130,7 @@ double calculate_population(const OptionalKernels& Kernels)
 	double result = 0.0;
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const std::size_t ElementIndex = iPES * NumPES + iPES;
-		if (Kernels[ElementIndex].has_value())
-		{
-			result += Kernels[ElementIndex]->get_population();
-		}
+		result += dynamic_cast<const Kernel&>(*Kernels[iPES * NumPES + iPES].get()).get_population();
 	}
 	return result;
 }
@@ -282,11 +140,7 @@ ClassicalPhaseVector calculate_1st_order_average(const OptionalKernels& Kernels)
 	ClassicalPhaseVector result = ClassicalPhaseVector::Zero();
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const std::size_t ElementIndex = iPES * NumPES + iPES;
-		if (Kernels[ElementIndex].has_value())
-		{
-			result += Kernels[ElementIndex]->get_1st_order_average();
-		}
+		result += dynamic_cast<const Kernel&>(*Kernels[iPES * NumPES + iPES].get()).get_1st_order_average();
 	}
 	return result;
 }
@@ -298,11 +152,7 @@ double calculate_total_energy_average(const OptionalKernels& Kernels, const Quan
 	double result = 0.0;
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const std::size_t ElementIndex = iPES * NumPES + iPES;
-		if (Kernels[ElementIndex].has_value())
-		{
-			result += Kernels[ElementIndex]->get_population() * Energies[iPES];
-		}
+		result += dynamic_cast<const Kernel&>(*Kernels[iPES * NumPES + iPES].get()).get_population() * Energies[iPES];
 	}
 	return result;
 }
@@ -313,19 +163,16 @@ double calculate_purity(const OptionalKernels& Kernels)
 	double result = 0.0;
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
 		{
 			const std::size_t ElementIndex = iPES * NumPES + jPES;
-			if (Kernels[ElementIndex].has_value())
+			if (iPES == jPES)
 			{
-				if (iPES == jPES)
-				{
-					result += Kernels[ElementIndex]->get_purity();
-				}
-				else
-				{
-					result += 2.0 * Kernels[ElementIndex]->get_purity();
-				}
+				result += dynamic_cast<const Kernel&>(*Kernels[ElementIndex].get()).get_purity();
+			}
+			else
+			{
+				result += 2.0 * dynamic_cast<const ComplexKernel&>(*Kernels[ElementIndex].get()).get_purity();
 			}
 		}
 	}
@@ -338,15 +185,8 @@ ParameterVector population_derivative(const OptionalKernels& Kernels)
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
 		const std::size_t ElementIndex = iPES * NumPES + iPES;
-		if (Kernels[ElementIndex].has_value())
-		{
-			const ParameterVector& grad = Kernels[ElementIndex]->get_population_derivative();
-			result.insert(result.cend(), grad.cbegin(), grad.cend());
-		}
-		else
-		{
-			result.insert(result.cend(), Kernel::NumTotalParameters, 0.0);
-		}
+		const Kernel::ParameterArray<double>& grad = dynamic_cast<const Kernel&>(*Kernels[ElementIndex].get()).get_population_derivative();
+		result.insert(result.cend(), grad.cbegin(), grad.cend());
 	}
 	return result;
 }
@@ -357,19 +197,12 @@ ParameterVector total_energy_derivative(const OptionalKernels& Kernels, const Qu
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
 		const std::size_t ElementIndex = iPES * NumPES + iPES;
-		if (Kernels[ElementIndex].has_value())
+		Kernel::ParameterArray<double> grad = dynamic_cast<const Kernel&>(*Kernels[ElementIndex].get()).get_population_derivative();
+		for (double& d : grad)
 		{
-			ParameterVector grad = Kernels[ElementIndex]->get_population_derivative();
-			for (double& d : grad)
-			{
-				d *= Energies[iPES];
-			}
-			result.insert(result.cend(), grad.cbegin(), grad.cend());
+			d *= Energies[iPES];
 		}
-		else
-		{
-			result.insert(result.cend(), Kernel::NumTotalParameters, 0.0);
-		}
+		result.insert(result.cend(), grad.cbegin(), grad.cend());
 	}
 	return result;
 }
@@ -379,24 +212,72 @@ ParameterVector purity_derivative(const OptionalKernels& Kernels)
 	ParameterVector result;
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
+		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
 		{
 			const std::size_t ElementIndex = iPES * NumPES + jPES;
-			if (Kernels[ElementIndex].has_value())
+			if (iPES == jPES)
 			{
-				ParameterVector grad = Kernels[ElementIndex]->get_purity_derivative();
-				if (iPES != jPES)
-				{
-					for (double& d : grad)
-					{
-						d *= 2;
-					}
-				}
+				const Kernel::ParameterArray<double>& grad = dynamic_cast<const Kernel&>(*Kernels[ElementIndex].get()).get_purity_derivative();
 				result.insert(result.cend(), grad.cbegin(), grad.cend());
 			}
 			else
 			{
-				result.insert(result.cend(), Kernel::NumTotalParameters, 0.0);
+				ComplexKernel::ParameterArray<double> grad = dynamic_cast<const ComplexKernel&>(*Kernels[ElementIndex].get()).get_purity_derivative();
+				for (double& d : grad)
+				{
+					d *= 2;
+				}
+				result.insert(result.cend(), grad.cbegin(), grad.cend());
+			}
+		}
+	}
+	return result;
+}
+
+AllPoints generate_extra_points(const AllPoints& density, const std::size_t NumPoints, const DistributionFunction& distribution)
+{
+	using namespace std::literals::complex_literals;
+	AllPoints result;
+	static std::mt19937 engine(std::chrono::system_clock::now().time_since_epoch().count()); // Random number generator, using merseen twister with seed from time
+	std::array<std::normal_distribution<double>, PhaseDim> normdists;
+	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	{
+		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
+		{
+			if (iPES <= jPES)
+			{
+				// for row-major, visit upper triangular elements earlier
+				// so only deal with upper-triangular
+				const std::size_t ElementIndex = iPES * NumPES + jPES;
+				const ClassicalPhaseVector stddev = calculate_standard_deviation_one_surface(density[ElementIndex]);
+				for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+				{
+					normdists[iDim] = std::normal_distribution<double>(0.0, stddev[iDim]);
+				}
+				// generation
+				result[ElementIndex] = ElementPoints(NumPoints, std::make_tuple(ClassicalPhaseVector::Zero(), QuantumMatrix<std::complex<double>>::Zero()));
+				const auto indices = xt::arange(result[ElementIndex].size());
+				std::for_each(
+					std::execution::par_unseq,
+					indices.cbegin(),
+					indices.cend(),
+					[&density = density[ElementIndex], &result = result[ElementIndex], &normdists, &distribution](std::size_t iPoint) -> void
+					{
+						auto& [r, rho] = result[iPoint];
+						r = std::get<0>(density[iPoint % density.size()]);
+						for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+						{
+							// a deviation from the center
+							r[iDim] += normdists[iDim](engine);
+						}
+						// current distribution
+						rho = distribution(r);
+					});
+			}
+			else
+			{
+				// for strict lower triangular elements, copy the upper part
+				result[iPES * NumPES + jPES] = result[jPES * NumPES + iPES];
 			}
 		}
 	}

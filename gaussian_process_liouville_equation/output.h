@@ -16,13 +16,11 @@
 /// @param[inout] os The output stream
 /// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
 /// @param[in] density The selected points in phase space for each element of density matrices
-/// @param[in] mc_points The selected points for calculating mc integration
 /// @param[in] mass Mass of classical degree of freedom
 void output_average(
 	std::ostream& os,
 	const OptionalKernels& Kernels,
 	const AllPoints& density,
-	const AllPoints& mc_points,
 	const ClassicalVector<double>& mass);
 
 /// @brief To output parameters

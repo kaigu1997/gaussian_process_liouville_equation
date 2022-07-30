@@ -41,6 +41,7 @@
 #include <random>
 #include <set>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <tuple>
 #include <type_traits>
@@ -53,9 +54,30 @@
 #include <spdlog/fmt/ostr.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
-#include <unsupported/Eigen/CXX11/Tensor>
+#include <xtensor.hpp>
+
+template <std::size_t n>
+class indents
+{
+private:
+	static constexpr char tabs[] = "                                ";
+public:
+	static constexpr std::string_view apply(void)
+	{
+		if constexpr (n << 2 < sizeof(tabs) / sizeof(char))
+		{
+			return std::string_view(tabs, n << 2);
+		}
+		else
+		{
+			return std::string(n << 2, ' ');
+		}
+	}
+};
 
 /// @brief To calculate power of numeric types
+/// @tparam n To calculate n-th power
+/// @tparam T The input type
 /// @param t The value, could be integer or floating point
 /// @return Its nth power
 template <std::size_t n, typename T>
@@ -76,11 +98,12 @@ inline constexpr T power([[maybe_unused]] const T t)
 constexpr double hbar = 1.0; ///< Reduced Planck constant in a.u.
 
 // DOF constants
-constexpr std::size_t NumPES = 2;									 ///< The number of quantum degree (potential energy surfaces)
-constexpr std::size_t NumElements = power<2>(NumPES);				 ///< The number of elements of matrices in quantum degree (e.g. H, rho)
-constexpr std::size_t NumOffDiagonalElements = NumElements - NumPES; ///< The number of off-diagonal elements
-constexpr std::size_t Dim = 1;										 ///< The dimension of the system, half the dimension of the phase space
-constexpr std::size_t PhaseDim = Dim * 2;							 ///< The dimension of the phase space, twice the dimension of the system
+constexpr std::size_t NumPES = 2;										  ///< The number of quantum degree (potential energy surfaces)
+constexpr std::size_t NumElements = power<2>(NumPES);					  ///< The number of elements of matrices in quantum degree (e.g. H, rho)
+constexpr std::size_t NumOffDiagonalElements = NumElements - NumPES;	  ///< The number of off-diagonal elements (including lower and upper)
+constexpr std::size_t NumTriangularElements = (NumElements + NumPES) / 2; ///< The number of (lower or upper) triangular elements
+constexpr std::size_t Dim = 1;											  ///< The dimension of the system, half the dimension of the phase space
+constexpr std::size_t PhaseDim = Dim * 2;								  ///< The dimension of the phase space, twice the dimension of the system
 
 // other constants
 constexpr double PurityFactor = power<Dim>(2.0 * M_PI * hbar); ///< The factor for purity. @f$ S=(2\pi\hbar)^D\int\mathrm{d}\Gamma\mathrm{Tr}\rho^2 @f$
@@ -89,10 +112,10 @@ constexpr double PurityFactor = power<Dim>(2.0 * M_PI * hbar); ///< The factor f
 const Eigen::IOFormat VectorFormatter(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", " ", "", "", "", "");	///< Formatter for output vector
 const Eigen::IOFormat MatrixFormatter(Eigen::StreamPrecision, Eigen::DontAlignCols, " ", "\n", "", "", "", ""); ///< Formatter for output matrix
 
-// typedefs
+// typedefs, notice Eigen is column-major while xtensor is row-major
 /// Matrices used for quantum degree
 template <typename T>
-using QuantumMatrix = Eigen::Matrix<T, NumPES, NumPES>;
+using QuantumMatrix = Eigen::Matrix<T, NumPES, NumPES, Eigen::StorageOptions::RowMajor | Eigen::StorageOptions::AutoAlign>;
 /// Vectors used for quantum degree
 template <typename T>
 using QuantumVector = Eigen::Matrix<T, NumPES, 1>;
@@ -108,8 +131,8 @@ using QuantumArray = std::array<T, NumElements>;
 /// The vector to depict a phase space point (i.e. coordinate)
 using ClassicalPhaseVector = Eigen::Matrix<double, PhaseDim, 1>;
 /// rank-3 tensor type for Force and NAC, based on Matrix with extra dimenstion from classical degree
-/// 1st rank is column in mat, 2nd is row in mat, 3rd is classical dim
-using Tensor3d = Eigen::TensorFixedSize<double, Eigen::Sizes<NumPES, NumPES, Dim>>;
+/// 1st rank is classical dim, 2nd is row in mat, 3rd is column in mat
+using Tensor3d = xt::xtensor_fixed<double, xt::xshape<Dim, NumPES, NumPES>>;
 /// The type for phase space point, first being x, second being p, third being the partial wigner-transformed density matrix
 using PhaseSpacePoint = std::tuple<ClassicalPhaseVector, QuantumMatrix<std::complex<double>>>;
 /// The type for bunches of phase space points, coordinates only, without information of density
@@ -120,17 +143,6 @@ using ElementPoints = EigenVector<PhaseSpacePoint>;
 using AllPoints = QuantumArray<ElementPoints>;
 /// The function prototype to do MC selection
 using DistributionFunction = std::function<QuantumMatrix<std::complex<double>>(const ClassicalPhaseVector&)>;
-
-// frequently used inline functions
-/// @brief Similar to range(N) in python
-/// @param[in] N The number of indices
-/// @return A vector, whose element is 0 to N-1
-inline std::vector<std::size_t> get_indices(const std::size_t N)
-{
-	std::vector<std::size_t> result(N);
-	std::iota(result.begin(), result.end(), 0);
-	return result;
-}
 
 /// @brief To get the (constant) x and p of r
 /// @param r The constant phase space coordinates

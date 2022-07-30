@@ -6,6 +6,7 @@
 
 #include "stdafx.h"
 
+#include "complex_kernel.h"
 #include "kernel.h"
 
 /// @brief To calculate the average position and momentum of one element by averaging directly
@@ -34,48 +35,26 @@ double calculate_total_energy_average_one_surface(
 /// @return Averaged total energy on each surfaces
 QuantumVector<double> calculate_total_energy_average_each_surface(const AllPoints& density, const ClassicalVector<double>& mass);
 
-/// @brief To calculate the prediction of a certain element of density matrix
-/// @param[in] kernel The kernel of the training set
-/// @param[in] PhaseGrids All the grids required to calculate in phase space
-/// @return A N-by-1 matrix, N is the number of required grids
-Eigen::VectorXd predict_elements(const Kernel& kernel, const PhasePoints& PhaseGrids);
-
-/// @brief To calculate the derivative of the prediction over parameters
-/// @param[in] kernel The kernel of the training set
-/// @param[in] r Phase space coordinates of classical degree of freedom
-/// @return A vector of the derivative of the kernel matrix over each of the parameter
-ElementParameter prediction_derivative(const Kernel& kernel, const ClassicalPhaseVector& r);
-
-/// @brief To print the grids of a certain element of density matrix
-/// @param[in] kernel The kernel of the training set
-/// @param[in] PhaseGrids All the grids required to calculate in phase space
-/// @return A N-by-1 matrix, N is the number of required grids
-Eigen::VectorXd predict_variances(const Kernel& kernel, const PhasePoints& PhaseGrids);
-
-/// @brief To calculate the prediction of a certain element of density matrix with comparison to the variance
-/// @param[in] kernel The kernel of the training set
-/// @param[in] PhaseGrids All the grids required to calculate in phase space
-/// @return A N-by-1 matrix, N is the number of required grids
-Eigen::VectorXd predict_elements_with_variance_comparison(const Kernel& kernel, const PhasePoints& PhaseGrids);
-
 /// @brief To calculate the population on one surface by analytica integration of parameters
 /// @param[in] kernel The kernel for prediction
 /// @return The population of that surface calculated by points
-inline double calculate_population_one_surface(const Kernel& kernel)
+inline double calculate_population_one_surface(const std::unique_ptr<KernelBase>& kernel)
 {
-	return kernel.get_population();
+	const Kernel& KernelRef = dynamic_cast<const Kernel&>(*kernel.get());
+	return KernelRef.get_population();
 }
 
 /// @brief To calculate the average position and momentum of one element by analytical integral of parameters
 /// @param[in] kernel The kernel of the training set
 /// @return Average position and momentum
-inline ClassicalPhaseVector calculate_1st_order_average_one_surface(const Kernel& kernel)
+inline ClassicalPhaseVector calculate_1st_order_average_one_surface(const std::unique_ptr<KernelBase>& kernel)
 {
-	return kernel.get_1st_order_average() / kernel.get_population();
+	const Kernel& KernelRef = dynamic_cast<const Kernel&>(*kernel.get());
+	return KernelRef.get_1st_order_average() / KernelRef.get_population();
 }
 
 /// Array of predictors, whether have or not depending on IsSmall
-using OptionalKernels = QuantumArray<std::optional<Kernel>>;
+using OptionalKernels = QuantumArray<std::unique_ptr<KernelBase>>;
 
 /// @brief To predict the density matrix at the given phase space point
 /// @param[in] Kernels An array of predictors for prediction, whose size is NumElements
@@ -125,5 +104,12 @@ ParameterVector total_energy_derivative(const OptionalKernels& Kernels, const Qu
 /// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
 /// @return The derivative of overall purity calculated by parameters over parameters
 ParameterVector purity_derivative(const OptionalKernels& Kernels);
+
+/// @brief To generate the extra points for the density fitting
+/// @param[in] density The selected points in phase space for each element of density matrices
+/// @param[in] NumPoints The number of points for each elements
+/// @param[in] distribution The current distribution
+/// @return The newly selected points with its corresponding distribution
+AllPoints generate_extra_points(const AllPoints& density, const std::size_t NumPoints, const DistributionFunction& distribution);
 
 #endif // !PREDICT_H

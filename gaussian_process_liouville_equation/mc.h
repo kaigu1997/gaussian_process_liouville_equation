@@ -67,11 +67,6 @@ public:
 	}
 };
 
-/// @brief To get the number of points for each elements
-/// @param[in] Points The selected points in phase space for each element of density matrices
-/// @return The number of points for non-zero element
-std::size_t get_num_points(const AllPoints& Points);
-
 /// @brief Using Metropolis Monte Carlo to select points
 /// @param[in] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
 /// @param[in] distribution The function object to generate the distribution
@@ -85,7 +80,7 @@ void monte_carlo_selection(
 /// @param[inout] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
 /// @param[in] distribution The function object to generate the distribution
 /// @param[in] density The selected points in phase space for each element of density matrices
-/// @return The autocorrelation of all tested number of steps if the element is not small
+/// @return The autocorrelation of all tested number of steps
 AutoCorrelations autocorrelation_optimize_steps(
 	MCParameters& MCParams,
 	const DistributionFunction& distribution,
@@ -95,7 +90,7 @@ AutoCorrelations autocorrelation_optimize_steps(
 /// @param[inout] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
 /// @param[in] distribution The function object to generate the distribution
 /// @param[in] density The selected points in phase space for each element of density matrices
-/// @return The autocorrelation of all tested number of steps if the element is not small
+/// @return The autocorrelation of all tested displacements
 AutoCorrelations autocorrelation_optimize_displacement(
 	MCParameters& MCParams,
 	const DistributionFunction& distribution,
@@ -104,7 +99,7 @@ AutoCorrelations autocorrelation_optimize_displacement(
 /// @brief To select points for new elements of density matrix
 /// @param[inout] density The selected points in phase space for each element of density matrices
 /// @param[in] extra_points The extra selected points
-/// @param[in] ElementChange The matrix that saves whether the element is newly (un)populated or not
-void new_element_point_selection(AllPoints& density, const AllPoints& extra_points, const QuantumMatrix<int>& ElementChange);
+/// @param[in] IsNew The matrix that saves whether the element is newly populated or not
+void new_element_point_selection(AllPoints& density, const AllPoints& extra_points, const QuantumMatrix<bool>& IsNew);
 
 #endif // !MC_H

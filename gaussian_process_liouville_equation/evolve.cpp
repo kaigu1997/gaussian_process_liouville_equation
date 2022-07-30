@@ -10,18 +10,18 @@
 #include "predict.h"
 
 static constexpr std::size_t NumOffDiagonalBranches = 3; ///< The number of branches resulted by one off-diagonal force, including forward, static and backward
-static constexpr std::array<std::ptrdiff_t, NumOffDiagonalBranches> OffDiagonalBranches = {-1, 0, 1};
+static constexpr std::array<std::ptrdiff_t, NumOffDiagonalBranches> OffDiagonalBranches = {-1, 0, 1}; /// The branches
 
 /// The matrix that saves diagonal forces: i-th column is the force on i-th surface
 using DiagonalForces = Eigen::Matrix<double, Dim, NumPES>;
 /// The tensor form of @p ClassicalVector<double>
-using TensorVector = Eigen::TensorFixedSize<double, Eigen::Sizes<Dim>>;
+using TensorVector = xt::xtensor_fixed<double, xt::xshape<Dim>>;
 /// The tensor form for @f$ P_1 @f$ and @f$ R_2 @f$
-using DiagonalBranched = Eigen::TensorFixedSize<double, Eigen::Sizes<Dim, NumElements>>;
+using DiagonalBranched = xt::xtensor_fixed<double, xt::xshape<NumElements, Dim>>;
 /// The tensor form for @f$ P_2 @f$ and @f$ R_3 @f$
-using OffDiagonalBranched = Eigen::TensorFixedSize<double, Eigen::Sizes<Dim, NumOffDiagonalBranches, NumElements>>;
+using OffDiagonalBranched = xt::xtensor_fixed<double, xt::xshape<NumOffDiagonalBranches, NumElements, Dim>>;
 /// The tensor form for @f$ P_3 @f$ and @f$ R_4 @f$
-using TotallyBranched = Eigen::TensorFixedSize<double, Eigen::Sizes<Dim, NumElements, NumOffDiagonalBranches, NumElements>>;
+using TotallyBranched = xt::xtensor_fixed<double, xt::xshape<NumElements, NumOffDiagonalBranches, NumElements, Dim>>;
 
 /// The direction of dynamics evolving
 enum Direction
@@ -34,10 +34,11 @@ enum Direction
 /// @param[in] tensor The tensor which the slice is from
 /// @param[in] row The row index of the tensor
 /// @param[in] col The column index of the tensor
-/// @return A vector, that is tensor(0, row, col) to tensor(idx1_max, row, col)
-static inline TensorVector tensor_slice(const Tensor3d& tensor, const std::size_t row, const std::size_t col)
+/// @return A mapping vector, that is tensor(0, row, col) to tensor( @p Dim - 1, row, col)
+static inline auto tensor_slice(const Tensor3d& tensor, const std::size_t row, const std::size_t col)
 {
-	return tensor.slice(std::array<std::size_t, 3>{row, col, 0}, std::array<std::size_t, 3>{1, 1, Dim}).reshape(std::array<std::size_t, 1>{Dim});
+	const auto view = xt::view(tensor, xt::all(), row, col);
+	return Eigen::Map<const ClassicalVector<double>, Eigen::Unaligned, Eigen::InnerStride<NumElements>>(view.data() + view.data_offset());
 }
 
 /// @brief To judge if current point have large coupling in any of the given directions
@@ -57,25 +58,27 @@ static ClassicalVector<bool> is_coupling(
 #else
 	if constexpr (NumPES == 2)
 	{
-		const TensorVector nac_01 = tensor_slice(adiabatic_coupling(x), 0, 1), f_01 = tensor_slice(adiabatic_force(x), 0, 1);
-		return ClassicalVector<double>::Map(nac_01.data()).array() * p.array() / mass.array() > CouplingCriterion
-			|| ClassicalVector<double>::Map(f_01.data()).array() > CouplingCriterion;
+		const auto nac_01 = tensor_slice(adiabatic_coupling(x), 0, 1), f_01 = tensor_slice(adiabatic_force(x), 0, 1);
+			f_01 = Eigen::Map<const ClassicalVector<double>, Eigen::Unaligned, Eigen::InnerStride<NumElements>>(f_01_view.data() + f_01_view.data_offset());
+		return nac_01.array() * p.array() / mass.array() > CouplingCriterion || f_01.array() > CouplingCriterion;
 	}
 	else
 	{
+		const Tensor3d& NAC = adiabatic_coupling(x), Force = adiabatic_force(x);
 		ClassicalVector<bool> result = ClassicalVector<bool>::Zero();
 		for (std::size_t iPES = 1; iPES < NumPES; iPES++)
 		{
 			for (std::size_t jPES = 0; jPES < iPES; jPES++)
 			{
-				const TensorVector nac = tensor_slice(adiabatic_coupling(x), iPES, jPES), f = tensor_slice(adiabatic_force(x), iPES, jPES);
-				result = result.array() || ClassicalVector<double>::Map(nac.data()).array() * p.array() / mass.array() > CouplingCriterion
-					|| ClassicalVector<double>::Map(f.data()).array() > CouplingCriterion;
+				const auto nac_ij = tensor_slice(NAC, iPES, jPES), f_ij = tensor_slice(Force, iPES, jPES);
+				f = Eigen::Map<const ClassicalVector<double>, Eigen::Unaligned, Eigen::InnerStride<NumElements>>(f_view.data() + f_view.data_offset());
+				result = result.array() || nac_ij.array() * p.array() / mass.array() > CouplingCriterion || f_ij.array() > CouplingCriterion;
 			}
 		}
 		return result;
 	}
 #endif
+#undef ADIA
 }
 
 bool is_coupling(const AllPoints& density, const ClassicalVector<double>& mass)
@@ -92,8 +95,7 @@ bool is_coupling(const AllPoints& density, const ClassicalVector<double>& mass)
 					const auto& [r, rho] = psp;
 					const auto [x, p] = split_phase_coordinate(r);
 					return is_coupling(x, p, mass).any();
-				})
-			&& !density[iElement].empty();
+				});
 		if (IsElementCoupling)
 		{
 			return true;
@@ -103,6 +105,8 @@ bool is_coupling(const AllPoints& density, const ClassicalVector<double>& mass)
 }
 
 /// @brief To evolve all the positions
+/// @tparam xIndices Indices of position
+/// @tparam pIndices Indices of momentum
 /// @param[in] x Position of classical degree of freedom
 /// @param[in] p Momentum of classical degree of freedom
 /// @param[in] mass Mass of classical degree of freedom
@@ -110,45 +114,15 @@ bool is_coupling(const AllPoints& density, const ClassicalVector<double>& mass)
 /// @param[in] drc The direction of evolution
 /// @return All branches of momentum vectors
 /// @details @f$ x_{i,j} = x_i - \frac{p_{i,j}}{m} dt @f$
-template <std::ptrdiff_t... xIndices, std::ptrdiff_t... pIndices>
-static Eigen::TensorFixedSize<double, Eigen::Sizes<Dim, pIndices...>> position_evolve(
-	const Eigen::TensorFixedSize<double, Eigen::Sizes<Dim, xIndices...>>& x,
-	const Eigen::TensorFixedSize<double, Eigen::Sizes<Dim, pIndices...>>& p,
+template <std::size_t ... xIndices, std::size_t ... pIndices>
+static inline xt::xtensor_fixed<double, xt::xshape<pIndices ...>> position_evolve(
+	const xt::xtensor_fixed<double, xt::xshape<xIndices ...>>& x,
+	const xt::xtensor_fixed<double, xt::xshape<pIndices ...>>& p,
 	const ClassicalVector<double>& mass,
 	const double dt,
 	const Direction drc)
 {
-	// broadcast mass
-	const Eigen::TensorFixedSize<double, Eigen::Sizes<Dim, pIndices...>> MassBroadcast =
-		TensorVector(Eigen::TensorMap<const Eigen::Tensor<const double, 1>>(mass.data(), Dim)).broadcast(std::array<std::size_t, 1>{p.size() / Dim}).reshape(p.dimensions());
-	if constexpr (sizeof... (xIndices) == sizeof... (pIndices))
-	{
-		return x + drc * dt * p / MassBroadcast;
-	}
-	else
-	{
-		static_assert(sizeof... (xIndices) + 1u == sizeof... (pIndices));
-		// reshape x first to add a dim
-		auto generate_reshape = [](void) -> std::array<std::ptrdiff_t, sizeof... (xIndices) + 2u>
-		{
-			std::array<std::ptrdiff_t, sizeof... (xIndices) + 2u> result = {Dim, 1};
-			std::size_t i = 2;
-			[[maybe_unused]] auto assign = [&i, &result](std::ptrdiff_t val) -> void
-			{
-				result[i++] = val;
-			};
-			(assign(xIndices), ...);
-			return result;
-		};
-		auto generate_broadcast_shape = [&x, &p](void) -> std::array<std::ptrdiff_t, sizeof... (xIndices) + 2u>
-		{
-			std::array<std::ptrdiff_t, sizeof... (xIndices) + 2u> result;
-			result.fill(1);
-			result[1] = p.size() / x.size();
-			return result;
-		};
-		return x.reshape(generate_reshape()).broadcast(generate_broadcast_shape()) + drc * dt * p / MassBroadcast;
-	}
+	return x + drc * dt * p / xt::adapt(mass.data(), TensorVector::shape_type{});
 }
 
 /// @brief To get the diagonal forces under adiabatic basis at given position
@@ -160,8 +134,7 @@ static DiagonalForces adiabatic_diagonal_forces(const ClassicalVector<double>& x
 	DiagonalForces result;
 	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 	{
-		const TensorVector f_i = tensor_slice(force, iPES, iPES);
-		result.col(iPES) = ClassicalVector<double>::Map(f_i.data());
+		result.col(iPES) = tensor_slice(force, iPES, iPES);
 	}
 	return result;
 }
@@ -187,9 +160,8 @@ static DiagonalBranched momentum_diagonal_evolve(
 	{
 		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 		{
-			const TensorVector sum_f = Eigen::TensorMap<const Eigen::Tensor<const double, 1>>(f.col(iPES).data(), Dim)
-				+ Eigen::TensorMap<const Eigen::Tensor<const double, 1>>(f.col(jPES).data(), Dim);
-			result.chip(iPES * NumPES + jPES, 1) = p + drc * dt / 2.0 * sum_f;
+			const TensorVector sum_f = xt::adapt(f.col(iPES).data(), TensorVector::shape_type{}) + xt::adapt(f.col(jPES).data(), TensorVector::shape_type{});
+			xt::view(result, iPES * NumPES + jPES, xt::all()) = p + drc * dt / 2.0 * sum_f;
 		}
 	}
 	return result;
@@ -211,20 +183,38 @@ static TotallyBranched momentum_diagonal_evolve(
 	TotallyBranched result;
 	// recursively reduce rank, from highest rank to lowest
 	// the boundary condition is the last function
-	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
+	for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
 	{
-		for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
+		for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 		{
-			const TensorVector x_slice =
-				x.slice(std::array<std::size_t, 3>{0, iOffDiagonalBranch, iElement}, std::array<std::size_t, 3>{Dim, 1, 1})
-					.reshape(std::array<std::size_t, 1>{Dim});
-			const TensorVector p_slice =
-				p.slice(std::array<std::size_t, 3>{0, iOffDiagonalBranch, iElement}, std::array<std::size_t, 3>{Dim, 1, 1})
-					.reshape(std::array<std::size_t, 1>{Dim});
-			result.slice(std::array<std::size_t, 4>{0, 0, iOffDiagonalBranch, iElement}, std::array<std::size_t, 4>{Dim, NumElements, 1, 1}) =
-				momentum_diagonal_evolve(x_slice, p_slice, dt, drc).reshape(std::array<std::size_t, 4>{Dim, NumElements, 1, 1});
+			xt::view(result, xt::all(), iOffDiagonalBranch, iElement, xt::all()) =
+				momentum_diagonal_evolve(
+					TensorVector(xt::view(x, iOffDiagonalBranch, iElement, xt::all())),
+					TensorVector(xt::view(p, iOffDiagonalBranch, iElement, xt::all())),
+					dt,
+					drc);
 		}
 	}
+	return result;
+}
+
+/// @brief To extract all the 01 vector from a tensor
+/// @param[in] x Positions of each element of density matrix
+/// @param[in] IsCouple Whether there is coupling for each element or not
+/// @param[in] f The function, with classical position as input and the full tensor as output
+/// @return All the 01 vector from the return of @p f using position of each element from @p x
+static DiagonalBranched construct_all_01_elements(
+	const DiagonalBranched& x,
+	const ClassicalVector<bool>& IsCouple,
+	const std::function<Tensor3d(const ClassicalVector<double>&)>& f)
+{
+	DiagonalBranched result;
+	for (std::size_t iElement = 0; iElement < NumElements; iElement++)
+	{
+		const auto& xview = xt::view(x, iElement, xt::all());
+		xt::view(result, iElement, xt::all()) = xt::view(f(ClassicalVector<double>::Map(xview.data() + xview.data_offset())), xt::all(), 0, 1);
+	}
+	result *= xt::adapt(IsCouple.data(), {Dim});
 	return result;
 }
 
@@ -235,42 +225,16 @@ static TotallyBranched momentum_diagonal_evolve(
 /// @param[in] Couple A vector of 0 or 1, 1 for evolving dimensions and 0 for non-evolving
 /// @return All branches of momentum vectors
 /// @details @f$ p_{i,j} = p_i + n f_{01}(x_i) dt @f$, where @f$ n = -1, 0, 1 @f$ and @f$ f_{01}=(E_0-E_1)d_{01} @f$
-static OffDiagonalBranched momentum_offdiagonal_evolve(
+static inline OffDiagonalBranched momentum_offdiagonal_evolve(
 	const DiagonalBranched& x,
 	const DiagonalBranched& p,
 	const double dt,
 	const ClassicalVector<bool>& IsCouple)
 {
-	using OffDiagonalBranchingFromSameElement = Eigen::TensorFixedSize<double, Eigen::Sizes<Dim, NumOffDiagonalBranches>>;
 	OffDiagonalBranched result;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-	{
-		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
-		{
-			const std::size_t ElementIndex = iPES * NumPES + jPES;
-			const TensorVector x_slice = x.chip(ElementIndex, 1);
-			// get the off-diagonal force
-			const OffDiagonalBranchingFromSameElement f_01_broadcast =
-				(tensor_slice(adiabatic_force(ClassicalVector<double>::Map(x_slice.data())), 0, 1)
-					* Eigen::TensorMap<const Eigen::Tensor<const bool, 1>>(IsCouple.data(), Dim).cast<double>())
-					.reshape(std::array<std::size_t, 2>{Dim, 1})
-					.broadcast(std::array<std::size_t, 2>{1, NumOffDiagonalBranches});
-			// have the n factor broadcast
-			const OffDiagonalBranchingFromSameElement n_broadcast = [](void) -> OffDiagonalBranchingFromSameElement
-			{
-				Eigen::TensorFixedSize<double, Eigen::Sizes<1, NumOffDiagonalBranches>> n;
-				n.setValues({{-1, 0, 1}});
-				return n.broadcast(std::array<std::size_t, 2>{Dim, 1});
-			}();
-			// cut the p slice, and broadcast it
-			const OffDiagonalBranchingFromSameElement p_slice_brodcast =
-				p.slice(std::array<std::size_t, 2>{0, ElementIndex}, std::array<std::size_t, 2>{Dim, 1})
-					.broadcast(std::array<std::size_t, 2>{1, NumOffDiagonalBranches});
-			// then assign to the chip of result
-			result.chip(ElementIndex, 2) = p_slice_brodcast + dt * n_broadcast * f_01_broadcast;
-		}
-	}
-	return result;
+	const DiagonalBranched f01 = construct_all_01_elements(x, IsCouple, adiabatic_force);
+	const auto n_broadcast = xt::view(xt::adapt(OffDiagonalBranches, xt::xshape<NumOffDiagonalBranches>{}), xt::all(), xt::newaxis(), xt::newaxis());
+	return p + dt * n_broadcast * f01;
 }
 
 /// @brief To calculate sin and cos of @f$ dt(\omega(x_0)+2\omega(x_1)+\omega(x_2))/4 @f$,
@@ -291,7 +255,7 @@ static double calculate_omega0(
 	const std::size_t LargeIndex)
 {
 	assert(SmallIndex < LargeIndex && LargeIndex < NumPES);
-	const TensorVector x2_slice = x2.chip(LargeIndex * NumPES + SmallIndex, 1);
+	const TensorVector x2_slice = xt::view(x2, LargeIndex * NumPES + SmallIndex, xt::all());
 	const QuantumVector<double> E0 = adiabatic_potential(ClassicalVector<double>::Map(x0.data()));
 	const QuantumVector<double> E1 = adiabatic_potential(ClassicalVector<double>::Map(x1.data()));
 	const QuantumVector<double> E2 = adiabatic_potential(ClassicalVector<double>::Map(x2_slice.data()));
@@ -315,46 +279,18 @@ static QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 {
 	using namespace std::literals::complex_literals;
 	static constexpr Direction drc = Direction::Backward;
-	static const Eigen::TensorFixedSize<std::size_t, Eigen::Sizes<NumElements>> IndicesAdd =
-		[](void) -> Eigen::TensorFixedSize<std::size_t, Eigen::Sizes<NumElements>>
-	{
-		Eigen::TensorFixedSize<std::size_t, Eigen::Sizes<NumElements>> result;
-		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-		{
-			for (std::size_t jPES = 0; jPES < NumPES; jPES++)
-			{
-				const std::size_t ElementIndex = iPES * NumPES + jPES;
-				result(ElementIndex) = iPES + jPES;
-			}
-		}
-		return result;
-	}();
-	static const Eigen::TensorFixedSize<std::ptrdiff_t, Eigen::Sizes<NumElements>> IndicesSub =
-		[](void) -> Eigen::TensorFixedSize<std::ptrdiff_t, Eigen::Sizes<NumElements>>
-	{
-		Eigen::TensorFixedSize<std::ptrdiff_t, Eigen::Sizes<NumElements>> result;
-		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-		{
-			for (std::size_t jPES = 0; jPES < NumPES; jPES++)
-			{
-				const std::size_t ElementIndex = iPES * NumPES + jPES;
-				result(ElementIndex) = iPES - jPES;
-			}
-		}
-		return result;
-	}();
-	const auto [x, p] = split_phase_coordinate(r);
+	static const xt::xtensor_fixed<double, xt::xshape<NumElements>> IndicesAdd = xt::reshape_view(xt::view(xt::arange<double>(NumPES), xt::all(), xt::newaxis()) + xt::arange<double>(NumPES), {NumElements});
+	static const xt::xtensor_fixed<double, xt::xshape<NumElements>> IndicesSub = xt::reshape_view(xt::view(xt::arange<double>(NumPES), xt::all(), xt::newaxis()) - xt::arange<double>(NumPES), {NumElements});
+	const auto& [x, p] = split_phase_coordinate(r);
 	const ClassicalVector<bool> IsCouple = is_coupling(x, p, mass);
 	QuantumMatrix<std::complex<double>> result = QuantumMatrix<std::complex<double>>::Zero();
 	// index: {classical dimensions}
-	const TensorVector x0 = Eigen::TensorMap<const Eigen::Tensor<const double, 1>>(x.data(), Dim);
-	const TensorVector p0 = Eigen::TensorMap<const Eigen::Tensor<const double, 1>>(p.data(), Dim);
+	const TensorVector x0 = xt::adapt(x.data(), TensorVector::shape_type{});
+	const TensorVector p0 = xt::adapt(p.data(), TensorVector::shape_type{});
 	if (IsCouple.any())
 	{
 		if constexpr (NumPES == 2)
 		{
-			// 2-level system
-			const ClassicalVector<bool> IsCouple = is_coupling(x, p, mass);
 			// x_i and p_{i-1} have same number of elements, and p_i is branching
 			// 17 steps
 			// index: {classical dimensions}
@@ -370,19 +306,19 @@ static QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 			const TotallyBranched x4 = position_evolve(x3, p3, mass, dt / 4.0, drc);
 			// auxiliary terms: evolved elements, phi, omega0, omega1
 			const double omega0 = calculate_omega0(x0, x1, x2, drc, 0, 1);
-			// omega1(n, gamma) = omega0(R2(., gamma), R3(., n, gamma), R4(., (1,0), n, gamma)) / (4hbar)
-			const Eigen::TensorFixedSize<double, Eigen::Sizes<NumOffDiagonalBranches, NumElements>> omega1 =
-				[&x2, &x3, &x4](void) -> Eigen::TensorFixedSize<double, Eigen::Sizes<NumOffDiagonalBranches, NumElements>>
+			// omega1(n, gamma) = omega0(R2(gamma, 0), R3(n, gamma, .), R4((1,0), n, gamma, .))
+			const xt::xtensor_fixed<double, xt::xshape<NumOffDiagonalBranches, NumElements>> omega1 =
+				[&x2, &x3, &x4](void) -> xt::xtensor_fixed<double, xt::xshape<NumOffDiagonalBranches, NumElements>>
 			{
-				Eigen::TensorFixedSize<double, Eigen::Sizes<NumOffDiagonalBranches, NumElements>> result;
-				for (std::size_t iElement = 0; iElement < NumElements; iElement++)
+				xt::xtensor_fixed<double, xt::xshape<NumOffDiagonalBranches, NumElements>> result;
+				for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
 				{
-					for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
+					for (std::size_t iElement = 0; iElement < NumElements; iElement++)
 					{
 						result(iOffDiagonalBranch, iElement) = calculate_omega0(
-							x2.chip(iElement, 1),
-							x3.chip(iElement, 2).chip(iOffDiagonalBranch, 1),
-							x4.chip(iElement, 3).chip(iOffDiagonalBranch, 2),
+							xt::view(x2, iElement, xt::all()),
+							xt::view(x3, iOffDiagonalBranch, iElement, xt::all()),
+							xt::view(x4, xt::all(), iOffDiagonalBranch, iElement, xt::all()),
 							drc,
 							0,
 							1);
@@ -390,71 +326,51 @@ static QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 				}
 				return result;
 			}();
-			// phi(n, gamma) = p2(., n, gamma).dot(d01(R2(., gamma)))
-			const Eigen::TensorFixedSize<double, Eigen::Sizes<NumOffDiagonalBranches, NumElements>> phi =
-				[&x2, &p2, &IsCouple](void) -> Eigen::TensorFixedSize<double, Eigen::Sizes<NumOffDiagonalBranches, NumElements>>
+			// phi(n, gamma) = p2(n, gamma, .).dot(d01(R2(gamma, .)))
+			const xt::xtensor_fixed<double, xt::xshape<NumOffDiagonalBranches, NumElements>> phi =
+				[&x2, &p2, &IsCouple](void) -> xt::xtensor_fixed<double, xt::xshape<NumOffDiagonalBranches, NumElements>>
 			{
-				Eigen::TensorFixedSize<double, Eigen::Sizes<NumOffDiagonalBranches, NumElements>> result;
-				for (std::size_t iElement = 0; iElement < NumElements; iElement++)
-				{
-					// slice the position
-					const TensorVector x2_slice = x2.chip(iElement, 1);
-					// and get the non-adiabatic coupling
-					const TensorVector d01 =
-						tensor_slice(adiabatic_coupling(ClassicalVector<double>::Map(x2_slice.data())), 0, 1)
-						* Eigen::TensorMap<const Eigen::Tensor<const bool, 1>>(IsCouple.data(), Dim).cast<double>();
-					result.chip(iElement, 1) =
-						(p2.chip(iElement, 2) * d01.reshape(std::array<std::size_t, 2>{Dim, 1}).broadcast(std::array<std::size_t, 2>{1, NumOffDiagonalBranches}))
-							.sum(std::array<std::size_t, 1>{0});
-				}
-				return result;
+				const DiagonalBranched nac_01 = construct_all_01_elements(x2, IsCouple, adiabatic_coupling);
+				return xt::sum(p2 * nac_01, {2});
 			}();
-			// rho(gamma', n, gamma) = rho^gamma_W(R4(., gamma', n, gamma), P3(., gamma', n, gamma), t)
-			const Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>> rho_predict =
-				[&x4, &p3, &Kernels](void) -> Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>>
+			// rho(gamma', n, gamma) = rho^gamma_W(R4(gamma', n, gamma, .), P3(gamma', n, gamma, .), t)
+			const xt::xtensor_fixed<std::complex<double>, xt::xshape<NumElements, NumOffDiagonalBranches, NumElements>> rho_predict =
+				[&x4, &p3, &Kernels](void) -> xt::xtensor_fixed<std::complex<double>, xt::xshape<NumElements, NumOffDiagonalBranches, NumElements>>
 			{
-				Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>> result;
-				result.setZero();
+				xt::xtensor_fixed<std::complex<double>, xt::xshape<NumElements, NumOffDiagonalBranches, NumElements>> result;
 				for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 				{
 					for (std::size_t jPES = 0; jPES < NumPES; jPES++)
 					{
 						const std::size_t ElementIndex = iPES * NumPES + jPES;
-						const std::size_t SymmetricElementIndex = jPES * NumPES + iPES;
 						// construct training set
-						const Eigen::TensorFixedSize<double, Eigen::Sizes<PhaseDim, NumElements, NumOffDiagonalBranches>> r =
-							[&x4, &p3, ElementIndex](void) -> Eigen::TensorFixedSize<double, Eigen::Sizes<PhaseDim, NumElements, NumOffDiagonalBranches>>
+						const PhasePoints r = [&x4, &p3, ElementIndex](void) -> PhasePoints
 						{
-							Eigen::TensorFixedSize<double, Eigen::Sizes<PhaseDim, NumElements, NumOffDiagonalBranches>> result;
-							result.slice(std::array<std::size_t, 3>{0, 0, 0}, std::array<std::size_t, 3>{Dim, NumElements, NumOffDiagonalBranches}) = x4.chip(ElementIndex, 3);
-							result.slice(std::array<std::size_t, 3>{Dim, 0, 0}, std::array<std::size_t, 3>{Dim, NumElements, NumOffDiagonalBranches}) = p3.chip(ElementIndex, 3);
+							static constexpr std::size_t NumElementsForPrediction = NumElements * NumOffDiagonalBranches;
+							static constexpr std::size_t GapSize = NumElements * Dim;
+							Eigen::Matrix<double, PhaseDim, NumElementsForPrediction> result;
+							for (std::size_t iDim = 0; iDim < Dim; iDim++)
+							{
+								const auto xview = xt::view(x4, xt::all(), xt::all(), ElementIndex, iDim), pview = xt::view(p3, xt::all(), xt::all(), ElementIndex, iDim);
+								result.block<1, NumElementsForPrediction>(iDim, 0) = Eigen::Map<const Eigen::Matrix<double, 1, NumElementsForPrediction>, Eigen::Unaligned, Eigen::InnerStride<GapSize>>(xview.data() + xview.data_offset());
+								result.block<1, NumElementsForPrediction>(iDim + Dim, 0) = Eigen::Map<const Eigen::Matrix<double, 1, NumElementsForPrediction>, Eigen::Unaligned, Eigen::InnerStride<GapSize>>(pview.data() + pview.data_offset());
+							}
 							return result;
 						}();
 						// get prediction
-						const Eigen::VectorXd rho = Kernels[ElementIndex].has_value()
-							? predict_elements_with_variance_comparison(Kernels[ElementIndex].value(), PhasePoints::Map(r.data(), PhaseDim, NumElements * NumOffDiagonalBranches))
-							: Eigen::VectorXd::Zero(NumElements * NumOffDiagonalBranches);
 						if (iPES == jPES)
 						{
-							// add to real part of diagonal elements
-							result.chip(ElementIndex, 2) +=
-								Eigen::TensorMap<const Eigen::Tensor<const double, 2>>(rho.data(), NumElements, NumOffDiagonalBranches).cast<std::complex<double>>();
+							xt::view(result, xt::all(), xt::all(), ElementIndex) = xt::adapt(Kernel(r, dynamic_cast<const Kernel&>(*Kernels[ElementIndex].get()), false).get_prediction_compared_with_variance().data(), {NumElements, NumOffDiagonalBranches});
 						}
 						else if (iPES < jPES)
 						{
-							// add to real part of off-diagonal elements
-							result.chip(ElementIndex, 2) +=
-								Eigen::TensorMap<const Eigen::Tensor<const double, 2>>(rho.data(), NumElements, NumOffDiagonalBranches).cast<std::complex<double>>();
-							result.chip(SymmetricElementIndex, 2) +=
-								Eigen::TensorMap<const Eigen::Tensor<const double, 2>>(rho.data(), NumElements, NumOffDiagonalBranches).cast<std::complex<double>>();
+							// using the corresponding lower-diagonal predictor
+							xt::view(result, xt::all(), xt::all(), ElementIndex) = xt::conj(xt::adapt(ComplexKernel(r, dynamic_cast<const ComplexKernel&>(*Kernels[jPES * NumPES + iPES].get()), false).get_prediction_compared_with_variance().data(), {NumElements, NumOffDiagonalBranches}));
 						}
 						else
 						{
 							// add to imaginary part of off-diagonal elements
-							result.chip(ElementIndex, 2) +=
-								1.0i * Eigen::TensorMap<const Eigen::Tensor<const double, 2>>(rho.data(), NumElements, NumOffDiagonalBranches).cast<std::complex<double>>();
-							result.chip(SymmetricElementIndex, 2) -=
-								1.0i * Eigen::TensorMap<const Eigen::Tensor<const double, 2>>(rho.data(), NumElements, NumOffDiagonalBranches).cast<std::complex<double>>();
+							xt::view(result, xt::all(), xt::all(), ElementIndex) = xt::adapt(ComplexKernel(r, dynamic_cast<const ComplexKernel&>(*Kernels[ElementIndex].get()), false).get_prediction_compared_with_variance().data(), {NumElements, NumOffDiagonalBranches});
 						}
 					}
 				}
@@ -462,121 +378,50 @@ static QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 			}();
 			// auxiliary terms: c1, c2, c3, c4
 			// C1(gamma', n) = ((1-delta(n, 0))delta(alpha', beta') + cos(phi(0, gamma')dt - (alpha' + beta' + n)pi/2)exp(i(alpha' - beta')omega0 * dt / 2)) / (4 - 2delta(n, 0))
-			const Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumOffDiagonalBranches>> C1 =
-				[&phi, omega0, dt](void) -> Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumOffDiagonalBranches>>
+			const xt::xtensor_fixed<std::complex<double>, xt::xshape<NumElements, NumOffDiagonalBranches>> C1 =
+				[&phi, omega0, dt](void) -> xt::xtensor_fixed<std::complex<double>, xt::xshape<NumElements, NumOffDiagonalBranches>>
 			{
-				Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumOffDiagonalBranches>> result;
-				result.setZero();
-				const Eigen::TensorFixedSize<double, Eigen::Sizes<NumElements, NumOffDiagonalBranches>> phi0_broadcast =
-					phi.slice(std::array<std::size_t, 2>{1, 0}, std::array<std::size_t, 2>{1, NumElements})
-						.reshape(std::array<std::size_t, 2>{NumElements, 1})
-						.broadcast(std::array<std::size_t, 2>{1, NumOffDiagonalBranches});
-				const Eigen::TensorFixedSize<double, Eigen::Sizes<NumElements, NumOffDiagonalBranches>> indices_add_broadcast =
-					IndicesAdd.cast<double>().reshape(std::array<std::size_t, 2>{NumElements, 1}).broadcast(std::array<std::size_t, 2>{1, NumOffDiagonalBranches});
-				const Eigen::TensorFixedSize<double, Eigen::Sizes<NumElements, NumOffDiagonalBranches>> offdiag_indices_broadcast =
-					Eigen::TensorMap<const Eigen::Tensor<const std::ptrdiff_t, 2>>(OffDiagonalBranches.data(), 1, NumOffDiagonalBranches)
-						.cast<double>()
-						.broadcast(std::array<std::size_t, 2>{NumElements, 1});
-				const Eigen::TensorFixedSize<double, Eigen::Sizes<NumElements, NumOffDiagonalBranches>> within_cosine =
-					phi0_broadcast * dt - M_PI / 2.0 * (indices_add_broadcast + offdiag_indices_broadcast);
-				const Eigen::TensorFixedSize<double, Eigen::Sizes<NumElements, NumOffDiagonalBranches>> cosine =
-					within_cosine.unaryExpr([](double d) -> double
-						{
-							return std::cos(d);
-						});
-				const Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumOffDiagonalBranches>> indices_sub_broadcast =
-					IndicesSub.cast<std::complex<double>>().reshape(std::array<std::size_t, 2>{NumElements, 1}).broadcast(std::array<std::size_t, 2>{1, NumOffDiagonalBranches});
-				result += cosine.cast<std::complex<double>>() * (omega0 * dt / 2.0 * 1.0i * indices_sub_broadcast).exp();
-				for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+				xt::xtensor_fixed<std::complex<double>, xt::xshape<NumElements, NumOffDiagonalBranches>> result = xt::zeros<decltype(result)::value_type>(decltype(result)::shape_type{});
+				result += xt::cos(xt::view(phi, 1, xt::all(), xt::newaxis()) * dt - M_PI / 2.0 * (xt::view(IndicesAdd, xt::all(), xt::newaxis()) + xt::adapt(OffDiagonalBranches, {NumOffDiagonalBranches})))
+					* xt::exp(1.0i * xt::view(IndicesSub, xt::all(), xt::newaxis()) / 2.0 * omega0 * dt);
+				for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
 				{
-					for (const std::ptrdiff_t n : OffDiagonalBranches)
+					if (OffDiagonalBranches[iOffDiagonalBranch] != 0)
 					{
-						const std::size_t OffDiagonalIndex = n + 1;
-						if (n != 0)
-						{
-							result(iPES * NumPES + iPES, OffDiagonalIndex) += 1;
-						}
+						xt::view(result, xt::all(), iOffDiagonalBranch) += xt::reshape_view(xt::eye<std::complex<double>>(NumPES), {NumElements});
 					}
 				}
-				for (const std::ptrdiff_t n : OffDiagonalBranches)
+				for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
 				{
-					const std::size_t OffDiagonalIndex = n + 1;
-					result.chip(OffDiagonalIndex, 1) /= result.chip(OffDiagonalIndex, 1).constant(4 - 2 * static_cast<int>(n == 0));
+					xt::view(result, xt::all(), iOffDiagonalBranch) /= 4.0 - 2.0 * static_cast<double>(OffDiagonalBranches[iOffDiagonalBranch] == 0);
 				}
 				return result;
 			}();
 			// c2(gamma', n, gamma) = (1-delta(n, 0))delta(alpha, beta) + cos(phi(n, gamma')dt + (alpha + beta + n)pi/2)exp(i(alpha - beta)omega1(n, gamma') * dt / 2)
-			const Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>> C2 =
-				[&phi, &omega1, dt](void) -> Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>>
+			const xt::xtensor_fixed<std::complex<double>, xt::xshape<NumElements, NumOffDiagonalBranches, NumElements>> C2 =
+				[&phi, &omega1, dt](void) -> xt::xtensor_fixed<std::complex<double>, xt::xshape<NumElements, NumOffDiagonalBranches, NumElements>>
 			{
-				Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>> result;
-				const Eigen::TensorFixedSize<double, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>> phi_broadcast =
-					phi.shuffle(std::array<std::size_t, 2>{1, 0})
-						.reshape(std::array<std::size_t, 3>{NumElements, NumOffDiagonalBranches, 1})
-						.broadcast(std::array<std::size_t, 3>{1, 1, NumElements});
-				const Eigen::TensorFixedSize<double, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>> indices_add_broadcast =
-					IndicesAdd.cast<double>()
-						.reshape(std::array<std::size_t, 3>{1, 1, NumElements})
-						.broadcast(std::array<std::size_t, 3>{NumElements, NumOffDiagonalBranches, 1});
-				const Eigen::TensorFixedSize<double, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>> offdiag_indices_broadcast =
-					Eigen::TensorMap<const Eigen::Tensor<const std::ptrdiff_t, 3>>(OffDiagonalBranches.data(), 1, NumOffDiagonalBranches, 1)
-						.cast<double>()
-						.broadcast(std::array<std::size_t, 3>{NumElements, 1, NumElements});
-				const Eigen::TensorFixedSize<double, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>> within_cosine =
-					phi_broadcast * dt + M_PI / 2.0 * (indices_add_broadcast + offdiag_indices_broadcast);
-				const Eigen::TensorFixedSize<double, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>> cosine =
-					within_cosine.unaryExpr([](double d) -> double
-						{
-							return std::cos(d);
-						});
-				const Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>> indices_sub_broadcast =
-					IndicesSub.cast<std::complex<double>>()
-						.reshape(std::array<std::size_t, 3>{1, 1, NumElements})
-						.broadcast(std::array<std::size_t, 3>{NumElements, NumOffDiagonalBranches, 1});
-				const Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumOffDiagonalBranches, NumElements>> omega1_broadcast =
-					omega1.shuffle(std::array<std::size_t, 2>{1, 0})
-						.cast<std::complex<double>>()
-						.reshape(std::array<std::size_t, 3>{NumElements, NumOffDiagonalBranches, 1})
-						.broadcast(std::array<std::size_t, 3>{1, 1, NumElements});
-				result += cosine.cast<std::complex<double>>() * (dt / 2.0 * 1.0i * indices_sub_broadcast * omega1_broadcast).exp();
-				for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+				xt::xtensor_fixed<std::complex<double>, xt::xshape<NumElements, NumOffDiagonalBranches, NumElements>> result = xt::zeros<decltype(result)::value_type>(decltype(result)::shape_type{});
+				result += xt::cos(xt::view(xt::transpose(phi), xt::all(), xt::all(), xt::newaxis()) * dt + M_PI / 2.0 * (IndicesAdd + xt::view(xt::adapt(OffDiagonalBranches, {NumOffDiagonalBranches}), xt::all(), xt::newaxis())))
+					* xt::exp(1.0i * IndicesSub / 2.0 * xt::view(xt::transpose(omega1), xt::all(), xt::all(), xt::newaxis()) * dt);
+				for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
 				{
-					for (const std::ptrdiff_t n : OffDiagonalBranches)
+					if (OffDiagonalBranches[iOffDiagonalBranch] != 0)
 					{
-						const std::size_t OffDiagonalIndex = n + 1;
-						if (n != 0)
-						{
-							result.slice(std::array<std::size_t, 3>{0, OffDiagonalIndex, iPES * NumPES + iPES}, std::array<std::size_t, 3>{NumElements, 1, 1}) +=
-								Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, 1, 1>>().constant(1);
-						}
+						xt::view(result, xt::all(), iOffDiagonalBranch, xt::all()) += xt::reshape_view(xt::eye<std::complex<double>>(NumPES), {NumElements});
 					}
 				}
 				return result;
 			}();
 			// c3(gamma') = (beta' - alpha') / 2 * exp(i(alpha' - beta')omega0 * dt / 2)
-			const Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements>> C3 =
-				std::complex<double>(-0.5) * IndicesSub.cast<std::complex<double>>() * (dt * omega0 / 2.0 * 1.0i * IndicesSub.cast<std::complex<double>>()).exp();
+			const xt::xtensor_fixed<std::complex<double>, xt::xshape<NumElements>> C3 = -IndicesSub / 2.0 * xt::exp(1.0i * IndicesSub / 2.0 * omega0 * dt);
 			// c4(gamma',\gamma) = (beta - alpha) * exp(i(alpha - beta)omega1(0, gamma') * dt / 2)
-			const Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumElements>> C4 =
-				[&omega1, dt](void) -> Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumElements>>
-			{
-				const Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumElements>> indices_sub_broadcast =
-					IndicesSub.cast<std::complex<double>>()
-						.reshape(std::array<std::size_t, 2>{1, NumElements})
-						.broadcast(std::array<std::size_t, 2>{NumElements, 1});
-				const Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements, NumElements>> omega1_broadcast =
-					omega1.chip(1, 0)
-						.cast<std::complex<double>>()
-						.reshape(std::array<std::size_t, 2>{NumElements, 1})
-						.broadcast(std::array<std::size_t, 2>{1, NumElements});
-				return -indices_sub_broadcast * (dt / 2.0 * 1.0i * indices_sub_broadcast * omega1_broadcast).exp();
-			}();
+			const xt::xtensor_fixed<std::complex<double>, xt::xshape<NumElements, NumElements>> C4 = -IndicesSub * xt::exp(1.0i * IndicesSub / 2.0 * xt::view(omega1, 1, xt::all(), xt::newaxis()) * dt);
 			// finally, a linearized density matrix
 			// rho(gamma')=sum_n{C1(gamma', n)sum_gamma{C2(gamma', n, gamma)rho(gamma', n, gamma)}} + C3(gamma')sum_{gamma}{C4(gamma)rho(gamma',0,gamma)}
-			const Eigen::TensorFixedSize<std::complex<double>, Eigen::Sizes<NumElements>> rho = (C1.reshape(std::array<std::size_t, 3>{NumElements, NumOffDiagonalBranches, 1}).broadcast(std::array<std::size_t, 3>{1, 1, NumElements}) * C2 * rho_predict).sum(std::array<std::size_t, 2>{1, 2})
-				+ (C3.reshape(std::array<std::size_t, 2>{NumElements, 1}).broadcast(std::array<std::size_t, 2>{1, NumElements}) * C4 * rho_predict.chip(1, 1)).sum(std::array<std::size_t, 1>{1});
-			// rho is row-major, but the result should be column major, so a transpose is needed
-			result.transpose() = QuantumMatrix<std::complex<double>>::Map(rho.data());
+			const xt::xtensor_fixed<std::complex<double>, xt::xshape<NumElements>> rho = xt::sum(xt::view(C1, xt::all(), xt::all(), xt::newaxis()) * C2 * rho_predict, {1, 2})
+				+ xt::sum(xt::view(C3, xt::all(), xt::newaxis()) * C4 * xt::view(rho_predict, xt::all(), 1, xt::all()), {1});
+			result = QuantumMatrix<std::complex<double>>::Map(rho.data());
 		}
 		else
 		{
@@ -595,10 +440,9 @@ static QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 		// construct training set
 		const PhasePoints PhaseCoordinatesUsedForPrediction = [&x2, &p1](void) -> PhasePoints
 		{
-			PhasePoints result(PhaseDim, NumElements);
-			Eigen::TensorMap<Eigen::Tensor<double, 2>> result_tensor_map(result.data(), PhaseDim, NumElements);
-			result_tensor_map.slice(std::array<std::size_t, 2>{0, 0}, x2.dimensions()) = x2;
-			result_tensor_map.slice(std::array<std::size_t, 2>{Dim, 0}, p1.dimensions()) = p1;
+			Eigen::Matrix<double, PhaseDim, NumElements> result;
+			result.block<Dim, NumElements>(0, 0) = Eigen::Matrix<double, Dim, NumElements>::Map(x2.data());
+			result.block<Dim, NumElements>(Dim, 0) = Eigen::Matrix<double, Dim, NumElements>::Map(p1.data());
 			return result;
 		}();
 		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
@@ -607,21 +451,16 @@ static QuantumMatrix<std::complex<double>> non_adiabatic_evolve_predict(
 			{
 				// loop over the lower triangular only
 				const std::size_t ElementIndex = iPES * NumPES + jPES;
-				if (Kernels[ElementIndex].has_value())
+				if (iPES == jPES)
 				{
-					// the real part
-					result(iPES, jPES) += predict_elements_with_variance_comparison(Kernels[ElementIndex].value(), PhaseCoordinatesUsedForPrediction.col(ElementIndex)).value();
+					// diagonal elements
+					result(iPES, jPES) = Kernel(PhaseCoordinatesUsedForPrediction.col(ElementIndex), dynamic_cast<const Kernel&>(*Kernels[ElementIndex].get()), false).get_prediction_compared_with_variance().value();
 				}
-				if (const std::size_t SymmetricElementIndex = jPES * NumPES + iPES; iPES != jPES && Kernels[SymmetricElementIndex].has_value())
+				else
 				{
-					// the imaginary part for off-diagonal elemenets
-					result(iPES, jPES) += 1.0i * predict_elements_with_variance_comparison(Kernels[SymmetricElementIndex].value(), PhaseCoordinatesUsedForPrediction.col(ElementIndex)).value();
-				}
-				if (iPES != jPES)
-				{
-					// change phase for off-diagonal part
-					const double omega0 = calculate_omega0(x0, x1, x2, drc, jPES, iPES);
-					result(iPES, jPES) *= std::exp(1.0i * omega0 * dt);
+					// off-diagonal elements
+					result(iPES, jPES) = std::exp(1.0i * calculate_omega0(x0, x1, x2, drc, jPES, iPES) * dt)
+						* ComplexKernel(PhaseCoordinatesUsedForPrediction.col(ElementIndex), dynamic_cast<const ComplexKernel&>(*Kernels[ElementIndex].get()), false).get_prediction_compared_with_variance().value();
 				}
 			}
 		}
@@ -641,8 +480,7 @@ void evolve(
 	using namespace std::literals::complex_literals;
 	static constexpr Direction drc = Direction::Forward;
 	auto adiabatic_evolve =
-		[](
-			ClassicalVector<double>& x,
+		[](ClassicalVector<double>& x,
 			ClassicalVector<double>& p,
 			const ClassicalVector<double>& mass,
 			const double dt,
@@ -672,34 +510,31 @@ void evolve(
 				// for row-major, visit upper triangular elements earlier
 				// so selection for the upper triangular elements
 				const std::size_t ElementIndex = iPES * NumPES + jPES;
-				if (!density[ElementIndex].empty())
-				{
-					std::for_each(
-						std::execution::par_unseq,
-						density[ElementIndex].begin(),
-						density[ElementIndex].end(),
-						[&mass, dt, &Kernels, &adiabatic_evolve, iPES, jPES, ElementIndex](PhaseSpacePoint& psp) -> void
+				std::for_each(
+					std::execution::par_unseq,
+					density[ElementIndex].begin(),
+					density[ElementIndex].end(),
+					[&mass, dt, &Kernels, &adiabatic_evolve, iPES, jPES, ElementIndex](PhaseSpacePoint& psp) -> void
+					{
+						auto& [r, rho] = psp;
+						auto [x, p] = split_phase_coordinate(r);
+						if (is_coupling(x, p, mass).any())
 						{
-							auto& [r, rho] = psp;
-							auto [x, p] = split_phase_coordinate(r);
-							if (is_coupling(x, p, mass).any())
-							{
-								// with coupling, non-adiabatic case
-								// calculate its adiabatically evolved phase space coordinate with 2 half steps
-								adiabatic_evolve(x, p, mass, dt / 2, drc, iPES, jPES);
-								adiabatic_evolve(x, p, mass, dt / 2, drc, iPES, jPES);
-							}
-							else
-							{
-								// without coupling, adiabatic case
-								// calculate its adiabatically evolved phase space coordinate
-								adiabatic_evolve(x, p, mass, dt, drc, iPES, jPES);
-							}
-							// and use back-propagation to calculate the exact density there
-							r << x, p;
-							rho = non_adiabatic_evolve_predict(r, mass, dt, Kernels);
-						});
-				}
+							// with coupling, non-adiabatic case
+							// calculate its adiabatically evolved phase space coordinate with 2 half steps
+							adiabatic_evolve(x, p, mass, dt / 2, drc, iPES, jPES);
+							adiabatic_evolve(x, p, mass, dt / 2, drc, iPES, jPES);
+						}
+						else
+						{
+							// without coupling, adiabatic case
+							// calculate its adiabatically evolved phase space coordinate
+							adiabatic_evolve(x, p, mass, dt, drc, iPES, jPES);
+						}
+						// and use back-propagation to calculate the exact density there
+						r << x, p;
+						rho = non_adiabatic_evolve_predict(r, mass, dt, Kernels);
+					});
 			}
 			else
 			{

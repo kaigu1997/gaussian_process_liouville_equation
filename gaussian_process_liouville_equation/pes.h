@@ -7,12 +7,13 @@
 #include "stdafx.h"
 
 /// @brief Sign function: return -1 for negative, 1 for positive, and 0 for 0
+/// @tparam T The type of the value
 /// @param[in] val A value of any type that have '<' and '>' and could construct 0.0
 /// @return The sign of the value
-template <typename valtype>
-inline constexpr int sgn(const valtype& val)
+template <typename T>
+inline constexpr int sgn(const T& val)
 {
-	return (val > valtype(0.0)) - (val < valtype(0.0));
+	return (val > static_cast<T>(0)) - (val < static_cast<T>(0));
 }
 
 /// Different basis
@@ -32,7 +33,7 @@ enum Model
 
 #ifndef TestModel
 constexpr Model TestModel = DAC; ///< The model to use
-#endif						 // !TestModel
+#endif							 // !TestModel
 
 /// @brief To calculate the diagonalized subsystem Hamiltonian matrix
 /// @param[in] x Position of classical degree of freedom
@@ -51,17 +52,5 @@ Tensor3d adiabatic_coupling(const ClassicalVector<double>& x);
 /// @return The force tensor of each direction
 /// @sa adiabatic_potential(), adiabatic_coupling()
 Tensor3d adiabatic_force(const ClassicalVector<double>& x);
-
-/// @brief To transform density matrix from one basis to another
-/// @param[in] rho The partial Wigner-transformed denstiy matrix, a self-adjoint complex matrix
-/// @param[in] x Position of classical degree of freedom
-/// @param[in] idx_from The index indicating the representation rho in
-/// @param[in] idx_to The index indicating the representation the return value in
-/// @return Another self-adjoint denstiy matrix, in the representation indicated by the parameter
-QuantumMatrix<std::complex<double>> basis_transform(
-	const QuantumMatrix<std::complex<double>>& rho,
-	const ClassicalVector<double>& x,
-	const std::size_t idx_from,
-	const std::size_t idx_to);
 
 #endif // !PES_H
