@@ -14,14 +14,15 @@
 
 /// @brief To output averages
 /// @param[inout] os The output stream
-/// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
+/// @param[in] AllKernels Kernels of all elements for prediction
 /// @param[in] density The selected points in phase space for each element of density matrices
 /// @param[in] mass Mass of classical degree of freedom
 void output_average(
 	std::ostream& os,
-	const OptionalKernels& Kernels,
+	const Kernels& AllKernels,
 	const AllPoints& density,
-	const ClassicalVector<double>& mass);
+	const ClassicalVector<double>& mass
+);
 
 /// @brief To output parameters
 /// @param[inout] os The output stream
@@ -29,27 +30,43 @@ void output_average(
 void output_param(std::ostream& os, const Optimization& Optimizer);
 
 /// @brief To output the selected points
-/// @param[inout] os The output stream
-/// @param[in] Points The selected density matrices
-void output_point(std::ostream& os, const AllPoints& Points);
+/// @param[inout] coord The output stream for phase space coordinates of the points
+/// @param[inout] value The output stream for the density of the points
+/// @param[in] density The selected points in phase space for each element of density matrices
+/// @param[in] extra_points The extra selected points to reduce overfitting
+void output_point(std::ostream& coord, std::ostream& value, const AllPoints& density, const AllPoints& extra_points);
 
 /// @brief To output the gridded phase space distribution, and variance on each point
-/// @param[inout] phase The output stream for phase space distribution
+/// @param[inout] phase The output stream for phase space distribution without adiabatic factor
+/// @param[inout] phasefactor The output stream for phase factor
 /// @param[inout] variance The output stream for variance
-/// @param[in] Kernels An array of kernels for prediction, whose size is NumElements
+/// @param[in] mass Mass of classical degree of freedom
+/// @param[in] dt Time interval
+/// @param[in] NumTicks Number of @p dt since T=0; i.e., now is @p NumTicks * @p dt
+/// @param[in] AllKernels Kernels of all elements for prediction
 /// @param[in] PhaseGrids The phase space coordinates of the grids
-void output_phase(std::ostream& phase, std::ostream& variance, const OptionalKernels& Kernels, const PhasePoints& PhaseGrids);
+void output_phase(
+	std::ostream& phase,
+	std::ostream& phasefactor,
+	std::ostream& variance,
+	const ClassicalVector<double>& mass,
+	const double dt,
+	const std::size_t NumTicks,
+	const Kernels& AllKernels,
+	const PhasePoints& PhaseGrids
+);
 
 /// @brief To output the process of setting monte carlo steps by calculating autocorrelation
 /// @param[inout] os The output stream
 /// @param[inout] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
-/// @param[in] dist The distribution function of the current partial Wigner-transformed density matrix
+/// @param[in] distribution The distribution function of the current partial Wigner-transformed density matrix
 /// @param[in] density The selected points in phase space for each element of density matrices
 void output_autocor(
 	std::ostream& os,
 	MCParameters& MCParams,
-	const DistributionFunction& dist,
-	const AllPoints& density);
+	const DistributionFunction& distribution,
+	const AllPoints& density
+);
 
 /// @brief To output some basic information
 /// @param[inout] os The output stream
@@ -62,6 +79,7 @@ void output_logging(
 	const double time,
 	const Optimization::Result& OptResult,
 	const MCParameters& MCParams,
-	const std::chrono::duration<double>& CPUTime);
+	const std::chrono::duration<double>& CPUTime
+);
 
 #endif // !OUTPUT_H

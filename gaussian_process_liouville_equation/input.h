@@ -10,32 +10,52 @@
 class InitialParameters final
 {
 private:
-	const ClassicalVector<double> mass;		  ///< Mass of classical degree of freedom
-	const ClassicalPhaseVector r0;			  ///< Initial position and momentum of classical degree of freedom
-	const ClassicalVector<double> xmin;		  ///< Lower bound of position
-	const ClassicalVector<double> xmax;		  ///< Upper bound of position
-	const std::size_t NumGridsForOneDim;	  ///< Number of grids for one of the (position/momentum) dimensions
-	const std::size_t NumGridsTotal;		  ///< Number of grids for all phase space dimensions
-	const ClassicalVector<double> dx;		  ///< Grid spacing of position
-	const ClassicalVector<double> pmin;		  ///< Lower bound of momentum
-	const ClassicalVector<double> pmax;		  ///< Upper bound of momentum
-	const ClassicalVector<double> dp;		  ///< Grid spacing of momentum
-	const ClassicalPhaseVector rmin;		  ///< Lower bound of position and momentum of classical degree of freedom for the grids
-	const ClassicalPhaseVector rmax;		  ///< Lower bound of position and momentum of classical degree of freedom for the grids
-	const ClassicalPhaseVector dr;			  ///< Grid size of position and momentum of classical degree of freedom for the grids
-	const ClassicalPhaseVector SigmaR0;		  ///< Initial standard deviation of classical degree of freedom
-	const PhasePoints PhaseGrids;			  ///< Grids for plot phase space distribution
-	const double dt;						  ///< The time interval for evolution
-	const double ReoptimizationTime;		  ///< The time interval to redo the paramter optimization (in a.u.)
-	const double OutputTime;				  ///< The time interval to give outputs (in a.u.)
-	const std::size_t NumberOfSelectedPoints; ///< The size of training set for parameter optimization
-	const std::size_t TotalTicks;			  ///< The maximum number of dt to finish the evolution
+	/// @brief Mass of classical degree of freedom
+	const ClassicalVector<double> mass;
+	/// @brief Initial position and momentum of classical degree of freedom
+	const ClassicalPhaseVector r0;
+	/// @brief Lower bound of position
+	const ClassicalVector<double> xmin;
+	/// @brief Upper bound of position
+	const ClassicalVector<double> xmax;
+	/// @brief Number of grids for one of the (position/momentum) dimensions
+	const std::size_t NumGridsForOneDim;
+	/// @brief Number of grids for all phase space dimensions
+	const std::size_t NumGridsTotal;
+	/// @brief Grid spacing of position
+	const ClassicalVector<double> dx;
+	/// @brief Lower bound of momentum
+	const ClassicalVector<double> pmin;
+	/// @brief Upper bound of momentum
+	const ClassicalVector<double> pmax;
+	/// @brief Grid spacing of momentum
+	const ClassicalVector<double> dp;
+	/// @brief Lower bound of position and momentum of classical degree of freedom for the grids
+	const ClassicalPhaseVector rmin;
+	/// @brief Lower bound of position and momentum of classical degree of freedom for the grids
+	const ClassicalPhaseVector rmax;
+	/// @brief Grid size of position and momentum of classical degree of freedom for the grids
+	const ClassicalPhaseVector dr;
+	/// @brief Initial standard deviation of classical degree of freedom
+	const ClassicalPhaseVector SigmaR0;
+	/// @brief Grids for plot phase space distribution
+	const PhasePoints PhaseGrids;
+	/// @brief The time interval for evolution
+	const double dt;
+	/// @brief The time interval to redo the paramter optimization (in a.u.)
+	const double ReoptimizationTime;
+	/// @brief The time interval to give outputs (in a.u.)
+	const double OutputTime;
+	/// @brief The size of training set for parameter optimization
+	const std::size_t NumberOfSelectedPoints;
+	/// @brief The maximum number of dt to finish the evolution
+	const std::size_t TotalTicks;
 
 public:
 	InitialParameters(void) = delete;
 
 	/// @brief Constructor
-	/// @param[in] mass Mass of classical degree of freedom
+	/// @param[in] Mass Mass of classical degree of freedom
 	/// @param[in] x0 Initial position
 	/// @param[in] p0 Initial momentum
 	/// @param[in] sigma_p0 Initial standard deviation of momentum
@@ -44,14 +64,15 @@ public:
 	/// @param[in] dt_ The interval of evolution in unit of atomic unit time
 	/// @param[in] num_points The number of points selected for each elements
 	InitialParameters(
-		const ClassicalVector<double>& mass_,
+		const ClassicalVector<double>& Mass,
 		const ClassicalVector<double>& x0,
 		const ClassicalVector<double>& p0,
 		const ClassicalVector<double>& sigma_p0,
 		const double output_time,
 		const double re_optimization_time,
 		const double dt_,
-		const std::size_t num_points);
+		const std::size_t num_points
+	);
 
 	// The interface for data accessing, inline will make them faster
 	/// @brief To get classical mass(es)
@@ -112,11 +133,11 @@ public:
 
 	/// @brief To get output frequency
 	/// @return Output frequency, i.e. to output every how many dt
-	/// @details To do less model-training, the program guarantees that
-	/// there will be reselection at each output time
+	/// @details To do less model-training, the program guarantees that there will be reselection at each output time
 	std::size_t get_output_freq(void) const
 	{
-		return static_cast<std::size_t>(OutputTime / ReoptimizationTime) * static_cast<std::size_t>(ReoptimizationTime / dt);
+		return static_cast<std::size_t>(OutputTime / ReoptimizationTime)
+			* static_cast<std::size_t>(ReoptimizationTime / dt);
 	}
 
 	/// @brief To get dt

@@ -1,5 +1,5 @@
 CXX := g++
-CXXFLAGS := -Wall -Wextra -std=c++17 -O3 -march=native
+CXXFLAGS := -Wall -Wextra -std=c++2a -O3 -march=native
 LDFLAGS := $(CXXFLAGS) -Wl,-fuse-ld=gold -Wl,--no-as-needed
 LDLIBS := -lspdlog -lnlopt -lmkl_intel_lp64 -lmkl_tbb_thread -lmkl_core -ltbb -lpthread
 sources := $(shell ls *.cpp)

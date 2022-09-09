@@ -33,121 +33,140 @@ int main(void)
 	const std::size_t NumExtraPoints = NumPoints * 5;						  // The number of points extra selected for density fitting
 	// get initial distribution
 	MCParameters MCParams(SigmaR0.minCoeff());
-	static constexpr std::array<double, NumPES> InitialPopulation = {0.5, 0.5};
-	const DistributionFunction initdist = std::bind(initial_distribution, r0, SigmaR0, InitialPopulation, std::placeholders::_1);
+	static constexpr std::array<double, NumPES> InitialPopulation = {1.0, 0.0};
+	static constexpr std::array<double, NumPES> InitialPhaseFactor = {0.0, 0.0};
+	const DistributionFunction initdist = [&r0, &SigmaR0](const ClassicalPhaseVector& r, const std::size_t RowIndex, const std::size_t ColIndex) -> std::complex<double>
+	{
+		return initial_distribution(r0, SigmaR0, r, RowIndex, ColIndex, InitialPopulation, InitialPhaseFactor);
+	};
 	AllPoints density; // generated from MC from initial distribution
 	{
-		const EigenVector<PhaseSpacePoint> InitialElementDensity(NumPoints, std::make_tuple(r0, initdist(r0)));
 		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
 		{
-			for (std::size_t jPES = 0; jPES < NumPES; jPES++)
+			for (std::size_t jPES = 0; jPES <= iPES; jPES++)
 			{
 				if (InitialPopulation[iPES] > 0.0 && InitialPopulation[jPES] > 0.0)
 				{
-					density[iPES * NumPES + jPES] = InitialElementDensity;
+					density(iPES, jPES).insert(density(iPES, jPES).cend(), NumPoints, PhaseSpacePoint(r0, initdist(r0, iPES, jPES), 0));
 				}
 			}
 		}
-		monte_carlo_selection(MCParams, initdist, density);
+		monte_carlo_selection(MCParams, mass, dt, 0, initdist, density);
 	}
 	QuantumMatrix<bool> IsSmall = is_very_small(density);	 // whether each element of density matrix is close to 0 everywhere or not
 	QuantumMatrix<bool> IsSmallOld = IsSmall;				 // whether each element is small at last moment; initially, not used
 	QuantumMatrix<bool> IsNew = QuantumMatrix<bool>::Zero(); // whether some element used to be small but is not small now; initially, not used
 	bool IsCouple = false;									 // whether the dynamics is adiabatic or not; initially, not used
+	bool IsOptimized = true;								 // whether there has been optimization in this dt or not
 	// calculate initial energy and purity
-	const double TotalEnergy = QuantumVector<double>::Map(InitialPopulation.data()).dot(calculate_total_energy_average_each_surface(density, mass))
-		/ std::reduce(InitialPopulation.begin(), InitialPopulation.end());
+	const double TotalEnergy = [&density, &mass](void) -> double
+	{
+		const QuantumVector<double> Population = QuantumVector<double>::Map(InitialPopulation.data()).array().square();
+		return Population.dot(calculate_total_energy_average_each_surface(density, mass)) / Population.sum();
+	}();
 	const double Purity = 1.0;
 	spdlog::info("{}Initial Energy = {}; Initial Purity = {}", indents<0>::apply(), TotalEnergy, Purity);
 	// sample extra points for density fitting
-	AllPoints extra_points = generate_extra_points(density, NumExtraPoints, initdist);
+	AllPoints extra_points = generate_extra_points(density, NumExtraPoints, mass, dt, 0, initdist);
 	// generate initial parameters and predictors
 	Optimization optimizer(InitParams, TotalEnergy, Purity);
 	spdlog::info("{}Optimization initially...", indents<0>::apply());
 	Optimization::Result opt_result = optimizer.optimize(density, extra_points);
-	OptionalKernels kernels = construct_predictors(optimizer.get_parameters(), density);
-	const DistributionFunction& predict_distribution = std::bind(
-		predict_matrix_with_variance_comparison,
-		std::cref(kernels),
-		std::placeholders::_1); // predict current step distribution, used for resampling of density
+	std::unique_ptr<Kernels> all_kernels = std::make_unique<Kernels>(optimizer.get_parameters(), density);
+	const DistributionFunction& predict_distribution = [&all_kernels](const ClassicalPhaseVector& r, const std::size_t RowIndex, const std::size_t ColIndex) -> std::complex<double>
+	{
+		assert(all_kernels);
+		if (RowIndex == ColIndex)
+		{
+			return Kernel(r, (*all_kernels)(RowIndex), false).get_prediction_compared_with_variance().value();
+		}
+		else
+		{
+			return ComplexKernel(r, (*all_kernels)(RowIndex, ColIndex), false).get_prediction_compared_with_variance().value();
+		}
+	}; // predict current step distribution, used for resampling of density
 	// output: average, parameters, selected points, gridded phase space
 	std::ofstream average("ave.txt");
 	std::ofstream param("param.txt", std::ios_base::binary);
-	std::ofstream densel("prm_point.txt", std::ios_base::binary); // densel = density selected; prm = parameter (optimization)
-	std::ofstream extra("xtr_point.txt", std::ios_base::binary);  // xtr = extra
+	std::ofstream point("coord.txt", std::ios_base::binary);
+	std::ofstream value("value.txt", std::ios_base::binary);
 	std::ofstream phase("phase.txt", std::ios_base::binary);
+	std::ofstream phasefactor("argument.txt", std::ios_base::binary);
 	std::ofstream variance("var.txt", std::ios_base::binary);
 	std::ofstream autocor("autocor.txt", std::ios_base::binary);
 	std::ofstream logging("run.log");
-	auto output = [&](const double time) -> void
+	auto output = [&](const std::size_t NumTicks) -> void
 	{
 		end = std::chrono::high_resolution_clock::now();
 		spdlog::info("{}Start output...", indents<0>::apply());
-		average << time;
-		output_average(average, kernels, density, mass);
+		const double time = NumTicks * dt;
+		output_average(average, *all_kernels, density, mass);
 		output_param(param, optimizer);
-		output_point(densel, density);
-		output_point(extra, extra_points);
-		output_phase(phase, variance, kernels, PhaseGrids);
+		output_point(point, value, density, extra_points);
+		output_phase(phase, phasefactor, variance, mass, dt, NumTicks, *all_kernels, PhaseGrids);
 		output_autocor(autocor, MCParams, predict_distribution, density);
 		output_logging(logging, time, opt_result, MCParams, end - begin);
 		spdlog::info(
-			"{}T = {:>4.0f}, error = {:>+22.15e}, norm = {:>+22.15e}, energy = {:>+22.15e}, purity = {:>+22.15e}",
+			"{}T = {:>6.2f}, error = {:>+22.15e}, norm = {:>+22.15e}, energy = {:>+22.15e}, purity = {:>+22.15e}",
 			indents<1>::apply(),
 			time,
 			std::get<0>(opt_result),
-			calculate_population(kernels),
-			calculate_total_energy_average(kernels, calculate_total_energy_average_each_surface(density, mass)),
-			calculate_purity(kernels));
+			all_kernels->calculate_population(),
+			all_kernels->calculate_total_energy_average(calculate_total_energy_average_each_surface(density, mass)),
+			all_kernels->calculate_purity()
+		);
 		spdlog::info("{}Finish output", indents<0>::apply());
 		begin = end;
 	};
-	output(0.0);
+	output(0);
 
 	// evolution
 	for (std::size_t iTick = 1; iTick <= TotalTicks; iTick++)
 	{
 		// evolve
 		// both density and extra points needs evolution, as they are both used for prediction
-		evolve(density, mass, dt, kernels);
-		evolve(extra_points, mass, dt, kernels);
-		IsSmall = is_very_small(density);
+		evolve(density, mass, dt, iTick, predict_distribution);
+		evolve(extra_points, mass, dt, iTick, predict_distribution);
 		IsNew = IsSmallOld - IsSmall;
 		IsCouple = is_coupling(density, mass);
+		IsOptimized = false;
 		// reselect; nothing new, nothing happens
 		if (IsNew.any())
 		{
-			new_element_point_selection(density, extra_points, IsNew);
+			new_element_point_selection(density, extra_points, IsNew, mass, dt, iTick, predict_distribution);
 			spdlog::info("Optimization at T = {} because of element change", iTick * dt);
 			opt_result = optimizer.optimize(density, extra_points);
-			kernels = construct_predictors(optimizer.get_parameters(), density);
-			extra_points = generate_extra_points(density, NumExtraPoints, predict_distribution);
+			all_kernels = std::make_unique<Kernels>(optimizer.get_parameters(), density);
+			extra_points = generate_extra_points(density, NumExtraPoints, mass, dt, iTick, predict_distribution);
+			IsOptimized = true;
 		}
 		// judge if it is time to re-optimize, or there are new elements having population
 		if (iTick % ReoptFreq == 0)
 		{
 			// model training if non-adiabatic
-			if (IsCouple)
+			if (IsCouple && !IsOptimized)
 			{
 				spdlog::info("Optimization at T = {} as the re-optimization required by non-adiabaticity", iTick * dt);
 				opt_result = optimizer.optimize(density, extra_points);
-				kernels = construct_predictors(optimizer.get_parameters(), density);
-				extra_points = generate_extra_points(density, NumExtraPoints, predict_distribution);
+				all_kernels = std::make_unique<Kernels>(optimizer.get_parameters(), density);
+				extra_points = generate_extra_points(density, NumExtraPoints, mass, dt, iTick, predict_distribution);
+				IsOptimized = true;
 			}
 			if (iTick % OutputFreq == 0)
 			{
-				if (!IsCouple)
+				if (!IsOptimized)
 				{
 					spdlog::info("Optimization at T = {} for output", iTick * dt);
 					// not coupled, optimize for output
 					opt_result = optimizer.optimize(density, extra_points);
-					kernels = construct_predictors(optimizer.get_parameters(), density);
-					extra_points = generate_extra_points(density, NumExtraPoints, predict_distribution);
+					all_kernels = std::make_unique<Kernels>(optimizer.get_parameters(), density);
+					extra_points = generate_extra_points(density, NumExtraPoints, mass, dt, iTick, predict_distribution);
+					IsOptimized = true;
 				}
 				// output time
-				output(iTick * dt);
+				output(iTick);
 				// judge whether to finish or not: any of the dimension go over -x0
-				const auto x_tot = calculate_1st_order_average_one_surface(density[0]).block<Dim, 1>(0, 0);
+				const auto x_tot = calculate_1st_order_average_one_surface(density(0)).block<Dim, 1>(0, 0);
 				const auto x0 = r0.block<Dim, 1>(0, 0);
 				if ((x_tot.array() > -x0.array()).any())
 				{
@@ -155,10 +174,10 @@ int main(void)
 				}
 			}
 		}
-		else
+		// update the training set for prediction
+		if (!IsOptimized)
 		{
-			// otherwise, update the training set for prediction
-			kernels = construct_predictors(optimizer.get_parameters(), density);
+			all_kernels = std::make_unique<Kernels>(optimizer.get_parameters(), density);
 		}
 		IsSmallOld = IsSmall;
 	}
@@ -166,9 +185,10 @@ int main(void)
 	// finalization
 	average.close();
 	param.close();
-	densel.close();
-	extra.close();
+	point.close();
+	value.close();
 	phase.close();
+	phasefactor.close();
 	variance.close();
 	autocor.close();
 	logging.close();

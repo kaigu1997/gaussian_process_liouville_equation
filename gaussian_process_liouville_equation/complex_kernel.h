@@ -11,16 +11,20 @@
 /// @brief The kernel for CGPR
 /// @details The CGPR consists of two parts: kernel @f$ k(x,x')=k_R(x,x')+k_I(x,x') @f$,
 /// and pseudo-kernel @f$ \tilde{k}(x,x')=k_R(x,x')-k_I(x,x')+2\mathrm{i}k_C(x,x') @f$.
-class ComplexKernel final: public KernelBase
+class ComplexKernel final
 {
 public:
-	static constexpr std::size_t NumTotalParameters = 1 + 2 * (Kernel::NumTotalParameters - 1) + 1; ///< The overall number of parameters, including 1 for magnitude Gaussian and @p PhaseDim for characteristic length of real, imaginary and correlation Gaussian, and 1 for noise
-	static constexpr std::size_t NumKernels = 2; ///< Real and Imaginary kernels
+	/// @brief The overall number of parameters, including 1 for magnitude Gaussian
+	/// and @p PhaseDim for characteristic length of real, imaginary and correlation Gaussian,
+	/// and 1 for noise
+	static constexpr std::size_t NumTotalParameters = 1 + 2 * (Kernel::NumTotalParameters - 1) + 1;
+	/// @brief Real and Imaginary kernels
+	static constexpr std::size_t NumKernels = 2;
 
-	/// The unpacked parameters for the complex kernels. @n
+	/// @brief The unpacked parameters for the complex kernels. @n
 	/// First the global magnitude, then the magnitude and the characteristic lengths of real and imaginary kernel, third the noise
 	using KernelParameter = std::tuple<double, std::array<std::tuple<double, ClassicalPhaseVector>, 2>, double>;
-	/// The serialized type for parameters of kernel. Generally for derivatives
+	/// @brief The serialized type for parameters of kernel. Generally for derivatives
 	/// @tparam T The type of the item whose derivative is calculated
 	template <typename T>
 	using ParameterArray = std::array<T, NumTotalParameters>;
@@ -29,20 +33,19 @@ public:
 
 	/// @brief The constructor for feature and label, and average is generally calculated
 	/// @param[in] Parameter Parameters used in the kernel
-	/// @param[in] feature The left feature
-	/// @param[in] label The label of kernels if used
-	/// @param[in] IsCalculateAverage Whether to calculate averages (@<1@>, @<r@>, and purity) or not
-	/// @param[in] IsCalculateDerivative Whether to calculate derivative of each kernel or not
+	/// @param[in] TrainingSet The feature and label for training
+	/// @param[in] IsToCalculateError Whether to calculate LOOCV squared error or not
+	/// @param[in] IsToCalculateAverage Whether to calculate averages (@<1@>, @<r@>, and purity) or not
+	/// @param[in] IsToCalculateDerivative Whether to calculate derivative of each kernel or not
 	ComplexKernel(
 		const ParameterVector& Parameter,
-		const PhasePoints& feature,
-		const Eigen::VectorXcd& label,
+		const ElementTrainingSet& TrainingSet,
 		const bool IsToCalculateError,
 		const bool IsToCalculateAverage,
-		const bool IsToCalculateDerivative);
+		const bool IsToCalculateDerivative
+	);
 
 	/// @brief The constructor for different features
-	/// @param[in] Parameter Parameters used in the kernel
 	/// @param[in] TestFeature The feature for test set
 	/// @param[in] TrainingKernel The kernel of training set
 	/// @param[in] IsToCalculateDerivative Whether to calculate derivative or not
@@ -51,7 +54,8 @@ public:
 		const PhasePoints& TestFeature,
 		const ComplexKernel& TrainingKernel,
 		const bool IsToCalculateDerivative,
-		const std::optional<Eigen::VectorXcd> TestLabel = std::nullopt);
+		const std::optional<Eigen::VectorXcd> TestLabel = std::nullopt
+	);
 
 	/// @brief To get the parameters
 	/// @return The parameters in std::vector
@@ -144,50 +148,92 @@ private:
 	/// @param[in] TrainingKernel The kernel for the training set
 	/// @param[in] left_feature The left feature
 	/// @param[in] right_feature The right feature
-	/// @param[in] IsToCalculateDerivative Whether to calculate derivative of each kernel or not
 	ComplexKernel(
 		const ComplexKernel& TrainingKernel,
 		const PhasePoints& left_feature,
-		const PhasePoints& right_feature);
+		const PhasePoints& right_feature
+	);
 
-	const ParameterVector Params;																///< Parameters in vector
-	const KernelParameter KernelParams;															///< All parameters used in kernel
-	const Kernel::KernelParameter RealParams;													///< Parameters for the real kernel
-	const Kernel::KernelParameter ImagParams;													///< Parameters for the imag kernel
-	const Kernel::KernelParameter CorrParams;													///< Parameters for the corr kernel
-	const Kernel RealKernel;																	///< The real kernel @f$ k_R(x,x') @f$
-	const Kernel ImagKernel;																	///< The imaginary kernel @f$ k_I(x,x') @f$
-	const Kernel CorrKernel;																	///< The correlation kernel @f$ k_C(x,x') @f$
-	const Eigen::MatrixXd KernelMatrix;															///< The covariance matrix @f$ K @f$
-	const Eigen::MatrixXcd PseudoKernelMatrix;													///< The pseudo-covariance matrix @f$ \tilde{K} @f$
-	const std::optional<Eigen::VectorXcd> Label;												///< The label used for training set
-	const std::optional<Eigen::LLT<Eigen::MatrixXcd>> DecompositionOfKernel;					///< The Cholesky decomposition of the kernel matrix
-	const std::optional<Eigen::MatrixXcd> KernelInversePseudoConjugate;							///< @f$ K^{-1}\tilde{K}^* @f$
-	const std::optional<Eigen::MatrixXcd> UpperLeftBlockOfAugmentedKernelInverse;				///< The upper left block of the inverse of augmented kernel
-	const std::optional<Eigen::MatrixXcd> LowerLeftBlockOfAugmentedKernelInverse;				///< The lower left block of the inverse of augmented kernel
-	const std::optional<Eigen::VectorXcd> UpperPartOfAugmentedInverseLabel;						///< The upper part of augmented inverse times augmented label
-	const std::optional<Eigen::VectorXcd> Prediction;											///< Prediction from regression
-	const std::optional<Eigen::VectorXd> ElementwiseVariance;									///< Variance for each input feature
-	const std::optional<Eigen::VectorXcd> CutoffPrediction;										///< A cutoff version of prediction
-	const std::optional<double> Error;															///< Training set LOOCV-SE or squared error for test set
-	const std::optional<Kernel::KernelParameter> PurityAuxiliaryRealParams;						///< Parameters for the real kernel
-	const std::optional<Kernel::KernelParameter> PurityAuxiliaryImagParams;						///< Parameters for the imag kernel
-	const std::optional<Kernel::KernelParameter> PurityAuxiliaryCorrParams;						///< Parameters for the corr kernel
-	const std::optional<Kernel::KernelParameter> PurityAuxiliaryRealCorrParams;					///< Parameters for the real kernel
-	const std::optional<Kernel::KernelParameter> PurityAuxiliaryImagCorrParams;					///< Parameters for the imag kernel
-	const std::optional<Kernel> PurityAuxiliaryRealKernel;										///< The real kernel with sqrt(2) times characteristic length
-	const std::optional<Kernel> PurityAuxiliaryImagKernel;										///< The imag kernel with sqrt(2) times characteristic length
-	const std::optional<Kernel> PurityAuxiliaryCorrKernel;										///< The cor kernel with sqrt(2) times characteristic length
-	const std::optional<Kernel> PurityAuxiliaryRealCorrKernel;									///< The real-corr kernel with root mean square char length
-	const std::optional<Kernel> PurityAuxiliaryImagCorrKernel;									///< The imag-corr kernel with root mean square char length
-	const std::optional<double> Purity;															///< The purity calculated by parameters
-	const std::optional<ParameterArray<Eigen::MatrixXd>> Derivatives;							///< Derivatives of kernel matrix over parameters
-	const std::optional<ParameterArray<Eigen::MatrixXcd>> PseudoDerivatives;					///< Derivatives of pseudo-kernel matrix over parameters
-	const std::optional<ParameterArray<Eigen::MatrixXcd>> UpperLeftAugmentedInverseDerivatives; ///< Derivatives of @p UpperLeftBlockOfAugmentedKernelInverse
-	const std::optional<ParameterArray<Eigen::MatrixXcd>> LowerLeftAugmentedInverseDerivatives; ///< Derivatives of @p LowerLeftBlockOfAugmentedKernelInverse
-	const std::optional<ParameterArray<Eigen::VectorXcd>> UpperAugmentedInvLblDerivatives;		///< Derivatives of @p UpperPartOfAugmentedInverseLabel
-	const std::optional<ParameterArray<double>> ErrorDerivatives;								///< Derivative of the squared error over parameters in array
-	const std::optional<ParameterArray<double>> PurityDerivatives;								///< Derivatives of purity over parameters in array
+	/// @brief The left feature
+	const PhasePoints LeftFeature;
+	/// @brief The right feature
+	const PhasePoints RightFeature;
+	/// @brief Parameters in vector
+	const ParameterVector Params;
+	/// @brief All parameters used in kernel
+	const KernelParameter KernelParams;
+	/// @brief Parameters for the real kernel
+	const Kernel::KernelParameter RealParams;
+	/// @brief Parameters for the imaginary kernel
+	const Kernel::KernelParameter ImagParams;
+	/// @brief Parameters for the correlation kernel
+	const Kernel::KernelParameter CorrParams;
+	/// @brief The real kernel @f$ k_R(x,x') @f$
+	const Kernel RealKernel;
+	/// @brief The imaginary kernel @f$ k_I(x,x') @f$
+	const Kernel ImagKernel;
+	/// @brief The correlation kernel @f$ k_C(x,x') @f$
+	const Kernel CorrKernel;
+	/// @brief The covariance matrix @f$ K @f$
+	const Eigen::MatrixXd KernelMatrix;
+	/// @brief The pseudo-covariance matrix @f$ \tilde{K} @f$
+	const Eigen::MatrixXcd PseudoKernelMatrix;
+	/// @brief The label used for training set
+	const std::optional<Eigen::VectorXcd> Label;
+	/// @brief The Cholesky decomposition of the kernel matrix
+	const std::optional<Eigen::LDLT<Eigen::MatrixXcd>> DecompositionOfKernel;
+	/// @brief @f$ K^{-1}\tilde{K}^* @f$
+	const std::optional<Eigen::MatrixXcd> KernelInversePseudoConjugate;
+	/// @brief The upper left block of the inverse of augmented kernel
+	const std::optional<Eigen::MatrixXcd> UpperLeftBlockOfAugmentedKernelInverse;
+	/// @brief The lower left block of the inverse of augmented kernel
+	const std::optional<Eigen::MatrixXcd> LowerLeftBlockOfAugmentedKernelInverse;
+	/// @brief The upper part of augmented inverse times augmented label
+	const std::optional<Eigen::VectorXcd> UpperPartOfAugmentedInverseLabel;
+	/// @brief Prediction from regression
+	const std::optional<Eigen::VectorXcd> Prediction;
+	/// @brief Variance for each input feature
+	const std::optional<Eigen::VectorXd> ElementwiseVariance;
+	/// @brief A cutoff version of prediction
+	const std::optional<Eigen::VectorXcd> CutoffPrediction;
+	/// @brief Training set LOOCV squared error or squared error for test set
+	const std::optional<double> Error;
+	/// @brief Parameters for the auxiliary real kernel
+	const std::optional<Kernel::KernelParameter> PurityAuxiliaryRealParams;
+	/// @brief Parameters for the auxiliary imaginary kernel
+	const std::optional<Kernel::KernelParameter> PurityAuxiliaryImagParams;
+	/// @brief Parameters for the auxiliary correlation kernel
+	const std::optional<Kernel::KernelParameter> PurityAuxiliaryCorrParams;
+	/// @brief Parameters for the auxiliary real-correlation kernel
+	const std::optional<Kernel::KernelParameter> PurityAuxiliaryRealCorrParams;
+	/// @brief Parameters for the auxiliary imaginary-correlation kernel
+	const std::optional<Kernel::KernelParameter> PurityAuxiliaryImagCorrParams;
+	/// @brief The real kernel with sqrt(2) times characteristic length
+	const std::optional<Kernel> PurityAuxiliaryRealKernel;
+	/// @brief The imag kernel with sqrt(2) times characteristic length
+	const std::optional<Kernel> PurityAuxiliaryImagKernel;
+	/// @brief The cor kernel with sqrt(2) times characteristic length
+	const std::optional<Kernel> PurityAuxiliaryCorrKernel;
+	/// @brief The real-corr kernel with root mean square characteristic length
+	const std::optional<Kernel> PurityAuxiliaryRealCorrKernel;
+	/// @brief The imag-corr kernel with root mean square characteristic length
+	const std::optional<Kernel> PurityAuxiliaryImagCorrKernel;
+	/// @brief The purity calculated by parameters
+	const std::optional<double> Purity;
+	/// @brief Derivatives of kernel matrix over parameters
+	const std::optional<ParameterArray<Eigen::MatrixXd>> Derivatives;
+	/// @brief Derivatives of pseudo-kernel matrix over parameters
+	const std::optional<ParameterArray<Eigen::MatrixXcd>> PseudoDerivatives;
+	/// @brief Derivatives of @p UpperLeftBlockOfAugmentedKernelInverse
+	const std::optional<ParameterArray<Eigen::MatrixXcd>> UpperLeftAugmentedInverseDerivatives;
+	/// @brief Derivatives of @p LowerLeftBlockOfAugmentedKernelInverse
+	const std::optional<ParameterArray<Eigen::MatrixXcd>> LowerLeftAugmentedInverseDerivatives;
+	/// @brief Derivatives of @p UpperPartOfAugmentedInverseLabel
+	const std::optional<ParameterArray<Eigen::VectorXcd>> UpperAugmentedInvLblDerivatives;
+	/// @brief Derivative of the squared error over parameters in array
+	const std::optional<ParameterArray<double>> ErrorDerivatives;
+	/// @brief Derivatives of purity over parameters in array
+	const std::optional<ParameterArray<double>> PurityDerivatives;
 };
 
 #endif // !COMPLEX_KERNEL_H

@@ -8,34 +8,66 @@
 
 /// The vector containing parameters (or similarly: bounds, gradient, etc)
 using ParameterVector = std::vector<double>;
+/// The training set for parameter optimization of one element of density matrix
+/// passed as parameter to the optimization function.
+/// First is feature, second is label
+using ElementTrainingSet = std::tuple<PhasePoints, Eigen::VectorXcd>;
 
-/// The base class of all kind of kernels. Only features are saved here.
-class KernelBase
+static constexpr double ConnectingPoint = 2.0;
+
+/// @brief To calculate the Kronecker delta kernel @f$ k(x,x')=delta_{x,x'} @f$
+/// @param[in] LeftFeature Corresponding to @f$ x @f$
+/// @param[in] RightFeature Corresponding to @f$ x' @f$
+/// @return The kernel matrix
+Eigen::MatrixXd delta_kernel(const PhasePoints& LeftFeature, const PhasePoints& RightFeature);
+
+/// @brief To calculate the cutoff factor of each input point
+/// @tparam T Type of data (and kernel), could be @p double or @p complex<double>
+/// @param[in] Prediction The prediction by GPR
+/// @param[in] Variance The variance (not standard deviation) by GPR
+/// @return The cutoff factor (in [0,1]) of each prediction
+template <typename T>
+Eigen::VectorXd cutoff_factor(const Eigen::Matrix<T, Eigen::Dynamic, 1>& Prediction, const Eigen::VectorXd& Variance)
 {
-public:
-	static constexpr double ConnectingPoint = 2.0;
-
-	/// @brief Constructor of symmetric kernel
-	KernelBase(const PhasePoints& feature);
-
-	/// @brief Constructor of different features
-	KernelBase(const PhasePoints& left_feature, const PhasePoints& right_feature);
-
-	/// @brief Pure virtual destructor
-	virtual ~KernelBase(void) = 0;
-
-protected:
-	const PhasePoints LeftFeature;	///< The left feature
-	const PhasePoints RightFeature; ///< The right feature
-};
+	const std::size_t NumPoints = Prediction.size();
+	const auto indices = xt::arange(NumPoints);
+	Eigen::VectorXd result(NumPoints);
+	std::for_each(
+		std::execution::par_unseq,
+		indices.cbegin(),
+		indices.cend(),
+		[&Prediction, &Variance, &result](std::size_t i) -> void
+		{
+			const double pred_square = std::norm(Prediction[i]);
+			if (pred_square >= power<2>(ConnectingPoint) * Variance[i])
+			{
+				result[i] = 1.0;
+			}
+			else if (pred_square <= Variance[i])
+			{
+				result[i] = 0;
+			}
+			else
+			{
+				const double AbsoluteRelativePrediction = std::abs(Prediction[i]) / std::sqrt(Variance[i]);
+				result[i] = (3.0 * ConnectingPoint - 2.0 * AbsoluteRelativePrediction - 1.0)
+					* power<2>(AbsoluteRelativePrediction - 1) / power<3>(ConnectingPoint - 1);
+			}
+		}
+	);
+	return result;
+}
 
 /// @brief The class for kernel, including parameters, kernel matrix, its inverse, expected average, and derivatives
-/// @details @f$ k(x_1,x_2)=\sigma_f^2\left(\mathrm{exp}\left[-\frac{1}{2}\sum_i\left(\frac{x_{1,i}-x_{2,i}}{l_i}\right)^2\right]+\sigma_n^2\delta(x_1-x_2)\right) @f$
+/// @details @f$ k(x_1,x_2)=\sigma_f^2\left(\mathrm{exp}
+/// \left[-\frac{1}{2}\sum_i\left(\frac{x_{1,i}-x_{2,i}}{l_i}\right)^2\right]
+/// +\sigma_n^2\delta(x_1-x_2)\right) @f$
 /// where @f$ \sigma_f @f$ is the magnitude, @f$ l_i @f$ are the characteristic lengths, and @f$ \sigma_n @f$ is the noise.
-class Kernel final: public KernelBase
+class Kernel final
 {
 public:
-	static constexpr std::size_t NumTotalParameters = 1 + PhaseDim + 1; ///< The overall number of parameters, including 1 for noise, 1 for magnitude of Gaussian and phasedim for characteristic length of Gaussian
+	/// @brief The overall number of parameters, including 1 for noise, 1 for magnitude of Gaussian and phasedim for characteristic length of Gaussian
+	static constexpr std::size_t NumTotalParameters = 1 + PhaseDim + 1;
 
 	/// The deserialized parameters for the kernels. @n
 	/// First is the magnitude, then the characteristic lengths of Gaussian kernel, third the noise
@@ -49,18 +81,17 @@ public:
 
 	/// @brief The constructor for training set, and average is generally calculated
 	/// @param[in] Parameter Parameters used in the kernel
-	/// @param[in] feature The left feature
-	/// @param[in] label The label of kernels if used
+	/// @param[in] TrainingSet The feature and label for training
 	/// @param[in] IsToCalculateError Whether to calculate LOOCV squared error or not
 	/// @param[in] IsToCalculateAverage Whether to calculate averages (@<1@>, @<r@>, and purity) or not
 	/// @param[in] IsToCalculateDerivative Whether to calculate derivative of each kernel or not
 	Kernel(
 		const ParameterVector& Parameter,
-		const PhasePoints& feature,
-		const Eigen::VectorXd& label,
+		const ElementTrainingSet& TrainingSet,
 		const bool IsToCalculateError,
 		const bool IsToCalculateAverage,
-		const bool IsToCalculateDerivative);
+		const bool IsToCalculateDerivative
+	);
 
 	/// @brief The constructor for same features without label, generally used for variance and complex kernels
 	/// @param[in] Parameter Parameters used in the kernel
@@ -71,10 +102,10 @@ public:
 		const KernelParameter& Parameter,
 		const PhasePoints& left_feature,
 		const PhasePoints& right_feature,
-		const bool IsToCalculateDerivative);
+		const bool IsToCalculateDerivative
+	);
 
 	/// @brief The constructor for different features
-	/// @param[in] Parameter Parameters used in the kernel
 	/// @param[in] TestFeature The feature for test set
 	/// @param[in] TrainingKernel The kernel of training set
 	/// @param[in] IsToCalculateDerivative Whether to calculate derivative or not
@@ -83,7 +114,8 @@ public:
 		const PhasePoints& TestFeature,
 		const Kernel& TrainingKernel,
 		const bool IsToCalculateDerivative,
-		const std::optional<Eigen::VectorXd> TestLabel = std::nullopt);
+		const std::optional<Eigen::VectorXd> TestLabel = std::nullopt
+	);
 
 	/// @brief To get the parameters
 	/// @return The parameters in std::vector
@@ -211,31 +243,57 @@ public:
 	}
 
 private:
-	const ParameterVector Params;											 ///< Parameters in vector
-	const KernelParameter KernelParams;										 ///< All parameters used in the kernel
-	const Eigen::MatrixXd KernelMatrix;										 ///< The kernel matrix
-	const std::optional<Eigen::VectorXd> Label;								 ///< The labels corresponding to feature when the features are the same
-	const std::optional<Eigen::LLT<Eigen::MatrixXd>> DecompositionOfKernel;	 ///< The Cholesky decomposition of the kernel matrix (if necessary)
-	const std::optional<Eigen::MatrixXd> Inverse;							 ///< The inverse of the kernel
-	const std::optional<Eigen::VectorXd> InvLbl;							 ///< The inverse times label
-	const std::optional<Eigen::VectorXd> Prediction;						 ///< Prediction from regression
-	const std::optional<Eigen::VectorXd> ElementwiseVariance;				 ///< Variance for each input feature
-	const std::optional<Eigen::VectorXd> CutoffPrediction;					 ///< A cutoff version of prediction
-	const std::optional<double> Error;										 ///< LOOCV squared error for training set or squared error for test set
-	const std::optional<double> Population;									 ///< The population calculated by parameters
-	const std::optional<ClassicalPhaseVector> FirstOrderAverage;			 ///< The @<r@> calculated by parameters
-	const std::optional<Kernel::KernelParameter> PurityAuxiliaryParams;		 ///< Parameters for the auxiliary kernel
-	const std::unique_ptr<Kernel> PurityAuxiliaryKernel;					 ///< The kernel whose characteristic length is sqrt(2) times bigger for purity
-	const std::optional<double> Purity;										 ///< The purity calculated by parameters
-	const std::optional<ParameterArray<Eigen::MatrixXd>> Derivatives;		 ///< Derivatives of kernel matrices over parameters
-	const std::optional<ParameterArray<Eigen::MatrixXd>> InverseDerivatives; ///< Derivatives of inverse matrix over parameters
-	const std::optional<ParameterArray<Eigen::VectorXd>> InvLblDerivatives;	 ///< Derivatives of InvLbl over parameters
-	const std::optional<ParameterArray<double>> ErrorDerivatives;			 ///< Derivatives of the squared error over parameters in array
-	const std::optional<ParameterArray<double>> PopulationDerivatives;		 ///< Derivatives of population over parameters in array
-	const std::optional<ParameterArray<double>> PurityDerivatives;			 ///< Derivatives of purity over parameters in array
+	/// @brief The left feature
+	const PhasePoints LeftFeature;
+	/// @brief The right feature
+	const PhasePoints RightFeature;
+	/// @brief Parameters in vector
+	const ParameterVector Params;
+	/// @brief All parameters used in the kernel
+	const KernelParameter KernelParams;
+	/// @brief The kernel matrix
+	const Eigen::MatrixXd KernelMatrix;
+	/// @brief The labels corresponding to feature when the features are the same
+	const std::optional<Eigen::VectorXd> Label;
+	/// @brief The Cholesky decomposition of the kernel matrix (if necessary)
+	const std::optional<Eigen::LDLT<Eigen::MatrixXd>> DecompositionOfKernel;
+	/// @brief The inverse of the kernel
+	const std::optional<Eigen::MatrixXd> Inverse;
+	/// @brief The @p Inverse times @p label
+	const std::optional<Eigen::VectorXd> InvLbl;
+	/// @brief Prediction from regression
+	const std::optional<Eigen::VectorXd> Prediction;
+	/// @brief Variance for each input feature
+	const std::optional<Eigen::VectorXd> ElementwiseVariance;
+	/// @brief A cutoff version of prediction
+	const std::optional<Eigen::VectorXd> CutoffPrediction;
+	/// @brief LOOCV squared error for training set or squared error for test set
+	const std::optional<double> Error;
+	/// @brief The population calculated by parameters
+	const std::optional<double> Population;
+	/// @brief The @<r@> calculated by parameters
+	const std::optional<ClassicalPhaseVector> FirstOrderAverage;
+	/// @brief Parameters for the auxiliary kernel
+	const std::optional<Kernel::KernelParameter> PurityAuxiliaryParams;
+	/// @brief The kernel whose characteristic length is sqrt(2) times bigger for purity
+	const std::unique_ptr<Kernel> PurityAuxiliaryKernel;
+	/// @brief The purity calculated by parameters
+	const std::optional<double> Purity;
+	/// @brief Derivatives of @p KernelMatrix over parameters
+	const std::optional<ParameterArray<Eigen::MatrixXd>> Derivatives;
+	/// @brief Derivatives of @p Inverse over parameters
+	const std::optional<ParameterArray<Eigen::MatrixXd>> InverseDerivatives;
+	/// @brief Derivatives of @p InvLbl over parameters
+	const std::optional<ParameterArray<Eigen::VectorXd>> InvLblDerivatives;
+	/// @brief Derivatives of @p Error over parameters in array
+	const std::optional<ParameterArray<double>> ErrorDerivatives;
+	/// @brief Derivatives of @p Population over parameters in array
+	const std::optional<ParameterArray<double>> PopulationDerivatives;
+	/// @brief Derivatives of @p Purity over parameters in array
+	const std::optional<ParameterArray<double>> PurityDerivatives;
 };
 
-/// @brief To calculate the parameters of purity auxiliary kernel (r',i', or c')
+/// @brief To calculate the parameters of purity auxiliary kernel (r', i', or c')
 /// @param[in] OriginalParams The parameters for the corresponding kernel (r for r', i for i', c for c')
 /// @return Parameters purity auxiliary kernel
 inline Kernel::KernelParameter construct_purity_auxiliary_kernel_params(const Kernel::KernelParameter& OriginalParams)

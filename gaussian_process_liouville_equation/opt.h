@@ -15,20 +15,12 @@
 /// containing each element of density matrix is small or not.
 QuantumMatrix<bool> is_very_small(const AllPoints& density);
 
-/// @brief To update the kernels
-/// @param[in] ParameterVectors The parameters for all elements of density matrix
-/// @param[in] density The selected points in phase space for each element of density matrices
-/// @return The kernels
-OptionalKernels construct_predictors(
-	const QuantumArray<ParameterVector>& ParameterVectors,
-	const AllPoints& density);
-
 /// @brief To store parameters, kernels and optimization algorithms to use.
 /// And, to optimize parameters, and then predict density matrix and given point.
 class Optimization final
 {
 public:
-	/// The return type of optimization routine.
+	/// @brief The return type of optimization routine.
 	/// First is the total error (MSE, log likelihood, etc) of all elements of density matrix.
 	/// Second is a vector of std::size_t, containing the optimization steps of each element
 	using Result = std::tuple<double, std::vector<std::size_t>>;
@@ -48,7 +40,8 @@ public:
 		const nlopt::algorithm LocalAlgorithm = nlopt::algorithm::LD_SLSQP,
 		const nlopt::algorithm ConstraintAlgorithm = nlopt::algorithm::LD_SLSQP,
 		const nlopt::algorithm GlobalAlgorithm = nlopt::algorithm::GN_DIRECT_L,
-		const nlopt::algorithm GlobalSubAlgorithm = nlopt::algorithm::LD_MMA);
+		const nlopt::algorithm GlobalSubAlgorithm = nlopt::algorithm::LD_MMA
+	);
 
 	/// @brief To optimize parameters based on the given density
 	/// @param[in] density The selected points in phase space for each element of density matrices
@@ -56,34 +49,47 @@ public:
 	/// @return The total error (MSE, log likelihood, etc) of all elements, and the optimization steps
 	Result optimize(
 		const AllPoints& density,
-		const AllPoints& extra_points);
+		const AllPoints& extra_points
+	);
 
 	/// @brief To get the parameter of the elements
 	/// @return The parameters of all the elements element of density matrix
-	const QuantumArray<ParameterVector>& get_parameters(void) const
+	const QuantumStorage<ParameterVector>& get_parameters(void) const
 	{
 		return ParameterVectors;
 	}
 
 	/// @brief To get the lower bounds of the elements
 	/// @return The lower bounds of all the elements of density matrix
-	QuantumArray<ParameterVector> get_lower_bounds(void) const;
+	QuantumStorage<ParameterVector> get_lower_bounds(void) const;
 
 	/// @brief To get the lower bounds of the elements
 	/// @return The lower bounds of all the elements of density matrix
-	QuantumArray<ParameterVector> get_upper_bounds(void) const;
+	QuantumStorage<ParameterVector> get_upper_bounds(void) const;
 
 
 private:
 	// local variables
-	const double TotalEnergy;							 ///< The initial energy of the density matrix, and should be kept to the end
-	const double Purity;								 ///< The initial purity of the density matrix, and should be kept to the end
-	const ClassicalVector<double> mass;					 ///< The mass of classical degree of freedom
-	const ParameterVector InitialKernelParameter;		 ///< The initial parameter for each of the element and for reopt
-	const ParameterVector InitialComplexKernelParameter; ///< The initial parameter for complex kernels
-	std::vector<nlopt::opt> NLOptLocalMinimizers;		 ///< The vector containing all local NLOPT optimizers, one non-grad for each element
-	std::vector<nlopt::opt> NLOptGlobalMinimizers;		 ///< The vector containing all global NLOPT optimizers
-	QuantumArray<ParameterVector> ParameterVectors; 	 ///< The parameters for all elements of density matrix
+	/// @brief The initial energy of the density matrix, and should be kept to the end
+	const double TotalEnergy;
+	/// @brief The initial purity of the density matrix, and should be kept to the end
+	const double Purity;
+	/// @brief The mass of classical degree of freedom
+	const ClassicalVector<double> mass;
+	/// @brief The initial parameter for each of the element and for reopt
+	const ParameterVector InitialKernelParameter;
+	/// @brief The initial parameter for complex kernels
+	const ParameterVector InitialComplexKernelParameter;
+	/// @brief Local NLOPT optimizers for each element
+	QuantumStorage<nlopt::opt> LocalMinimizers;
+	/// @brief Local NLOPT optimizer with diagonal constraints
+	nlopt::opt DiagonalMinimizer;
+	/// @brief Local NLOPT optimizer with constraints of all elements
+	nlopt::opt FullMinimizer;
+	/// @brief Global NLOPT optimizers for each element
+	QuantumStorage<nlopt::opt> GlobalMinimizers;
+	/// @brief The parameters for all elements of density matrix
+	QuantumStorage<ParameterVector> ParameterVectors;
 };
 
 #endif // !OPT_H

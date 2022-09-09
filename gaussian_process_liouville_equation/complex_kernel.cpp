@@ -15,7 +15,8 @@ using namespace std::literals::complex_literals;
 /// @return Parameters purity auxiliary kernel
 static inline Kernel::KernelParameter construct_purity_auxiliary_mixed_kernel_params(
 	const Kernel::KernelParameter& FirstParams,
-	const Kernel::KernelParameter& SecondParams)
+	const Kernel::KernelParameter& SecondParams
+)
 {
 	[[maybe_unused]] const auto& [FirstMagnitude, FirstCharLength, FirstNoise] = FirstParams;
 	[[maybe_unused]] const auto& [SecondMagnitude, SecondCharLength, SecondNoise] = SecondParams;
@@ -41,7 +42,8 @@ static ComplexKernel::ParameterArray<Eigen::MatrixXd> calculate_derivatives(
 	const PhasePoints& RightFeature,
 	const Eigen::MatrixXd& KernelMatrix,
 	const Kernel::ParameterArray<Eigen::MatrixXd>& RealDerivatives,
-	const Kernel::ParameterArray<Eigen::MatrixXd>& ImagDerivatives)
+	const Kernel::ParameterArray<Eigen::MatrixXd>& ImagDerivatives
+)
 {
 	const std::size_t Rows = LeftFeature.cols(), Cols = RightFeature.cols();
 	[[maybe_unused]] const auto& [Magnitude, Params, Noise] = KernelParams;
@@ -86,7 +88,7 @@ static ComplexKernel::ParameterArray<Eigen::MatrixXd> calculate_derivatives(
 /// @param[in] CorrParams Parameters for the correlation kernel
 /// @param[in] RealDerivatives The derivatives of real kernel over real parameters
 /// @param[in] ImagDerivatives The derivatives of imaginary kernel over imaginary parameters
-/// @param[in] RealDerivatives The derivatives of correlation kernel over correlation parameters
+/// @param[in] CorrDerivatives The derivatives of correlation kernel over correlation parameters
 /// @return The derivative of pseudo-kernel matrix over parameters
 static ComplexKernel::ParameterArray<Eigen::MatrixXcd> calculate_pseudo_derivatives(
 	const ComplexKernel::KernelParameter& KernelParams,
@@ -99,7 +101,8 @@ static ComplexKernel::ParameterArray<Eigen::MatrixXcd> calculate_pseudo_derivati
 	const Kernel::KernelParameter& CorrParams,
 	const Kernel::ParameterArray<Eigen::MatrixXd>& RealDerivatives,
 	const Kernel::ParameterArray<Eigen::MatrixXd>& ImagDerivatives,
-	const Kernel::ParameterArray<Eigen::MatrixXd>& CorrDerivatives)
+	const Kernel::ParameterArray<Eigen::MatrixXd>& CorrDerivatives
+)
 {
 	const std::size_t Rows = LeftFeature.cols(), Cols = RightFeature.cols();
 	[[maybe_unused]] const auto& [Magnitude, Params, Noise] = KernelParams; // only magnitude is used
@@ -149,15 +152,17 @@ static ComplexKernel::ParameterArray<Eigen::MatrixXcd> calculate_pseudo_derivati
 
 ComplexKernel::ComplexKernel(
 	const ParameterVector& Parameter,
-	const PhasePoints& feature,
-	const Eigen::VectorXcd& label,
+	const ElementTrainingSet& TrainingSet,
 	const bool IsToCalculateError,
 	const bool IsToCalculateAverage,
-	const bool IsToCalculateDerivative) :
+	const bool IsToCalculateDerivative
+):
 	// general calculations
-	KernelBase(feature, feature),
+	LeftFeature(std::get<0>(TrainingSet)),
+	RightFeature(std::get<0>(TrainingSet)),
 	Params(Parameter),
-	KernelParams([&Parameter](void) -> KernelParameter
+	KernelParams(
+		[&Parameter](void) -> KernelParameter
 		{
 			assert(Parameter.size() == NumTotalParameters);
 			KernelParameter result;
@@ -183,10 +188,12 @@ ComplexKernel::ComplexKernel(
 			noise = Parameter[iParam];
 			iParam++;
 			return result;
-		}()),
+		}()
+	),
 	RealParams(std::tuple_cat(std::get<1>(KernelParams)[0], std::make_tuple(0.0))),
 	ImagParams(std::tuple_cat(std::get<1>(KernelParams)[1], std::make_tuple(0.0))),
-	CorrParams([&RealParams = RealParams, &ImagParams = ImagParams](void) -> Kernel::KernelParameter
+	CorrParams(
+		[&RealParams = RealParams, &ImagParams = ImagParams](void) -> Kernel::KernelParameter
 		{
 			[[maybe_unused]] const auto& [RealMagnitude, RealCharLength, RealNoise] = RealParams;
 			[[maybe_unused]] const auto& [ImagMagnitude, ImagCharLength, ImagNoise] = ImagParams;
@@ -197,27 +204,28 @@ ComplexKernel::ComplexKernel(
 			corr_char_length = (SquareSum / 2.0).sqrt();
 			corr_noise = 0.0;
 			return result;
-		}()),
-	RealKernel(RealParams, feature, feature, IsToCalculateDerivative),
-	ImagKernel(ImagParams, feature, feature, IsToCalculateDerivative),
-	CorrKernel(CorrParams, feature, feature, IsToCalculateDerivative),
-	KernelMatrix(power<2>(std::get<0>(KernelParams)) * (RealKernel.get_kernel() + ImagKernel.get_kernel() + power<2>(std::get<2>(KernelParams)) * Eigen::MatrixXd::Identity(label.size(), label.size()))),
+		}()
+	),
+	RealKernel(RealParams, LeftFeature, RightFeature, IsToCalculateDerivative),
+	ImagKernel(ImagParams, LeftFeature, RightFeature, IsToCalculateDerivative),
+	CorrKernel(CorrParams, LeftFeature, RightFeature, IsToCalculateDerivative),
+	KernelMatrix(power<2>(std::get<0>(KernelParams)) * (RealKernel.get_kernel() + ImagKernel.get_kernel() + power<2>(std::get<2>(KernelParams)) * Eigen::MatrixXd::Identity(LeftFeature.cols(), RightFeature.cols()))),
 	PseudoKernelMatrix(power<2>(std::get<0>(KernelParams)) * (RealKernel.get_kernel() - ImagKernel.get_kernel() + 2.0i * CorrKernel.get_kernel())),
 	// calculations only for training set
-	Label(label),
-	DecompositionOfKernel(Eigen::LLT<Eigen::MatrixXcd>(KernelMatrix)),
+	Label(std::get<1>(TrainingSet)),
+	DecompositionOfKernel(Eigen::LDLT<Eigen::MatrixXcd>(KernelMatrix)),
 	KernelInversePseudoConjugate(DecompositionOfKernel->solve(PseudoKernelMatrix.conjugate())),
-	UpperLeftBlockOfAugmentedKernelInverse((KernelMatrix - PseudoKernelMatrix * KernelInversePseudoConjugate.value()).selfadjointView<Eigen::Lower>().llt().solve(Eigen::MatrixXcd::Identity(label.size(), label.size())).selfadjointView<Eigen::Lower>()),
+	UpperLeftBlockOfAugmentedKernelInverse((KernelMatrix - PseudoKernelMatrix * KernelInversePseudoConjugate.value()).selfadjointView<Eigen::Lower>().ldlt().solve(Eigen::MatrixXcd::Identity(LeftFeature.cols(), RightFeature.cols())).selfadjointView<Eigen::Lower>()),
 	LowerLeftBlockOfAugmentedKernelInverse(-KernelInversePseudoConjugate.value() * UpperLeftBlockOfAugmentedKernelInverse.value()),
-	UpperPartOfAugmentedInverseLabel(UpperLeftBlockOfAugmentedKernelInverse.value() * label + (LowerLeftBlockOfAugmentedKernelInverse.value() * label).conjugate()),
+	UpperPartOfAugmentedInverseLabel(UpperLeftBlockOfAugmentedKernelInverse.value() * Label.value() + (LowerLeftBlockOfAugmentedKernelInverse.value() * Label.value()).conjugate()),
 	// calculation only for test set
 	// calculation only for error/averages (purity is only for training set only)
 	Error(
 		IsToCalculateError
 			? std::optional<double>(
 				[&P = UpperLeftBlockOfAugmentedKernelInverse.value(),
-					&Q = LowerLeftBlockOfAugmentedKernelInverse.value(),
-					&v = UpperPartOfAugmentedInverseLabel.value()](void) -> double
+				 &Q = LowerLeftBlockOfAugmentedKernelInverse.value(),
+				 &v = UpperPartOfAugmentedInverseLabel.value()](void) -> double
 				{
 					const auto& P_diag = P.diagonal().array();
 					const auto& Q_diag = Q.diagonal().array();
@@ -225,53 +233,109 @@ ComplexKernel::ComplexKernel(
 					const auto& Q_diag_square = Q_diag.abs2();
 					const auto& diff = (P_diag * v.array() - (Q_diag * v.array()).conjugate()) / (P_diag_square - Q_diag_square);
 					return diff.abs2().sum();
-				}())
-			: std::nullopt),
+				}()
+			)
+			: std::nullopt
+	),
 	PurityAuxiliaryRealParams(construct_purity_auxiliary_kernel_params(RealParams)),
 	PurityAuxiliaryImagParams(construct_purity_auxiliary_kernel_params(ImagParams)),
 	PurityAuxiliaryCorrParams(construct_purity_auxiliary_kernel_params(CorrParams)),
 	PurityAuxiliaryRealCorrParams(construct_purity_auxiliary_mixed_kernel_params(RealParams, CorrParams)),
 	PurityAuxiliaryImagCorrParams(construct_purity_auxiliary_mixed_kernel_params(ImagParams, CorrParams)),
-	PurityAuxiliaryRealKernel(IsToCalculateAverage ? std::optional<Kernel>(std::in_place, PurityAuxiliaryRealParams.value(), feature, feature, IsToCalculateDerivative) : std::nullopt),
-	PurityAuxiliaryImagKernel(IsToCalculateAverage ? std::optional<Kernel>(std::in_place, PurityAuxiliaryImagParams.value(), feature, feature, IsToCalculateDerivative) : std::nullopt),
-	PurityAuxiliaryCorrKernel(IsToCalculateAverage ? std::optional<Kernel>(std::in_place, PurityAuxiliaryCorrParams.value(), feature, feature, IsToCalculateDerivative) : std::nullopt),
-	PurityAuxiliaryRealCorrKernel(IsToCalculateAverage ? std::optional<Kernel>(std::in_place, PurityAuxiliaryRealCorrParams.value(), feature, feature, IsToCalculateDerivative) : std::nullopt),
-	PurityAuxiliaryImagCorrKernel(IsToCalculateAverage ? std::optional<Kernel>(std::in_place, PurityAuxiliaryImagCorrParams.value(), feature, feature, IsToCalculateDerivative) : std::nullopt),
+	PurityAuxiliaryRealKernel(
+		IsToCalculateAverage
+			? std::optional<Kernel>(
+				std::in_place,
+				PurityAuxiliaryRealParams.value(),
+				LeftFeature,
+				RightFeature,
+				IsToCalculateDerivative
+			)
+			: std::nullopt
+	),
+	PurityAuxiliaryImagKernel(
+		IsToCalculateAverage
+			? std::optional<Kernel>(
+				std::in_place,
+				PurityAuxiliaryImagParams.value(),
+				LeftFeature,
+				RightFeature,
+				IsToCalculateDerivative
+			)
+			: std::nullopt
+	),
+	PurityAuxiliaryCorrKernel(
+		IsToCalculateAverage
+			? std::optional<Kernel>(
+				std::in_place,
+				PurityAuxiliaryCorrParams.value(),
+				LeftFeature,
+				RightFeature,
+				IsToCalculateDerivative
+			)
+			: std::nullopt
+	),
+	PurityAuxiliaryRealCorrKernel(
+		IsToCalculateAverage
+			? std::optional<Kernel>(
+				std::in_place,
+				PurityAuxiliaryRealCorrParams.value(),
+				LeftFeature,
+				RightFeature,
+				IsToCalculateDerivative
+			)
+			: std::nullopt
+	),
+	PurityAuxiliaryImagCorrKernel(
+		IsToCalculateAverage
+			? std::optional<Kernel>(
+				std::in_place,
+				PurityAuxiliaryImagCorrParams.value(),
+				LeftFeature,
+				RightFeature,
+				IsToCalculateDerivative
+			)
+			: std::nullopt
+	),
 	Purity(
 		IsToCalculateAverage
 			? std::optional<double>(
 				[&KernelParams = KernelParams,
-					&v = UpperPartOfAugmentedInverseLabel.value(),
-					&KRprime = PurityAuxiliaryRealKernel->get_kernel(),
-					&KIprime = PurityAuxiliaryImagKernel->get_kernel(),
-					&KCprime = PurityAuxiliaryCorrKernel->get_kernel(),
-					&KRC = PurityAuxiliaryRealCorrKernel->get_kernel(),
-					&KIC = PurityAuxiliaryImagCorrKernel->get_kernel()](void) -> double
+				 &v = UpperPartOfAugmentedInverseLabel.value(),
+				 &KRprime = PurityAuxiliaryRealKernel->get_kernel(),
+				 &KIprime = PurityAuxiliaryImagKernel->get_kernel(),
+				 &KCprime = PurityAuxiliaryCorrKernel->get_kernel(),
+				 &KRC = PurityAuxiliaryRealCorrKernel->get_kernel(),
+				 &KIC = PurityAuxiliaryImagCorrKernel->get_kernel()](void) -> double
 				{
 					static constexpr double GlobalFactor = PurityFactor * 2.0 * power<Dim>(M_PI);
 					const double ThisTimeFactor = GlobalFactor * power<4>(std::get<0>(KernelParams));
 					const Eigen::MatrixXd K1 = KRprime + KIprime + 2.0 * KCprime;
 					const Eigen::MatrixXcd K2 = KRprime - KIprime - 2.0i * (KRC + KIC);
 					return ThisTimeFactor * ((v.adjoint() * K1 * v).value().real() + (v.transpose() * K2 * v).value().real());
-				}())
-			: std::nullopt),
+				}()
+			)
+			: std::nullopt
+	),
 	// calculation only for derivatives (items apart from derivative of (pseudo-)kernel are for training set only)
 	Derivatives(
 		IsToCalculateDerivative
 			? std::optional<ParameterArray<Eigen::MatrixXd>>(calculate_derivatives(
 				KernelParams,
-				feature,
-				feature,
+				std::get<0>(TrainingSet),
+				std::get<0>(TrainingSet),
 				KernelMatrix,
 				RealKernel.get_derivatives(),
-				ImagKernel.get_derivatives()))
-			: std::nullopt),
+				ImagKernel.get_derivatives()
+			))
+			: std::nullopt
+	),
 	PseudoDerivatives(
 		IsToCalculateDerivative
 			? std::optional<ParameterArray<Eigen::MatrixXcd>>(calculate_pseudo_derivatives(
 				KernelParams,
-				feature,
-				feature,
+				std::get<0>(TrainingSet),
+				std::get<0>(TrainingSet),
 				PseudoKernelMatrix,
 				CorrKernel.get_kernel(),
 				RealParams,
@@ -279,15 +343,17 @@ ComplexKernel::ComplexKernel(
 				CorrParams,
 				RealKernel.get_derivatives(),
 				ImagKernel.get_derivatives(),
-				CorrKernel.get_derivatives()))
-			: std::nullopt),
+				CorrKernel.get_derivatives()
+			))
+			: std::nullopt
+	),
 	UpperLeftAugmentedInverseDerivatives(
 		IsToCalculateDerivative
 			? std::optional<ParameterArray<Eigen::MatrixXcd>>(
 				[&P = UpperLeftBlockOfAugmentedKernelInverse.value(),
-					&Q = LowerLeftBlockOfAugmentedKernelInverse.value(),
-					&Derivatives = Derivatives.value(),
-					&PseudoDerivatives = PseudoDerivatives.value()](void) -> ParameterArray<Eigen::MatrixXcd>
+				 &Q = LowerLeftBlockOfAugmentedKernelInverse.value(),
+				 &Derivatives = Derivatives.value(),
+				 &PseudoDerivatives = PseudoDerivatives.value()](void) -> ParameterArray<Eigen::MatrixXcd>
 				{
 					ParameterArray<Eigen::MatrixXcd> result;
 					for (std::size_t iParam = 0; iParam < NumTotalParameters; iParam++)
@@ -295,18 +361,20 @@ ComplexKernel::ComplexKernel(
 						result[iParam] = (-(P * Derivatives[iParam] * P + Q.adjoint() * Derivatives[iParam] * Q + P * PseudoDerivatives[iParam] * Q + Q.adjoint() * PseudoDerivatives[iParam].conjugate() * P)).selfadjointView<Eigen::Lower>();
 					}
 					return result;
-				}())
-			: std::nullopt),
+				}()
+			)
+			: std::nullopt
+	),
 	LowerLeftAugmentedInverseDerivatives(
 		IsToCalculateDerivative
 			? std::optional<ParameterArray<Eigen::MatrixXcd>>(
 				[&Cholesky = DecompositionOfKernel.value(),
-					&KKTildeStar = KernelInversePseudoConjugate.value(),
-					&Derivatives = Derivatives.value(),
-					&PseudoDerivatives = PseudoDerivatives.value(),
-					&P = UpperLeftBlockOfAugmentedKernelInverse.value(),
-					&Q = LowerLeftBlockOfAugmentedKernelInverse.value(),
-					&PDerivatives = UpperLeftAugmentedInverseDerivatives.value()](void) -> ParameterArray<Eigen::MatrixXcd>
+				 &KKTildeStar = KernelInversePseudoConjugate.value(),
+				 &Derivatives = Derivatives.value(),
+				 &PseudoDerivatives = PseudoDerivatives.value(),
+				 &P = UpperLeftBlockOfAugmentedKernelInverse.value(),
+				 &Q = LowerLeftBlockOfAugmentedKernelInverse.value(),
+				 &PDerivatives = UpperLeftAugmentedInverseDerivatives.value()](void) -> ParameterArray<Eigen::MatrixXcd>
 				{
 					ParameterArray<Eigen::MatrixXcd> result;
 					for (std::size_t iParam = 0; iParam < NumTotalParameters; iParam++)
@@ -317,14 +385,16 @@ ComplexKernel::ComplexKernel(
 						result[iParam] = -Cholesky.solve(K_deriv * Q + K_tilde_deriv_star * P) - KKTildeStar * P_deriv;
 					}
 					return result;
-				}())
-			: std::nullopt),
+				}()
+			)
+			: std::nullopt
+	),
 	UpperAugmentedInvLblDerivatives(
 		IsToCalculateDerivative
 			? std::optional<ParameterArray<Eigen::VectorXcd>>(
-				[&y = label,
-					&PDerivatives = UpperLeftAugmentedInverseDerivatives.value(),
-					&QDerivatives = LowerLeftAugmentedInverseDerivatives.value()](void) -> ParameterArray<Eigen::VectorXcd>
+				[&y = Label.value(),
+				 &PDerivatives = UpperLeftAugmentedInverseDerivatives.value(),
+				 &QDerivatives = LowerLeftAugmentedInverseDerivatives.value()](void) -> ParameterArray<Eigen::VectorXcd>
 				{
 					ParameterArray<Eigen::VectorXcd> result;
 					for (std::size_t iParam = 0; iParam < NumTotalParameters; iParam++)
@@ -332,18 +402,20 @@ ComplexKernel::ComplexKernel(
 						result[iParam] = PDerivatives[iParam] * y + (QDerivatives[iParam] * y).conjugate();
 					}
 					return result;
-				}())
-			: std::nullopt),
+				}()
+			)
+			: std::nullopt
+	),
 	// calculation for both error/average and derivatives
 	ErrorDerivatives(
 		IsToCalculateError && IsToCalculateDerivative
 			? std::optional<ParameterArray<double>>(
 				[&P = UpperLeftBlockOfAugmentedKernelInverse.value(),
-					&Q = LowerLeftBlockOfAugmentedKernelInverse.value(),
-					&v = UpperPartOfAugmentedInverseLabel.value(),
-					&PDerivatives = UpperLeftAugmentedInverseDerivatives.value(),
-					&QDerivatives = LowerLeftAugmentedInverseDerivatives.value(),
-					&vDerivatives = UpperAugmentedInvLblDerivatives.value()](void) -> std::optional<ParameterArray<double>>
+				 &Q = LowerLeftBlockOfAugmentedKernelInverse.value(),
+				 &v = UpperPartOfAugmentedInverseLabel.value(),
+				 &PDerivatives = UpperLeftAugmentedInverseDerivatives.value(),
+				 &QDerivatives = LowerLeftAugmentedInverseDerivatives.value(),
+				 &vDerivatives = UpperAugmentedInvLblDerivatives.value()](void) -> std::optional<ParameterArray<double>>
 				{
 					ParameterArray<double> result;
 					const auto& P_diag = P.diagonal().array();
@@ -362,28 +434,30 @@ ComplexKernel::ComplexKernel(
 						result[iParam] = 2.0 * ((numerator_deriv + denominator_deriv) / square_diff).real().sum();
 					}
 					return result;
-				}())
-			: std::nullopt),
+				}()
+			)
+			: std::nullopt
+	),
 	PurityDerivatives(
 		IsToCalculateAverage && IsToCalculateDerivative
 			? std::optional<ParameterArray<double>>(
 				[&RealParams = RealParams,
-					&ImagParams = ImagParams,
-					&CorrParams = CorrParams,
-					&PurityAuxiliaryRealCorrParams = PurityAuxiliaryRealCorrParams.value(),
-					&PurityAuxiliaryImagCorrParams = PurityAuxiliaryImagCorrParams.value(),
-					&v = UpperPartOfAugmentedInverseLabel.value(),
-					&KRprime = PurityAuxiliaryRealKernel->get_kernel(),
-					&KIprime = PurityAuxiliaryImagKernel->get_kernel(),
-					&KCprime = PurityAuxiliaryCorrKernel->get_kernel(),
-					&KRC = PurityAuxiliaryRealCorrKernel->get_kernel(),
-					&KIC = PurityAuxiliaryImagCorrKernel->get_kernel(),
-					&vDerivatives = UpperAugmentedInvLblDerivatives.value(),
-					&KRprimeDerivatives = PurityAuxiliaryRealKernel->get_derivatives(),
-					&KIprimeDerivatives = PurityAuxiliaryImagKernel->get_derivatives(),
-					&KCprimeDerivatives = PurityAuxiliaryCorrKernel->get_derivatives(),
-					&KRCDerivatives = PurityAuxiliaryRealCorrKernel->get_derivatives(),
-					&KICDerivatives = PurityAuxiliaryImagCorrKernel->get_derivatives()](void) -> std::optional<ParameterArray<double>>
+				 &ImagParams = ImagParams,
+				 &CorrParams = CorrParams,
+				 &PurityAuxiliaryRealCorrParams = PurityAuxiliaryRealCorrParams.value(),
+				 &PurityAuxiliaryImagCorrParams = PurityAuxiliaryImagCorrParams.value(),
+				 &v = UpperPartOfAugmentedInverseLabel.value(),
+				 &KRprime = PurityAuxiliaryRealKernel->get_kernel(),
+				 &KIprime = PurityAuxiliaryImagKernel->get_kernel(),
+				 &KCprime = PurityAuxiliaryCorrKernel->get_kernel(),
+				 &KRC = PurityAuxiliaryRealCorrKernel->get_kernel(),
+				 &KIC = PurityAuxiliaryImagCorrKernel->get_kernel(),
+				 &vDerivatives = UpperAugmentedInvLblDerivatives.value(),
+				 &KRprimeDerivatives = PurityAuxiliaryRealKernel->get_derivatives(),
+				 &KIprimeDerivatives = PurityAuxiliaryImagKernel->get_derivatives(),
+				 &KCprimeDerivatives = PurityAuxiliaryCorrKernel->get_derivatives(),
+				 &KRCDerivatives = PurityAuxiliaryRealCorrKernel->get_derivatives(),
+				 &KICDerivatives = PurityAuxiliaryImagCorrKernel->get_derivatives()](void) -> std::optional<ParameterArray<double>>
 				{
 					static constexpr double GlobalFactor = PurityFactor * 2.0 * power<Dim>(M_PI);
 					// parameters
@@ -475,18 +549,22 @@ ComplexKernel::ComplexKernel(
 						result[iParam] *= GlobalFactor;
 					}
 					return result;
-				}())
-			: std::nullopt)
+				}()
+			)
+			: std::nullopt
+	)
 {
 }
 
 ComplexKernel::ComplexKernel(
 	const ComplexKernel& TrainingKernel,
 	const PhasePoints& left_feature,
-	const PhasePoints& right_feature) :
+	const PhasePoints& right_feature
+):
 	// general calculations
 	// calculation only for derivatives (items apart from derivative of (pseudo-)kernel are for training set only)
-	KernelBase(left_feature, right_feature),
+	LeftFeature(left_feature),
+	RightFeature(right_feature),
 	Params(TrainingKernel.Params),
 	KernelParams(TrainingKernel.KernelParams),
 	RealParams(TrainingKernel.RealParams),
@@ -495,13 +573,13 @@ ComplexKernel::ComplexKernel(
 	RealKernel(RealParams, LeftFeature, RightFeature, false),
 	ImagKernel(ImagParams, LeftFeature, RightFeature, false),
 	CorrKernel(CorrParams, LeftFeature, RightFeature, false),
-	KernelMatrix(power<2>(std::get<0>(KernelParams)) * (RealKernel.get_kernel() + ImagKernel.get_kernel())),
+	KernelMatrix(power<2>(std::get<0>(KernelParams)) * (RealKernel.get_kernel() + ImagKernel.get_kernel() + power<2>(std::get<2>(KernelParams)) * delta_kernel(left_feature, right_feature))),
 	PseudoKernelMatrix(power<2>(std::get<0>(KernelParams)) * (RealKernel.get_kernel() - ImagKernel.get_kernel() + 2.0i * CorrKernel.get_kernel()))
-	// calculations only for training set
-	// calculation only for test set
-	// calculation only for error/averages (purity is only for training set only)
-	// calculation only for derivatives (items apart from derivative of (pseudo-)kernel are for training set only)
-	// calculation for both error/average and derivatives
+// calculations only for training set
+// calculation only for test set
+// calculation only for error/averages (purity is only for training set only)
+// calculation only for derivatives (items apart from derivative of (pseudo-)kernel are for training set only)
+// calculation for both error/average and derivatives
 {
 }
 
@@ -509,9 +587,11 @@ ComplexKernel::ComplexKernel(
 	const PhasePoints& TestFeature,
 	const ComplexKernel& TrainingKernel,
 	const bool IsToCalculateDerivative,
-	const std::optional<Eigen::VectorXcd> TestLabel) :
+	const std::optional<Eigen::VectorXcd> TestLabel
+):
 	// general calculations
-	KernelBase(TestFeature, TrainingKernel.LeftFeature),
+	LeftFeature(TestFeature),
+	RightFeature(TrainingKernel.LeftFeature),
 	Params(TrainingKernel.Params),
 	KernelParams(TrainingKernel.KernelParams),
 	RealParams(TrainingKernel.RealParams),
@@ -520,7 +600,7 @@ ComplexKernel::ComplexKernel(
 	RealKernel(RealParams, LeftFeature, RightFeature, IsToCalculateDerivative),
 	ImagKernel(ImagParams, LeftFeature, RightFeature, IsToCalculateDerivative),
 	CorrKernel(CorrParams, LeftFeature, RightFeature, IsToCalculateDerivative),
-	KernelMatrix(power<2>(std::get<0>(KernelParams)) * (RealKernel.get_kernel() + ImagKernel.get_kernel())),
+	KernelMatrix(power<2>(std::get<0>(KernelParams)) * (RealKernel.get_kernel() + ImagKernel.get_kernel() + power<2>(std::get<2>(KernelParams)) * delta_kernel(LeftFeature, RightFeature))),
 	PseudoKernelMatrix(power<2>(std::get<0>(KernelParams)) * (RealKernel.get_kernel() - ImagKernel.get_kernel() + 2.0i * CorrKernel.get_kernel())),
 	// calculations only for training set
 	Label(TestLabel),
@@ -528,11 +608,11 @@ ComplexKernel::ComplexKernel(
 	Prediction(KernelMatrix * TrainingKernel.UpperPartOfAugmentedInverseLabel.value() + PseudoKernelMatrix * TrainingKernel.UpperPartOfAugmentedInverseLabel.value().conjugate()),
 	ElementwiseVariance(
 		[&TestFeature,
-			&TrainingKernel,
-			&KernelMatrix = KernelMatrix,
-			&PseudoKernelMatrix = PseudoKernelMatrix,
-			&P = TrainingKernel.UpperLeftBlockOfAugmentedKernelInverse.value(),
-			&Q = TrainingKernel.LowerLeftBlockOfAugmentedKernelInverse.value()](void) -> Eigen::VectorXd
+		 &TrainingKernel,
+		 &KernelMatrix = KernelMatrix,
+		 &PseudoKernelMatrix = PseudoKernelMatrix,
+		 &P = TrainingKernel.UpperLeftBlockOfAugmentedKernelInverse.value(),
+		 &Q = TrainingKernel.LowerLeftBlockOfAugmentedKernelInverse.value()](void) -> Eigen::VectorXd
 		{
 			const std::size_t NumPoints = TestFeature.cols();
 			const auto indices = xt::arange(NumPoints);
@@ -548,44 +628,19 @@ ComplexKernel::ComplexKernel(
 					const auto& kernel_col = kernel_row.transpose();
 					const auto& pseudo_row = PseudoKernelMatrix.row(iCol);
 					const auto& pseudo_col = pseudo_row.adjoint();
-					result(iCol) = (ComplexKernel(TrainingKernel, col, col).KernelMatrix.value()
-						- (kernel_row * P * kernel_col).value()
-						- (pseudo_row * P.conjugate() * pseudo_col).value()
-						- (pseudo_row * Q * kernel_col).value()
-						- (kernel_row * Q.conjugate() * pseudo_col).value()).real();
-				});
+					result(iCol) =
+						(ComplexKernel(TrainingKernel, col, col).KernelMatrix.value()
+						 - (kernel_row * P * kernel_col).value()
+						 - (pseudo_row * P.conjugate() * pseudo_col).value()
+						 - (pseudo_row * Q * kernel_col).value()
+						 - (kernel_row * Q.conjugate() * pseudo_col).value())
+							.real();
+				}
+			);
 			return result;
-		}()),
-	CutoffPrediction(
-		[&Prediction = Prediction.value(), &Variance = ElementwiseVariance.value()](void) -> Eigen::MatrixXcd
-		{
-			const std::size_t NumPoints = Prediction.size();
-			const auto indices = xt::arange(NumPoints);
-			Eigen::VectorXcd result(NumPoints);
-			std::for_each(
-				std::execution::par_unseq,
-				indices.cbegin(),
-				indices.cend(),
-				[&Prediction, &Variance, &result](std::size_t i) -> void
-				{
-					const double pred_square = std::norm(Prediction[i]);
-					if (pred_square >= power<2>(KernelBase::ConnectingPoint) * Variance[i])
-					{
-						result[i] = Prediction[i];
-					}
-					else if (pred_square <= Variance[i])
-					{
-						result[i] = 0;
-					}
-					else
-					{
-						const double AbsoluteRelativePrediction = std::abs(Prediction[i]) / std::sqrt(Variance[i]);
-						result[i] = Prediction[i] * (3.0 * ConnectingPoint - 2.0 * AbsoluteRelativePrediction - 1.0)
-							* power<2>(AbsoluteRelativePrediction - 1) / power<3>(ConnectingPoint - 1);
-					}
-				});
-			return result;
-		}()),
+		}()
+	),
+	CutoffPrediction(Prediction.value().array() * cutoff_factor(Prediction.value(), ElementwiseVariance.value()).array()),
 	// calculation only for error/averages (purity is only for training set only)
 	Error(Label.has_value() ? std::optional<double>((Prediction.value() - Label.value()).squaredNorm()) : std::nullopt),
 	// calculation only for derivatives (items apart from derivative of (pseudo-)kernel are for training set only)
@@ -597,8 +652,10 @@ ComplexKernel::ComplexKernel(
 				RightFeature,
 				KernelMatrix,
 				RealKernel.get_derivatives(),
-				ImagKernel.get_derivatives()))
-			: std::nullopt),
+				ImagKernel.get_derivatives()
+			))
+			: std::nullopt
+	),
 	PseudoDerivatives(
 		IsToCalculateDerivative
 			? std::optional<ParameterArray<Eigen::MatrixXcd>>(calculate_pseudo_derivatives(
@@ -612,31 +669,31 @@ ComplexKernel::ComplexKernel(
 				CorrParams,
 				RealKernel.get_derivatives(),
 				ImagKernel.get_derivatives(),
-				CorrKernel.get_derivatives()))
-			: std::nullopt),
+				CorrKernel.get_derivatives()
+			))
+			: std::nullopt
+	),
 	// calculation for both error/average and derivatives
 	ErrorDerivatives(
 		Label.has_value() && IsToCalculateDerivative
 			? std::optional<ParameterArray<double>>(
 				[PredictionDifference = Prediction.value() - Label.value(),
-					&KernelMatrix = KernelMatrix,
-					&PseudoKernelMatrix = PseudoKernelMatrix,
-					&v = TrainingKernel.UpperPartOfAugmentedInverseLabel.value(),
-					&Derivatives = Derivatives.value(),
-					&PseudoDerivatives = PseudoDerivatives.value(),
-					&vDerivatives = TrainingKernel.UpperAugmentedInvLblDerivatives.value()](void) -> ParameterArray<double>
+				 &KernelMatrix = KernelMatrix,
+				 &PseudoKernelMatrix = PseudoKernelMatrix,
+				 &v = TrainingKernel.UpperPartOfAugmentedInverseLabel.value(),
+				 &Derivatives = Derivatives.value(),
+				 &PseudoDerivatives = PseudoDerivatives.value(),
+				 &vDerivatives = TrainingKernel.UpperAugmentedInvLblDerivatives.value()](void) -> ParameterArray<double>
 				{
 					ParameterArray<double> result;
 					for (std::size_t iParam = 0; iParam < NumTotalParameters; iParam++)
 					{
-						result[iParam] = 2.0 * PredictionDifference.dot(
-							Derivatives[iParam] * v
-								+ KernelMatrix * vDerivatives[iParam]
-								+ PseudoDerivatives[iParam] * v.conjugate()
-								+ PseudoKernelMatrix * vDerivatives[iParam].conjugate()).real();
+						result[iParam] = 2.0 * PredictionDifference.dot(Derivatives[iParam] * v + KernelMatrix * vDerivatives[iParam] + PseudoDerivatives[iParam] * v.conjugate() + PseudoKernelMatrix * vDerivatives[iParam].conjugate()).real();
 					}
 					return result;
-				}())
-			: std::nullopt)
+				}()
+			)
+			: std::nullopt
+	)
 {
 }

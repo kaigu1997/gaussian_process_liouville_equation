@@ -20,20 +20,25 @@ inline constexpr int sgn(const T& val)
 enum Representation
 {
 	// Before are Force basis, the -dH/dR operator is diagonal
-	Adiabatic = Dim ///< Adiabatic basis, subsystem Hamiltonian is diagonal
+	/// @brief Adiabatic basis, subsystem Hamiltonian is diagonal
+	Adiabatic = Dim
 };
 
 /// Different models
 enum Model
 {
-	SAC, ///< Simple Avoided Crossing, tully's first model
-	DAC, ///< Dual Avoided Crossing, tully's second model
-	ECR	 ///< Extended Coupling with Reflection, tully's third model
+	/// @brief Simple Avoided Crossing, tully's first model
+	SAC,
+	/// @brief Dual Avoided Crossing, tully's second model
+	DAC,
+	/// @brief Extended Coupling with Reflection, tully's third model
+	ECR
 };
 
 #ifndef TestModel
-constexpr Model TestModel = DAC; ///< The model to use
-#endif							 // !TestModel
+/// @brief The model to use
+constexpr Model TestModel = DAC;
+#endif // !TestModel
 
 /// @brief To calculate the diagonalized subsystem Hamiltonian matrix
 /// @param[in] x Position of classical degree of freedom

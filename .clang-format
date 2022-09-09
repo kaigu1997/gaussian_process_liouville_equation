@@ -4,7 +4,7 @@ BasedOnStyle: Microsoft
 ---
 Language: Cpp
 AccessModifierOffset: -4
-AlignAfterOpenBracket: DontAlign
+AlignAfterOpenBracket: BlockIndent
 AlignArrayOfStructures: Right
 AlignConsecutiveAssignments: None
 AlignConsecutiveBitFields: None
@@ -14,18 +14,16 @@ AlignEscapedNewlines: Left
 AlignOperands: DontAlign
 AlignTrailingComments: true
 AllowAllArgumentsOnNextLine: true
-AllowAllConstructorInitializersOnNextLine: true
 AllowAllParametersOfDeclarationOnNextLine: true
 AllowShortBlocksOnASingleLine: Never
 AllowShortCaseLabelsOnASingleLine: false
 AllowShortEnumsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: None
 AllowShortIfStatementsOnASingleLine: Never
-AllowShortLambdasOnASingleLine: None
+AllowShortLambdasOnASingleLine: Inline
 AllowShortLoopsOnASingleLine: false
-AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
-AlwaysBreakBeforeMultilineStrings: false
+AlwaysBreakBeforeMultilineStrings: true
 AlwaysBreakTemplateDeclarations: Yes
 # AttributeMacros
 BinPackArguments: false
@@ -61,7 +59,6 @@ BreakStringLiterals: false
 ColumnLimit: 0
 # CommentPragmas
 CompactNamespaces: false
-# ConstructorInitializerAllOnOneLineOrOnePerLine
 ConstructorInitializerIndentWidth: 4
 ContinuationIndentWidth: 4
 Cpp11BracedListStyle: true
@@ -70,7 +67,7 @@ DerivePointerAlignment: false
 DisableFormat: false
 EmptyLineAfterAccessModifier: Never
 EmptyLineBeforeAccessModifier: Always
-# ExperimentalAutoDetectBinPacking
+ExperimentalAutoDetectBinPacking: false
 FixNamespaceComments: true
 ForEachMacros: ['foreach', 'BOOST_FOREACH']
 # IfMacros
@@ -92,6 +89,7 @@ IndentCaseLabels: false
 IndentExternBlock: AfterExternBlock
 IndentGotoLabels: true
 IndentPPDirectives: None
+IndentRequires: true
 IndentWidth: 4
 IndentWrappedFunctionNames: true
 # InsertTrailingCommas
@@ -135,11 +133,11 @@ SortUsingDeclarations: true
 SpaceAfterCStyleCast: false
 SpaceAfterLogicalNot: false
 SpaceAfterTemplateKeyword: true
-SpaceAroundPointerQualifiers: Both
+SpaceAroundPointerQualifiers: Default
 SpaceBeforeAssignmentOperators: true
 SpaceBeforeCaseColon: false
 SpaceBeforeCpp11BracedList: false
-SpaceBeforeCtorInitializerColon: true
+SpaceBeforeCtorInitializerColon: false
 SpaceBeforeInheritanceColon: false
 SpaceBeforeParens: Custom
 SpaceBeforeParensOptions:
@@ -148,8 +146,8 @@ SpaceBeforeParensOptions:
   AfterFunctionDeclarationName: false
   AfterFunctionDefinitionName: false
   AfterIfMacros: false
-  BeforeNonEmptyParentheses: false
   AfterOverloadedOperator: false
+  BeforeNonEmptyParentheses: false
 SpaceBeforeRangeBasedForLoopColon: true
 SpaceBeforeSquareBrackets: false
 SpaceInEmptyBlock: false

@@ -5,7 +5,8 @@
 
 #include "input.h"
 
-static constexpr std::size_t MaximumGridsForOneDimension = 200; ///< The number of grids should be no more than that, to prevent too big output files (.txt and .gif)
+/// @brief The number of grids should be no more than that, to prevent too big output files (.txt and .gif)
+static constexpr std::size_t MaximumGridsForOneDimension = 200;
 
 /// @brief Read a parameter from input stream
 /// @tparam T The input data type
@@ -66,23 +67,24 @@ static inline ClassicalPhaseVector combine_into_phase_coordinates(const Eigen::D
 }
 
 InitialParameters::InitialParameters(
-	const ClassicalVector<double>& mass_,
+	const ClassicalVector<double>& Mass,
 	const ClassicalVector<double>& x0,
 	const ClassicalVector<double>& p0,
 	const ClassicalVector<double>& sigma_p0,
 	const double output_time,
 	const double re_optimization_time,
 	const double dt_,
-	const std::size_t num_points) :
-	mass(mass_),
+	const std::size_t num_points
+):
+	mass(Mass),
 	r0(combine_into_phase_coordinates(x0, p0)),
 	xmin(-2.0 * x0.array().abs()),
 	xmax(-xmin),
-	NumGridsForOneDim(std::max(MaximumGridsForOneDimension, ((xmax - xmin).array() / (M_PI * hbar / 2.0 * (p0 + 3.0 * sigma_p0).array().inverse())).cast<std::size_t>().maxCoeff() + 1)),
+	NumGridsForOneDim(std::max(MaximumGridsForOneDimension, ((xmax - xmin).array() / (M_PI_2 * hbar * (p0 + 3.0 * sigma_p0).array().inverse())).cast<std::size_t>().maxCoeff() + 1)),
 	NumGridsTotal(power<PhaseDim>(NumGridsForOneDim)),
 	dx((xmax - xmin) / NumGridsForOneDim),
-	pmin(p0.array() - M_PI * hbar / 2.0 * dx.array().inverse()),
-	pmax(p0.array() + M_PI * hbar / 2.0 * dx.array().inverse()),
+	pmin(p0.array() - M_PI_2 * hbar * dx.array().inverse()),
+	pmax(p0.array() + M_PI_2 * hbar * dx.array().inverse()),
 	dp((pmax - pmin) / NumGridsForOneDim),
 	rmin(combine_into_phase_coordinates(xmin, pmin)),
 	rmax(combine_into_phase_coordinates(xmax, pmax)),
@@ -106,9 +108,11 @@ InitialParameters::InitialParameters(
 						result(idx, iPoint) += dr[idx] * (NextIndex % NumGridsForOneDim);
 						NextIndex /= NumGridsForOneDim;
 					}
-				});
+				}
+			);
 			return result;
-		}()),
+		}()
+	),
 	dt(dt_),
 	ReoptimizationTime(std::max(re_optimization_time, dt)),
 	OutputTime(std::max(output_time, ReoptimizationTime)),

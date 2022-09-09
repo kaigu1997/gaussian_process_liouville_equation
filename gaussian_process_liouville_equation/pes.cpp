@@ -8,20 +8,32 @@
 
 // Diabatic reprersentation
 // parameters of Tully's 1st model, Simple Avoided Crossing (SAC)
-static constexpr double SAC_A = 0.01;  ///< A in SAC model
-static constexpr double SAC_B = 1.6;   ///< B in SAC model
-static constexpr double SAC_C = 0.005; ///< C in SAC model
-static constexpr double SAC_D = 1.0;   ///< D in SAC model
+/// @brief A in SAC model
+static constexpr double SAC_A = 0.01;
+/// @brief B in SAC model
+static constexpr double SAC_B = 1.6;
+/// @brief C in SAC model
+static constexpr double SAC_C = 0.005;
+/// @brief D in SAC model
+static constexpr double SAC_D = 1.0;
 // parameters of Tully's 2nd model, Dual Avoided Crossing (DAC)
-static constexpr double DAC_A = 0.10;  ///< A in DAC model
-static constexpr double DAC_B = 0.28;  ///< B in DAC model
-static constexpr double DAC_C = 0.015; ///< C in DAC model
-static constexpr double DAC_D = 0.06;  ///< D in DAC model
-static constexpr double DAC_E = 0.05;  ///< E in DAC model
+/// @brief A in DAC model
+static constexpr double DAC_A = 0.10;
+/// @brief B in DAC model
+static constexpr double DAC_B = 0.28;
+/// @brief C in DAC model
+static constexpr double DAC_C = 0.015;
+/// @brief D in DAC model
+static constexpr double DAC_D = 0.06;
+/// @brief E in DAC model
+static constexpr double DAC_E = 0.05;
 // parameters of Tully's 3rd model, Extended Coupling with Reflection (ECR)
-static constexpr double ECR_A = 6e-4; ///< A in ECR model
-static constexpr double ECR_B = 0.10; ///< B in ECR model
-static constexpr double ECR_C = 0.90; ///< C in ECR model
+/// @brief A in ECR model
+static constexpr double ECR_A = 6e-4;
+/// @brief B in ECR model
+static constexpr double ECR_B = 0.10;
+/// @brief C in ECR model
+static constexpr double ECR_C = 0.90;
 
 /// @brief Subsystem diabatic Hamiltonian, being the potential of the bath
 /// @param[in] x Position of classical degree of freedom
@@ -80,7 +92,6 @@ static Tensor3d diabatic_force(const ClassicalVector<double>& x)
 /// @brief Transformation matrix from diabatic representation to adiabatic one
 /// @param[in] x Position of classical degree of freedom
 /// @return The transformation matrix at this position, the C matrix, which is real orthogonal
-/// @sa adiabatic_to_force_basis_matrix(),
 /// @sa adiabatic_potential(), adiabatic_force(), adiabatic_coupling()
 /// @details The return matrix @f$ C @f$ following
 /// @f$ C^{\mathsf{T}}M_{\mathrm{dia}}C=M_{\mathrm{adia}} @f$,
