@@ -16,7 +16,7 @@ inline constexpr int sgn(const T& val)
 	return (val > static_cast<T>(0)) - (val < static_cast<T>(0));
 }
 
-/// Different basis
+/// @brief Different basis
 enum Representation
 {
 	// Before are Force basis, the -dH/dR operator is diagonal
@@ -24,7 +24,7 @@ enum Representation
 	Adiabatic = Dim
 };
 
-/// Different models
+/// @brief Different models
 enum Model
 {
 	/// @brief Simple Avoided Crossing, tully's first model

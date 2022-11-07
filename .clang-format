@@ -1,4 +1,4 @@
-# This format file is based on clang-format 14
+# This format file is based on clang-format 15
 # and may not work for previous versions where key/value changes.
 BasedOnStyle: Microsoft
 ---
@@ -89,9 +89,10 @@ IndentCaseLabels: false
 IndentExternBlock: AfterExternBlock
 IndentGotoLabels: true
 IndentPPDirectives: None
-IndentRequires: true
+IndentRequiresClause: true
 IndentWidth: 4
 IndentWrappedFunctionNames: true
+InsertBraces: true
 # InsertTrailingCommas
 # JavaImportGroups
 # JavaScriptQuotes
@@ -125,6 +126,7 @@ QualifierOrder: ['static', 'inline', 'constexpr', 'const', 'volatile', 'type', '
 ReferenceAlignment: Left
 ReflowComments: false
 RemoveBracesLLVM: false
+RequiresClausePosition: OwnLine
 SeparateDefinitionBlocks: Leave
 ShortNamespaceLines: 0
 SortIncludes: CaseInsensitive

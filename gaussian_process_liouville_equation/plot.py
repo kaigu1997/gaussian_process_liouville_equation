@@ -19,9 +19,9 @@ def import_submodules(package: typing.Union[str, types.ModuleType], recursive: b
 	"""
 	if isinstance(package, str):
 		package = importlib.import_module(package)
-	results = {}
+	results: dict[str, types.ModuleType] = {}
 	for loader, name, is_pkg in pkgutil.walk_packages(package.__path__):
-		full_name = package.__name__ + '.' + name
+		full_name: str = package.__name__ + '.' + name
 		try:
 			results[full_name] = importlib.import_module(full_name)
 		except Exception:
@@ -32,13 +32,13 @@ def import_submodules(package: typing.Union[str, types.ModuleType], recursive: b
 
 
 import_submodules(mpl, False)
-HBAR = 1 # hbar in atomic unit
-NUM_PES = 2 # number of potential energy surfaces
-NUM_ELM = NUM_PES ** 2 # number of elements in density matrix
-NUM_TRIG = (NUM_PES + NUM_ELM) // 2
-FIGSIZE = 5.0
+HBAR: int = 1 # hbar in atomic unit
+NUM_PES: int = 2 # number of potential energy surfaces
+NUM_ELM: int = NUM_PES ** 2 # number of elements in density matrix
+NUM_TRIG: int = (NUM_PES + NUM_ELM) // 2
+FIGSIZE: tuple[float, float] = (6.4, 4.8)
 CMAP = mpl.cm.get_cmap('seismic') # the kind of color: red-white-blue
-NTICKS = 21
+NTICKS: int = 21
 
 
 def read_input(input_file: str) -> typing.Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
@@ -131,55 +131,81 @@ def plot_log(log_file: str, pic_file: str) -> np.ndarray:
 	Returns:
 		np.ndarray: all time points, for future plotting
 	"""
-	NUM_VAR = 3 + (NUM_TRIG + 2) + 1 # error, autocor step and displacement, N**2+2 optimization steps, and time cost
-	# 4 plots: error, autocor, steps, time cost
-	NUM_ROW = 2 # number of rows of axis
-	NUM_COL = 2 # number of columns of axis
+	OPT_TYPE_LABEL: list[str] = ['Local with Previous', 'Local with Initial', 'Global']
+	OPT_TYPE_VAL = np.arange(1, len(OPT_TYPE_LABEL) + 1).tolist()
+	TITLES: list[list[str]] = [['CPU Time between Outputs', 'Metropolis Monte Carlo Parameters', 'Rescale Factor'], ['Error from Loose Function', 'Optimization Steps', 'Selected Optimization Type']]
+	Y_LABEL: list[list[str]] = [['Time/s', '', 'Rescale Factor'], ['Error', 'Step', 'Optimization Type']]
+	NUM_VAR: int = 2 + 3 * NUM_TRIG + 1 + (NUM_TRIG + 2) + 1 # time, time cost, autocor step and displacement, rescale factor, error, opt steps, opt type
+	# 6 plots: error, autocor, steps, time cost
+	NUM_ROW: int = 2 # number of rows of axis
+	NUM_COL: int = 3 # number of columns of axis
 	# get data
-	data = np.loadtxt(log_file, usecols=np.linspace(0, NUM_VAR, NUM_VAR + 1, dtype=int))
-	t, err, autocor_step, autocor_displace, steps, cputime = data[:, 0], data[:, 1], data[:, 2], data[:, 3], np.transpose(data[:, 4:-1]), data[:, -1]
-	fig = plt.figure(figsize=(NUM_COL * FIGSIZE, NUM_ROW * FIGSIZE))
+	data = np.loadtxt(log_file, usecols=np.arange(NUM_VAR))
+	idx = 0
+	t = data[:, idx]
+	idx += 1
+	cputime = data[:, idx]
+	idx += 1
+	mc_step = data[:, idx:idx + NUM_TRIG].T
+	idx += NUM_TRIG
+	mc_displace = data[:, idx:idx + NUM_TRIG].T
+	idx += NUM_TRIG
+	rescale_factor = data[:, idx:idx + NUM_TRIG].T
+	idx += NUM_TRIG
+	err = data[:, idx]
+	idx += 1
+	steps = data[:, idx:idx + NUM_TRIG + 2].T
+	idx += NUM_TRIG + 2
+	opt_type = data[:, idx]
+	idx += 1
+	fig = plt.figure(figsize=(NUM_COL * FIGSIZE[0], NUM_ROW * FIGSIZE[1]))
 	axs = fig.subplots(nrows=NUM_ROW, ncols=NUM_COL, squeeze=False)
-	# plot error
-	axs[0][0].semilogy(t, err, label='Error')
-	axs[0][0].set_xlabel('Time')
-	axs[0][0].set_ylabel('Error')
-	axs[0][0].tick_params(axis='both')
-	axs[0][0].legend(loc='best')
-	axs[0][0].set_title('Error from Loose Function')
+	# plot cputime
+	# plot cpu time between each output
+	axs[0][0].semilogy(t, cputime, label='CPU Time')
 	# plot autocorrelation
+	mc_step_lines, mc_displace_lines = [], []
 	ax01_twin = axs[0][1].twinx()
-	p1, = axs[0][1].plot(t, autocor_step, label='Autocorrelation Steps')
-	ax01_twin.plot([], [])
-	p2, = ax01_twin.semilogy(t, autocor_displace, label='Autocorrelation Displacement')
-	axs[0][1].set_xlabel('Time')
-	axs[0][1].set_ylabel('Step', color=p1.get_color())
-	ax01_twin.set_ylabel('log(Displacement)', color=p2.get_color())
-	axs[0][1].tick_params(axis='x')
-	axs[0][1].tick_params(axis='y', colors=p1.get_color())
-	ax01_twin.tick_params(axis='y', colors=p2.get_color())
-	axs[0][1].legend(handles=[p1, p2], loc='best')
-	axs[0][1].set_title('Autocorrelation')
+	for iPES in range(NUM_PES):
+		for jPES in range(iPES + 1):
+			mc_step_lines += axs[0][1].plot(t, mc_step[get_index(iPES, jPES)], label='Best number of steps of ' + get_element_label(iPES, jPES))
+			ax01_twin.plot([], []) # blank plot for color delay
+	for iPES in range(NUM_PES):
+		for jPES in range(iPES + 1):
+			mc_displace_lines += ax01_twin.semilogy(t, mc_displace[get_index(iPES, jPES)], label='Best displacement of ' + get_element_label(iPES, jPES))
+	axs[0][1].set_ylabel('Step', color=mc_step_lines[0].get_color())
+	ax01_twin.set_ylabel('Displacement', color=mc_displace_lines[0].get_color())
+	axs[0][1].tick_params(axis='y', which='both', colors=mc_step_lines[0].get_color())
+	ax01_twin.tick_params(axis='y', which='both', colors=mc_displace_lines[0].get_color())
+	axs[0][1].legend(handles=mc_step_lines + mc_displace_lines, loc='best')
+	# plot rescale factor
+	for iPES in range(NUM_PES):
+		for jPES in range(iPES + 1):
+			axs[0][2].semilogy(t, rescale_factor[get_index(iPES, jPES)], label=get_element_label(iPES, jPES))
+	# plot error
+	axs[1][0].semilogy(t, err, label='Error')
 	# plot number of optimization steps
 	for iPES in range(NUM_PES):
 		for jPES in range(iPES + 1):
-			axs[1][0].plot(t, steps[get_index(iPES, jPES)], label=get_element_label(iPES, jPES))
-	axs[1][0].plot(t, steps[NUM_TRIG], label='Diagonal')
-	axs[1][0].plot(t, steps[NUM_TRIG + 1], label='Full')
-	axs[1][0].set_xlabel('Time')
-	axs[1][0].set_ylabel('Step')
-	axs[1][0].tick_params(axis='both')
-	axs[1][0].legend(loc='best')
-	axs[1][0].set_title('Optimization Steps')
-	# plot cpu time between each output
-	axs[1][1].plot(t, cputime, label='CPU Time')
-	axs[1][1].set_xlabel('Time/a.u.')
-	axs[1][1].set_ylabel('Time/s')
-	axs[1][1].tick_params(axis='both')
-	axs[1][1].legend(loc='best')
-	axs[1][1].set_title('CPU Time between Outputs')
+			axs[1][1].plot(t, steps[get_index(iPES, jPES)], label=get_element_label(iPES, jPES))
+	axs[1][1].plot(t, steps[NUM_TRIG], label='Diagonal')
+	axs[1][1].plot(t, steps[NUM_TRIG + 1], label='Full')
+	# plot optimization type whose result is selected
+	axs[1][2].plot(t, opt_type, label='Optimization Type')
+	axs[1][2].set_ylim(min(OPT_TYPE_VAL) - 1, max(OPT_TYPE_VAL) + 1)
+	axs[1][2].set_yticks(OPT_TYPE_VAL)
+	axs[1][2].set_yticklabels([label + ('\n \n ' if i % 2 == 0 else '') for i, label in enumerate(OPT_TYPE_LABEL)], horizontalalignment='center', multialignment='center', rotation='vertical', rotation_mode='anchor')
+	# set tick, x axis and and legend
+	for i in range(NUM_ROW):
+		for j in range(NUM_COL):
+			if i != 0 or j != 1:
+				axs[i][j].legend(loc='best')
+				axs[i][j].set_ylabel(Y_LABEL[i][j])
+			axs[i][j].set_xlabel('Time/a.u.')
+			axs[i][j].set_title(TITLES[i][j])
 	# set title
 	fig.suptitle('Evolution Log')
+	fig.set_layout_engine('compressed')
 	# save file
 	plt.savefig(pic_file)
 	return t
@@ -194,43 +220,53 @@ def plot_average(DIM: int, t: np.ndarray, ave_file: str, pic_file: str) -> None:
 		ave_file (str): Input file name
 		pic_file (str): Output file name
 	"""
-	X_LABEL: list[str] = ['Analytical Integral', 'Direct Averaging']
-	Y_LABEL_PUBLIC: list[str] = [r'$x_{%d}$' % i for i in range(1, DIM + 1)] + [r'$p_{%d}$' % i for i in range(1, DIM + 1)]
-	Y_LABEL: list[list[str]] = [Y_LABEL_PUBLIC + ['Population'], Y_LABEL_PUBLIC + ['Energy']]
-	NUM_ROW, NUM_COL = len(Y_LABEL_PUBLIC) + 2, len(X_LABEL) # for plot
+	X_LABEL: list[str] = ['Analytical Integral', 'Monte Carlo Integral']
+	Y_LABEL: list[str] = ['Population'] + [r'$x_{%d}$' % i for i in range(1, DIM + 1)] + [r'$p_{%d}$' % i for i in range(1, DIM + 1)] + ['Energy']
+	NUM_ROW, NUM_COL = len(Y_LABEL) + 1, len(X_LABEL) + 1 # for plot, +1 row for purity, +1 col for total (in case special value from some element)
+	NUM_AVE = len(Y_LABEL) * len(X_LABEL) * (NUM_PES + 1)
 	# get data
 	data = np.loadtxt(ave_file)
-	purity_total_data = data[:, -1]
-	purity_elementwise_data = data[:, -(NUM_ELM + 1):-1].reshape((t.size, NUM_PES, NUM_PES))
-	no_purity_data = data[:, :-(NUM_ELM + 1)].reshape((t.size, NUM_PES + 1, NUM_COL, NUM_ROW - 1)) # apart from purity
+	TOTAL_TIME = data.shape[0]
+	ave_data = data[:, :NUM_AVE].reshape((TOTAL_TIME, NUM_PES + 1, len(X_LABEL), len(Y_LABEL)))
+	purity_data = data[:, NUM_AVE:NUM_AVE + (NUM_ELM + 1) * len(X_LABEL)].reshape((TOTAL_TIME, len(X_LABEL), NUM_ELM + 1))
 	# prepare for average plot
-	fig = plt.figure(figsize=(NUM_COL * FIGSIZE, NUM_ROW * FIGSIZE))
+	fig = plt.figure(figsize=(NUM_COL * FIGSIZE[0], NUM_ROW * FIGSIZE[1]))
 	axs = fig.subplots(nrows=NUM_ROW, ncols=NUM_COL, squeeze=False)
-	# plot <r>, <1>, <E>
-	for i in range(NUM_COL): # what kind of source: prm, ave
-		for j in range(NUM_ROW - 1): # which data: <r>, <1>, <E>
+	# plot <1>, <r>, <E>
+	for j in range(len(Y_LABEL)): # which data: <1>, <r>, <E>
+		for i in range(len(X_LABEL)): # what kind of source: prm, ave
 			ax = axs[j][i]
 			for k in range(NUM_PES):
-				ax.plot(t, no_purity_data[:, k, i, j], label='State %d' % k)
-			ax.plot(t, no_purity_data[:, NUM_PES, i, j], label='Total')
+				# no analytically integrated energy
+				if not np.isnan(ave_data[:, k, i, j]).all():
+					ax.plot(t[:TOTAL_TIME], ave_data[:, k, i, j], label='State %d' % k)
+			ax.plot(t[:TOTAL_TIME], ave_data[:, NUM_PES, i, j], label='Total')
 			ax.set_xlabel('Time/a.u.')
-			ax.set_ylabel(Y_LABEL[i][j] + '/a.u.')
-			ax.set_title(X_LABEL[i] + ' of ' + Y_LABEL[i][j])
+			ax.set_ylabel(Y_LABEL[j] + '/a.u.' if j != 0 else '')
+			ax.set_title(X_LABEL[i] + ' of ' + Y_LABEL[j])
 			ax.legend(loc='best')
+			# plot for total
+			axs[j][len(X_LABEL)].plot(t[:TOTAL_TIME], ave_data[:, NUM_PES, i, j], label=X_LABEL[i])
+		axs[j][len(X_LABEL)].set_xlabel('Time/a.u.')
+		axs[j][len(X_LABEL)].set_ylabel(Y_LABEL[j] + '/a.u.' if j != 0 else '')
+		axs[j][len(X_LABEL)].set_title(Y_LABEL[j])
+		axs[j][len(X_LABEL)].legend(loc='best')
 	# plot purity
-	for i in range(NUM_COL): # what kind of source: prm, ave, mci
-		ax = axs[NUM_ROW - 1][i]
-		if X_LABEL[i] != 'Direct Averaging':
-			for j in range(NUM_PES):
-				for k in range(NUM_PES):
-					ax.plot(t, purity_elementwise_data[:, j, k], label=get_element_label(j, k))
-			ax.plot(t, purity_total_data, label='Total')
-			ax.set_xlabel('Time')
-			ax.set_ylabel('Purity')
-			ax.set_title(X_LABEL[i] + ' of Purity')
-			ax.legend(loc='best')
-		else:
-			ax.set_visible(False)
+	for i in range(len(X_LABEL)): # what kind of source: prm, ave, mci
+		ax = axs[len(Y_LABEL)][i]
+		for j in range(NUM_PES):
+			for k in range(NUM_PES):
+				ax.plot(t[:TOTAL_TIME], purity_data[:, i, j * NUM_PES + k], label=get_element_label(j, k))
+		ax.plot(t[:TOTAL_TIME], purity_data[:, i, NUM_ELM], label='Total')
+		ax.set_xlabel('Time')
+		ax.set_ylabel('Purity')
+		ax.set_title(X_LABEL[i] + ' of Purity')
+		ax.legend(loc='best')
+		axs[len(Y_LABEL)][len(X_LABEL)].plot(t[:TOTAL_TIME], purity_data[:, i, NUM_ELM], label=X_LABEL[i])
+	axs[len(Y_LABEL)][len(X_LABEL)].set_xlabel('Time/a.u.')
+	axs[len(Y_LABEL)][len(X_LABEL)].set_ylabel('Purity')
+	axs[len(Y_LABEL)][len(X_LABEL)].set_title('Purity')
+	axs[len(Y_LABEL)][len(X_LABEL)].legend(loc='best')
 	# add title, save as png
 	fig.suptitle('Averages')
 	fig.savefig(pic_file)
@@ -260,7 +296,7 @@ def plot_param(DIM: int, t: np.ndarray, param_file: str, pic_file: str) -> None:
 	NUM_VAR = data.shape[1]
 	NUM_ROW, NUM_COL = NUM_VAR, NUM_TRIG # for plot, only lower-triangular part
 	data = data.reshape((t.size, NUM_TRIG, 3, NUM_VAR))
-	fig = plt.figure(figsize=(NUM_COL * FIGSIZE, NUM_ROW * FIGSIZE))
+	fig = plt.figure(figsize=(NUM_COL * FIGSIZE[0], NUM_ROW * FIGSIZE[1]))
 	axs = fig.subplots(nrows=NUM_ROW, ncols=NUM_COL, squeeze=False)
 	# plot one by one
 	for iPES in range(NUM_PES):
@@ -358,7 +394,7 @@ def draw_point_anime(
 	xv, pv = np.meshgrid(np.linspace(xmin, xmax, 2), np.linspace(pmin, pmax, 2))
 	# prepare for plot
 	NUM_ROW, NUM_COL = NUM_PES, NUM_PES
-	fig = plt.figure(figsize=(NUM_COL * FIGSIZE, NUM_ROW * FIGSIZE))
+	fig = plt.figure(figsize=(NUM_COL * FIGSIZE[0], NUM_ROW * FIGSIZE[1]))
 	axs = fig.subplots(nrows=NUM_ROW, ncols=NUM_COL, squeeze=False)
 	time_template = 'Time = %fa.u.'
 
@@ -450,7 +486,7 @@ def draw_phase_anime(
 	xv, pv = np.meshgrid(x, p)
 	# prepare for plot
 	NUM_ROW, NUM_COL = NUM_PES, NUM_PES
-	fig = plt.figure(figsize=(NUM_COL * FIGSIZE, NUM_ROW * FIGSIZE))
+	fig = plt.figure(figsize=(NUM_COL * FIGSIZE[0], NUM_ROW * FIGSIZE[1]))
 	axs = fig.subplots(nrows=NUM_ROW, ncols=NUM_COL, squeeze=False)
 	time_template = 'Time = %fa.u.'
 	# construct the color bar
@@ -561,8 +597,6 @@ if __name__ == '__main__':
 		# load files and animate phase evolution
 		phs_data = np.loadtxt(PHS_FILE).reshape((t.size, NUM_TRIG, 2, NUM_GRID, NUM_GRID))
 		draw_phase_anime(x, p, t, pt_data, phs_data, PHS_TITLE, PHS_PT_ANI, PHS_NPT_ANI, False)
-		arg_data = np.loadtxt(ARG_FILE).reshape((t.size, NUM_TRIG, NUM_GRID, NUM_GRID))
-		phs_data[:, :, 0, :, :], phs_data[:, :, 1, :, :] = phs_data[:, :, 0, :, :] * np.cos(arg_data) - phs_data[:, :, 1, :, :] * np.sin(arg_data), phs_data[:, :, 1, :, :] * np.cos(arg_data) + phs_data[:, :, 0, :, :] * np.sin(arg_data)
 		draw_phase_anime(x, p, t, pt_data, phs_data, PHS_ARG_TITLE, PHS_ARG_PT_ANI, PHS_ARG_NPT_ANI, False)
 		var_data = np.loadtxt(VAR_FILE).reshape((t.size, NUM_TRIG, NUM_GRID, NUM_GRID))
 		draw_phase_anime(x, p, t, pt_data, var_data, VAR_TITLE, VAR_PT_ANI, VAR_NPT_ANI, True)

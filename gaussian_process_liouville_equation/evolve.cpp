@@ -5,9 +5,8 @@
 
 #include "evolve.h"
 
-#include "mc.h"
 #include "pes.h"
-#include "predict.h"
+#include "storage.h"
 
 /// @brief The number of branches resulted by one off-diagonal force, including forward, static and backward
 static constexpr std::size_t NumOffDiagonalBranches = 3;
@@ -25,7 +24,7 @@ using OffDiagonalBranched = xt::xtensor_fixed<double, xt::xshape<NumOffDiagonalB
 /// @brief The tensor form for @f$ P_3 @f$ and @f$ R_4 @f$
 using TotallyBranched = xt::xtensor_fixed<double, xt::xshape<NumTriangularElements, NumOffDiagonalBranches, Dim>>;
 
-/// The direction of dynamics evolving
+/// @brief The direction of dynamics evolving
 enum Direction
 {
 	/// @brief Going back, for density prediction
@@ -49,68 +48,55 @@ static inline auto tensor_slice(const Tensor3d& tensor, const std::size_t row, c
 /// @param[in] x Position of classical degree of freedom
 /// @param[in] p Momentum of classical degree of freedom
 /// @param[in] mass Mass of classical degree of freedom
+/// @param[in] dt Time interval
 /// @return Whether each classical direction has coupling or not
 static ClassicalVector<bool> is_coupling(
 	[[maybe_unused]] const ClassicalVector<double>& x,
 	[[maybe_unused]] const ClassicalVector<double>& p,
-	[[maybe_unused]] const ClassicalVector<double>& mass
+	[[maybe_unused]] const ClassicalVector<double>& mass,
+	const double dt
 )
 {
-	[[maybe_unused]] static constexpr double CouplingCriterion = 0.01; // Criteria of whether have coupling or not
-	static constexpr bool IsAdiabatic = true;
+	[[maybe_unused]] static constexpr double CouplingCriterion = 0; // Criteria of whether have coupling or not
+	static constexpr bool IsAdiabatic = false;
 	if constexpr (IsAdiabatic)
 	{
 		return ClassicalVector<bool>::Zero();
 	}
 	else
 	{
+		const Tensor3d Force = adiabatic_force(x), NAC = adiabatic_coupling(x);
+		const ClassicalVector<double> diag_f_average = [&Force](void) -> ClassicalVector<double>
+		{
+			ClassicalVector<double> sum = ClassicalVector<double>::Zero();
+			for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
+			{
+				sum += tensor_slice(Force, iPES, iPES);
+			}
+			return sum / NumPES;
+		}();
 		if constexpr (NumPES == 2)
 		{
-			const auto nac_01 = tensor_slice(adiabatic_coupling(x), 0, 1), f_01 = tensor_slice(adiabatic_force(x), 0, 1);
-			return nac_01.array() * p.array() / mass.array() > CouplingCriterion || f_01.array() > CouplingCriterion;
+			const auto nac_01 = tensor_slice(NAC, 0, 1), f_01 = tensor_slice(Force, 0, 1);
+			return (nac_01.array() * p.array() / mass.array()).abs() * dt >= CouplingCriterion
+				|| (f_01.array() / diag_f_average.array()).abs() >= CouplingCriterion;
 		}
 		else
 		{
-			const Tensor3d& NAC = adiabatic_coupling(x);
-			const Tensor3d& Force = adiabatic_force(x);
 			ClassicalVector<bool> result = ClassicalVector<bool>::Zero();
-			for (std::size_t iPES = 1; iPES < NumPES; iPES++)
+			for (const std::size_t iPES : std::ranges::iota_view{1ul, NumPES})
 			{
-				for (std::size_t jPES = 0; jPES < iPES; jPES++)
+				for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES})
 				{
 					const auto nac_ij = tensor_slice(NAC, iPES, jPES), f_ij = tensor_slice(Force, iPES, jPES);
-					result = result.array() || nac_ij.array() * p.array() / mass.array() > CouplingCriterion || f_ij.array() > CouplingCriterion;
+					result = result.array()
+						|| (nac_ij.array() * p.array() / mass.array()).abs() * dt >= CouplingCriterion
+						|| (f_ij.array() / diag_f_average.array()).abs() >= CouplingCriterion;
 				}
 			}
 			return result;
 		}
 	}
-}
-
-bool is_coupling(const AllPoints& density, const ClassicalVector<double>& mass)
-{
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-	{
-		for (std::size_t jPES = 0; jPES < NumPES; jPES++)
-		{
-			if (
-				std::any_of(
-					std::execution::par_unseq,
-					density(iPES, jPES).cbegin(),
-					density(iPES, jPES).cend(),
-					[&mass](const PhaseSpacePoint& psp) -> bool
-					{
-						const auto [x, p] = split_phase_coordinate(psp.get<0>());
-						return is_coupling(x, p, mass).any();
-					}
-				)
-			)
-			{
-				return true;
-			}
-		}
-	}
-	return false;
 }
 
 /// @brief To get the diagonal forces under adiabatic basis at given position
@@ -120,7 +106,7 @@ static DiagonalForces adiabatic_diagonal_forces(const ClassicalVector<double>& x
 {
 	const Tensor3d& force = adiabatic_force(x);
 	DiagonalForces result;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
 		result.col(iPES) = tensor_slice(force, iPES, iPES);
 	}
@@ -148,12 +134,12 @@ static std::tuple<ClassicalVector<double>, ClassicalVector<double>> adiabatic_ev
 {
 	auto position_evolve = [&x, &p = std::as_const(p), &mass, dt, drc](void) -> void
 	{
-		x += drc * dt / 2.0 * (p.array() / mass.array()).matrix();
+		x += static_cast<int>(drc) * dt / 2.0 * (p.array() / mass.array()).matrix();
 	};
 	auto momentum_diagonal_nonbranch_evolve = [&x = std::as_const(x), &p, &mass, dt, drc, RowIndex, ColIndex](void) -> void
 	{
 		const DiagonalForces f = adiabatic_diagonal_forces(x);
-		p += drc * dt / 2.0 * (f.col(RowIndex) + f.col(ColIndex));
+		p += static_cast<int>(drc) * dt / 2.0 * (f.col(RowIndex) + f.col(ColIndex));
 	};
 	position_evolve();
 	momentum_diagonal_nonbranch_evolve();
@@ -168,7 +154,7 @@ static std::tuple<ClassicalVector<double>, ClassicalVector<double>> adiabatic_ev
 /// @param[in] RowIndex RowIndex Index of row of the element in density matrix. Must be a valid index (< @p NumPES )
 /// @param[in] ColIndex RowIndex Index of row of the element in density matrix. Must be a valid index and no more than @p RowIndex
 /// @return @f$ (\Delta V_{ij}(x_0)+\Delta V_{ij}(x_2))/2\hbar @f$
-static double calculate_omega0(
+static inline double calculate_omega0(
 	const ClassicalVector<double>& x0,
 	const ClassicalVector<double>& x2,
 	const Direction drc,
@@ -182,33 +168,7 @@ static double calculate_omega0(
 	}
 	const QuantumVector<double> E0 = adiabatic_potential(x0);
 	const QuantumVector<double> E2 = adiabatic_potential(x2);
-	return drc * (E0[RowIndex] - E0[ColIndex] + E2[RowIndex] - E2[ColIndex]) / 2.0 / hbar;
-}
-
-double get_phase_factor(
-	const ClassicalPhaseVector& r,
-	const ClassicalVector<double>& mass,
-	const double dt,
-	const std::size_t NumTicks,
-	const std::size_t RowIndex,
-	const std::size_t ColIndex
-)
-{
-	if (RowIndex == ColIndex)
-	{
-		return 0;
-	}
-	static constexpr Direction drc = Direction::Backward;
-	auto [x0, p0] = split_phase_coordinate(r);
-	ClassicalVector<double> x2;
-	double result = 0.0;
-	for (std::size_t iTick = NumTicks; iTick > 0; iTick--)
-	{
-		std::tie(x2, p0) = adiabatic_evolve(x0, p0, mass, dt, drc, RowIndex, ColIndex);
-		result -= calculate_omega0(x0, x2, Direction::Forward, RowIndex, ColIndex);
-		x0 = x2;
-	}
-	return result * dt;
+	return static_cast<int>(drc) * (E0[RowIndex] - E0[ColIndex] + E2[RowIndex] - E2[ColIndex]) / 2.0 / hbar;
 }
 
 /// @brief To predict the density matrix of the given point after evolving 1 time step back
@@ -216,18 +176,16 @@ double get_phase_factor(
 /// @param[in] density The exact density of the given element at the given point
 /// @param[in] mass Mass of classical degree of freedom
 /// @param[in] dt Time interval
-/// @param[in] NumTicks Number of @p dt since T=0; i.e., now is @p NumTicks * @p dt
 /// @param[in] distribution Phase space distribution function
 /// @param[in] RowIndex RowIndex Index of row of the element in density matrix. Must be a valid index (< @p NumPES )
 /// @param[in] ColIndex RowIndex Index of row of the element in density matrix. Must be a valid index and no more than @p RowIndex
 /// @return The density matrix at the given point after evolving
-/// @details This function only deals with non-adiabatic case; for adiabatic evolution, @sa evolve()
+/// @details This function only deals with non-adiabatic case; for adiabatic evolution, @sa evolve(), new_point_predict()
 static std::complex<double> non_adiabatic_evolve_predict(
 	const ClassicalPhaseVector& r,
-	const std::complex<double> density,
+	const std::optional<std::complex<double>> density,
 	const ClassicalVector<double>& mass,
 	const double dt,
-	const std::size_t NumTicks,
 	const DistributionFunction& distribution,
 	const std::size_t RowIndex,
 	const std::size_t ColIndex
@@ -235,34 +193,10 @@ static std::complex<double> non_adiabatic_evolve_predict(
 {
 	using namespace std::literals::complex_literals;
 	static constexpr Direction drc = Direction::Backward;
-	static auto calculate_lower_triangular_index = [](std::size_t Row, std::size_t Col) constexpr->std::size_t
+	static auto calculate_lower_triangular_index = [](const std::size_t Row, const std::size_t Col) constexpr -> std::size_t
 	{
 		return Row * (Row + 1) / 2 + Col;
 	};
-	static const std::array<double, NumTriangularElements> IndicesAdd = [](void) -> std::array<double, NumTriangularElements>
-	{
-		std::array<double, NumTriangularElements> result;
-		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-		{
-			for (std::size_t jPES = 0; jPES <= iPES; jPES++)
-			{
-				result[calculate_lower_triangular_index(iPES, jPES)] = 0.0 + iPES + jPES;
-			}
-		}
-		return result;
-	}();
-	static const std::array<double, NumTriangularElements> IndicesSub = [](void) -> std::array<double, NumTriangularElements>
-	{
-		std::array<double, NumTriangularElements> result;
-		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-		{
-			for (std::size_t jPES = 0; jPES <= iPES; jPES++)
-			{
-				result[calculate_lower_triangular_index(iPES, jPES)] = 0.0 + iPES - jPES;
-			}
-		}
-		return result;
-	}();
 	auto position_evolve =
 		[&mass]<std::size_t... xIndices, std::size_t... pIndices>(
 			const xt::xtensor_fixed<double, xt::xshape<xIndices...>>& x,
@@ -271,24 +205,38 @@ static std::complex<double> non_adiabatic_evolve_predict(
 		)
 			->xt::xtensor_fixed<double, xt::xshape<pIndices...>>
 	{
-		return x + drc * dt * p / xt::adapt(mass.data(), TensorVector::shape_type{});
+		return x + static_cast<int>(drc) * dt * p / xt::adapt(mass.data(), TensorVector::shape_type{});
 	};
 	const auto& [x0, p0] = split_phase_coordinate(r);
-	const ClassicalVector<bool> IsCouple = is_coupling(x0, p0, mass);
-	assert(IsCouple.any());
-	std::complex<double> result = 0;
+	const ClassicalVector<bool> IsCouple = is_coupling(x0, p0, mass, dt);
 	if constexpr (NumPES == 2)
 	{
+		auto offdiagonal_rotation =
+			[&mass, &IsCouple](auto rho_view, const ClassicalVector<double>& x, const ClassicalVector<double>& p, const double dt) -> void
+		{
+			// rhoview are expected to have 3 elements
+			assert(rho_view.shape()[0] == NumTriangularElements && rho_view.dimension() == 1);
+			// phi: v.dot(NAC)
+			const double phi =
+				(p.array() / mass.array() * tensor_slice(adiabatic_coupling(x), 0, 1).array() * is_coupling(x, p, mass, dt).array().cast<double>()).sum();
+			const double cosphi = std::cos(2.0 * phi * dt), sinphi = std::sin(2.0 * phi * dt);
+			// save the old data
+			const xt::xtensor_fixed<std::complex<double>, xt::xshape<NumTriangularElements>> rho_save = rho_view;
+			rho_view(0) = (1.0 + cosphi) / 2.0 * rho_save(0) - sinphi * rho_save(1).real() + (1.0 - cosphi) / 2.0 * rho_save(2);
+			rho_view(1) = sinphi / 2.0 * rho_save(0) + cosphi * rho_save(1).real() + 1.0i * rho_save(1).imag() - sinphi / 2.0 * rho_save(2);
+			rho_view(2) = (1.0 - cosphi) / 2.0 * rho_save(0) + sinphi * rho_save(1).real() + (1.0 + cosphi) / 2.0 * rho_save(2);
+		};
 		// x_i and p_{i-1} have same number of elements, and p_i is branching
 		// 17 steps
 		// index: {classical dimensions}
 		const auto [x2, p1] = adiabatic_evolve(x0, p0, mass, dt / 2.0, drc, RowIndex, ColIndex);
 		// index: {offdiagonal branching, classical dimensions}
+		// (backward) direction is included. So when evolve forward, the branch correspondence remains the same
 		const auto p2 = [&x2, &p1, dt, &IsCouple](void) -> OffDiagonalBranched
 		{
 			const TensorVector f01 = xt::view(adiabatic_force(x2), xt::all(), 0, 1) * xt::adapt(IsCouple.data(), TensorVector::shape_type{});
-			const auto n_broadcast = xt::view(xt::adapt(OffDiagonalBranches, xt::xshape<NumOffDiagonalBranches>{}), xt::all(), xt::newaxis(), xt::newaxis());
-			return xt::adapt(p1.data(), TensorVector::shape_type{}) + dt * n_broadcast * f01;
+			const auto n_broadcast = xt::view(xt::adapt(OffDiagonalBranches, xt::xshape<NumOffDiagonalBranches>{}), xt::all(), xt::newaxis());
+			return xt::adapt(p1.data(), TensorVector::shape_type{}) + dt * static_cast<double>(drc) * n_broadcast * f01;
 		}();
 		const OffDiagonalBranched x3 = position_evolve(TensorVector(xt::adapt(x2.data(), TensorVector::shape_type{})), p2, dt / 4.0);
 		// index: {classical dimensions, density matrix element it goes to, offdiagonal branching, density matrix element it comes from}
@@ -296,51 +244,34 @@ static std::complex<double> non_adiabatic_evolve_predict(
 		{
 			TotallyBranched result;
 			// recursively reduce rank, from highest rank to lowest
-			for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
+			for (const std::size_t iOffDiagonalBranch : std::ranges::iota_view{0ul, NumOffDiagonalBranches})
 			{
 				const auto xview = xt::view(x3, iOffDiagonalBranch, xt::all()), pview = xt::view(p2, iOffDiagonalBranch, xt::all());
 				const DiagonalForces f = adiabatic_diagonal_forces(ClassicalVector<double>::Map(xview.data() + xview.data_offset()));
-				auto f_col_view = [&f](std::size_t i)
+				auto f_col_view = [&f](const std::size_t i)
 				{
 					return xt::adapt(f.col(i).data(), TensorVector::shape_type{});
 				};
-				for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+				for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 				{
-					for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+					for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 					{
-						xt::view(result, calculate_lower_triangular_index(iPES, jPES), iOffDiagonalBranch, xt::all()) = pview + drc * dt / 2.0 * (f_col_view(iPES) + f_col_view(jPES));
+						xt::view(result, calculate_lower_triangular_index(iPES, jPES), iOffDiagonalBranch, xt::all()) =
+							pview + static_cast<int>(drc) * dt / 2.0 * (f_col_view(iPES) + f_col_view(jPES));
 					}
 				}
 			}
 			return result;
 		}();
 		const TotallyBranched x4 = position_evolve(x3, p3, dt / 4.0);
-		// auxiliary terms: evolved elements, phi, omega0, omega1
-		const double omega0 = RowIndex == ColIndex ? 0 : calculate_omega0(x0, x2, Direction::Forward, 0, 1);
-		// omega1(n, gamma) = omega0(R2(gamma, 0), R3(n, gamVma, .), R4((1,0), n, gamma, .))
-		const auto omega1 = [&x2, &x4](void)
-		{
-			xt::xtensor_fixed<double, xt::xshape<NumOffDiagonalBranches>> result;
-			for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
-			{
-				const auto xview = xt::view(x4, calculate_lower_triangular_index(1, 0), iOffDiagonalBranch, xt::all());
-				result(iOffDiagonalBranch) = calculate_omega0(x2, ClassicalVector<double>::Map(xview.data() + xview.data_offset()), Direction::Forward, 0, 1);
-			}
-			return result;
-		}();
-		// phi(n, gamma) = p2(n, gamma, .).dot(d01(R2(gamma, .)))
-		const auto phi = [&x2, &p2, &IsCouple](void) -> xt::xtensor_fixed<double, xt::xshape<NumOffDiagonalBranches>>
-		{
-			const ClassicalVector<double> nac_01 = tensor_slice(adiabatic_coupling(x2), 0, 1).array() * IsCouple.array().cast<double>();
-			return xt::sum(p2 * xt::adapt(nac_01.data(), TensorVector::shape_type{}), {1});
-		}();
 		// rho(gamma', n, gamma) = rho^{gamma'}_W(R4(gamma', n, gamma, .), P3(gamma', n, gamma, .), t)
-		const auto rho_predict = [&x4, &p3, density, &mass, dt, NumTicks, &distribution, RowIndex, ColIndex](void)
+		// The predicted density at all those points
+		auto rho_predict = [&x4, &p3, density, &distribution, RowIndex, ColIndex](void)
 		{
 			xt::xtensor_fixed<std::complex<double>, xt::xshape<NumTriangularElements, NumOffDiagonalBranches>> result;
-			for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+			for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 			{
-				for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+				for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 				{
 					const std::size_t TrigIndex = calculate_lower_triangular_index(iPES, jPES);
 					// construct training set
@@ -355,79 +286,89 @@ static std::complex<double> non_adiabatic_evolve_predict(
 						return result;
 					}();
 					// get prediction
-					for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
+					for (const std::size_t iOffDiagonalBranch : std::ranges::iota_view{0ul, NumOffDiagonalBranches})
 					{
-						if (iPES == RowIndex && jPES == ColIndex && OffDiagonalBranches[iOffDiagonalBranch] == 0)
+						if (iPES == RowIndex && jPES == ColIndex && OffDiagonalBranches[iOffDiagonalBranch] == 0 && density.has_value())
 						{
 							// the exact element, assign the exact density
-							result(TrigIndex, iOffDiagonalBranch) = density;
+							result(TrigIndex, iOffDiagonalBranch) = density.value();
 						}
 						else
 						{
 							result(TrigIndex, iOffDiagonalBranch) = distribution(r.col(iOffDiagonalBranch), iPES, jPES);
-							if (iPES != jPES)
-							{
-								result(TrigIndex, iOffDiagonalBranch) *= std::exp(1.0i * get_phase_factor(r.col(iOffDiagonalBranch), mass, dt, NumTicks, iPES, jPES));
-							}
 						}
 					}
 				}
 			}
 			return result;
 		}();
-		// auxiliary terms: c1, c2, c3, c4
-		// C1(n, gamma) = ((1-delta(n, 0))delta(alpha, beta) + cos(phi(0, gamma)dt - (alpha + beta + n)pi/2)exp(i(alpha - beta)omega0 * dt / 2)) / (4 - 2delta(n, 0))
-		const auto C1 = [&phi, omega0, dt, RowIndex, ColIndex](void)
+		xt::xtensor_fixed<std::complex<double>, xt::xshape<NumTriangularElements>> rho_combined_offdiag = xt::zeros<decltype(rho_combined_offdiag)::value_type>(decltype(rho_combined_offdiag)::shape_type{});
+		for (const std::size_t iOffDiagonalBranch : std::ranges::iota_view{0ul, NumOffDiagonalBranches})
 		{
-			xt::xtensor_fixed<std::complex<double>, xt::xshape<NumOffDiagonalBranches>> result = xt::zeros<decltype(result)::value_type>(decltype(result)::shape_type{});
-			result += xt::cos(phi(1) * dt - M_PI_2 * (RowIndex + ColIndex + xt::adapt(OffDiagonalBranches.data(), {NumOffDiagonalBranches})))
-				* std::exp(1.0i * (0.0 + RowIndex - ColIndex) / 2.0 * omega0 * dt);
-			for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
+			// first, an adiabatic evolve. x4 and p3 goes to x2 and p2, rho evolves in the following way
+			const auto x4view = xt::view(x4, calculate_lower_triangular_index(1, 0), iOffDiagonalBranch, xt::all());
+			rho_predict(calculate_lower_triangular_index(1, 0), iOffDiagonalBranch) *=
+				std::exp(calculate_omega0(x2, ClassicalVector<double>::Map(x4view.data() + x4view.data_offset()), Direction::Forward, 0, 1) * dt / 2 * 1.0i);
+			// now they are at x2 and p2. A off-diagonal rotation is needed.
+			const auto p2view = xt::view(p2, iOffDiagonalBranch, xt::all());
+			offdiagonal_rotation(
+				xt::view(rho_predict, xt::all(), iOffDiagonalBranch),
+				x2,
+				ClassicalVector<double>::Map(p2view.data() + p2view.data_offset()),
+				dt / 2.0
+			);
+			// then the off-diagonal force evolution combination with a rotation matrix, p2 comes to p1, x2 keeps the same
+			switch (OffDiagonalBranches[iOffDiagonalBranch])
 			{
-				if (OffDiagonalBranches[iOffDiagonalBranch] != 0)
-				{
-					result(iOffDiagonalBranch) += static_cast<double>(RowIndex == ColIndex);
-				}
-				result(iOffDiagonalBranch) /= 4.0 - 2.0 * static_cast<double>(OffDiagonalBranches[iOffDiagonalBranch] == 0);
-			}
-			for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
+			case -1:
+				rho_combined_offdiag +=
+					(rho_predict(0, iOffDiagonalBranch) + 2.0 * rho_predict(1, iOffDiagonalBranch).real() + rho_predict(2, iOffDiagonalBranch)) / 4.0;
+				break;
+			case 0:
 			{
+				const std::complex<double> value = (rho_predict(0, iOffDiagonalBranch) - rho_predict(2, iOffDiagonalBranch)) / 2.0;
+				rho_combined_offdiag(0) += value;
+				rho_combined_offdiag(1) += 1.0i * rho_predict(1, iOffDiagonalBranch).imag();
+				rho_combined_offdiag(2) -= value;
+				break;
 			}
-			return result;
-		}();
-		// c2(gamma', n, gamma) = (1-delta(n, 0))delta(alpha', beta') + cos(phi(n, gamma')dt + (alpha' + beta' + n)pi/2)exp(i(alpha' - beta')omega1(n, gamma') * dt / 2)
-		const auto C2 = [&phi, &omega1, dt, RowIndex, ColIndex](void)
-		{
-			xt::xtensor_fixed<std::complex<double>, xt::xshape<NumTriangularElements, NumOffDiagonalBranches>> result = xt::zeros<decltype(result)::value_type>(decltype(result)::shape_type{});
-			result += xt::cos(phi * dt + M_PI_2 * (xt::view(xt::adapt(IndicesAdd.data(), xt::xshape<NumTriangularElements>{}), xt::all(), xt::newaxis()) + xt::adapt(OffDiagonalBranches.data(), xt::xshape<NumOffDiagonalBranches>{})))
-				* xt::exp(1.0i * xt::view(xt::adapt(IndicesSub.data(), xt::xshape<NumTriangularElements>{}), xt::all(), xt::newaxis()) / 2.0 * omega1 * dt);
-			for (std::size_t iOffDiagonalBranch = 0; iOffDiagonalBranch < NumOffDiagonalBranches; iOffDiagonalBranch++)
+			case 1:
 			{
-				if (OffDiagonalBranches[iOffDiagonalBranch] != 0)
-				{
-					for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-					{
-						result(calculate_lower_triangular_index(iPES, iPES), iOffDiagonalBranch) += 1.0;
-					}
-				}
-				else
-				{
-					xt::view(result, xt::all(), iOffDiagonalBranch) *= 2.0;
-				}
+				const std::complex<double> value =
+					(rho_predict(0, iOffDiagonalBranch) - 2.0 * rho_predict(1, iOffDiagonalBranch).real() + rho_predict(2, iOffDiagonalBranch)) / 4.0;
+				rho_combined_offdiag(0) += value;
+				rho_combined_offdiag(1) -= value;
+				rho_combined_offdiag(2) += value;
+				break;
 			}
-			return result;
-		}();
-		result += xt::sum(C1 * xt::real(C2 * rho_predict))();
+			default:
+				assert(!"WRONG BRANCH!");
+				break;
+			}
+		}
+		// the another off-diagonal rotation at x2 and p1
+		offdiagonal_rotation(
+			xt::view(rho_combined_offdiag, xt::all()),
+			x2,
+			p1,
+			dt / 2.0
+		);
+		// now another adiabatic evolve from (x2, p1) to (x0, p0), i.e., r
+		const std::complex<double> result = rho_combined_offdiag(calculate_lower_triangular_index(RowIndex, ColIndex));
 		if (RowIndex != ColIndex)
 		{
-			result += 1.0i * std::exp(1.0i * omega0 * dt / 2.0) * (std::exp(1.0i * omega1(OffDiagonalZeroBranch) * dt / 2.0) * rho_predict(calculate_lower_triangular_index(1, 0), OffDiagonalZeroBranch)).imag() / 2.0;
+			return result * std::exp(calculate_omega0(x0, x2, Direction::Forward, 0, 1) * dt / 2.0 * 1.0i);
+		}
+		else
+		{
+			return result;
 		}
 	}
 	else
 	{
 		assert(!"NO INSTANTATION OF MORE THAN TWO LEVEL SYSTEM NOW\n");
+		return 0.0;
 	}
-	return result;
 }
 
 /// @details If the point is not in the coupling region, evolve it adiabatically;
@@ -437,15 +378,14 @@ void evolve(
 	AllPoints& density,
 	const ClassicalVector<double>& mass,
 	const double dt,
-	const std::size_t NumTicks,
 	const DistributionFunction& distribution
 )
 {
 	using namespace std::literals::complex_literals;
 	static constexpr Direction drc = Direction::Forward;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			// for row-major, visit upper triangular elements earlier
 			// so selection for the upper triangular elements
@@ -453,36 +393,86 @@ void evolve(
 				std::execution::par_unseq,
 				density(iPES, jPES).begin(),
 				density(iPES, jPES).end(),
-				[&mass, dt, NumTicks, &distribution, iPES, jPES](PhaseSpacePoint& psp) -> void
+				[&mass, dt, &distribution, iPES, jPES](PhaseSpacePoint& psp) -> void
 				{
-					auto& [r, rho, theta] = psp;
+					auto& [r, rho] = psp;
 					const auto& [x0, p0] = split_phase_coordinate(r);
-					if (is_coupling(x0, p0, mass).any())
+					if (is_coupling(x0, p0, mass, dt).any())
 					{
 						// with coupling, non-adiabatic case
-						// save the exact element before adiabatic rotation
-						const std::complex<double> exact_element = psp.get_exact_element();
 						// calculate its adiabatically evolved phase space coordinate with 2 half steps
 						const auto& [x2, p1] = adiabatic_evolve(x0, p0, mass, dt / 2, drc, iPES, jPES);
-						theta -= calculate_omega0(x0, x2, drc, iPES, jPES) * dt / 2;
 						const auto& [x4, p2] = adiabatic_evolve(x2, p1, mass, dt / 2, drc, iPES, jPES);
-						theta -= calculate_omega0(x2, x4, drc, iPES, jPES) * dt / 2;
 						// and use back-propagation to calculate the exact density there
 						r << x4, p2;
-						psp.set_density(non_adiabatic_evolve_predict(r, exact_element, mass, dt, NumTicks - 1, distribution, iPES, jPES));
+						rho = non_adiabatic_evolve_predict(r, rho, mass, dt, distribution, iPES, jPES);
 					}
 					else
 					{
 						// without coupling, adiabatic case
 						// calculate its adiabatically evolved phase space coordinate
 						const auto& [x2, p1] = adiabatic_evolve(x0, p0, mass, dt, drc, iPES, jPES);
-						theta -= calculate_omega0(x0, x2, drc, iPES, jPES) * dt;
 						// extract phase factor, the rest remains the same
-						rho = distribution(r, iPES, jPES);
+						rho = distribution(r, iPES, jPES) * std::exp(-calculate_omega0(x0, x2, drc, iPES, jPES) * dt * 1.0i); // -i(Vi-Vj)dt/hbar
 						r << x2, p1;
 					}
 				}
 			);
 		}
 	}
+}
+
+std::complex<double> new_point_predict(
+	const ClassicalPhaseVector& r,
+	const ClassicalVector<double>& mass,
+	const double dt,
+	const DistributionFunction& distribution,
+	const std::size_t RowIndex,
+	const std::size_t ColIndex
+)
+{
+	const auto& [x, p] = split_phase_coordinate(r);
+	if (is_coupling(x, p, mass, dt).any())
+	{
+		return non_adiabatic_evolve_predict(r, std::nullopt, mass, dt, distribution, RowIndex, ColIndex);
+	}
+	else
+	{
+		return 0.0;
+	}
+}
+
+QuantumStorage<bool> is_very_small(
+	const AllPoints& density,
+	const ClassicalVector<double>& mass,
+	const double dt,
+	const DistributionFunction& distribution
+)
+{
+	static constexpr double epsilon = power<2>(1e-5); // value larger than this are regarded important
+	static const std::size_t NumCheckingPoints = density(0).size();
+	QuantumStorage<bool> result(false, false);
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
+	{
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
+		{
+			if (density(iPES, jPES).empty())
+			{
+				// get some test points
+				ElementPoints test_points(density(0).cbegin(), density(0).cbegin() + NumCheckingPoints);
+				result(iPES, jPES) =
+					std::all_of(
+						std::execution::par_unseq,
+						test_points.cbegin(),
+						test_points.cend(),
+						[&mass, dt, &distribution, iPES, jPES](const PhaseSpacePoint& psp) -> bool
+						{
+							return std::norm(new_point_predict(psp.get<0>(), mass, dt, distribution, iPES, jPES)) < epsilon;
+						}
+					); // only if all the test points are small, this element in density matrix could be regarded small
+			}
+			// otherwise the element must not be empty, and thus not small
+		}
+	}
+	return result;
 }

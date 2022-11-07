@@ -12,6 +12,7 @@
 #include "mc.h"
 #include "opt.h"
 #include "predict.h"
+#include "storage.h"
 
 /// @brief To output std vector
 /// @tparam T The data type in the vector
@@ -19,7 +20,7 @@
 /// @param[in] vec The vector
 /// @return @p os after output
 template <typename T>
-inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec)
+static inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec)
 {
 	if (vec.cbegin() != vec.cend())
 	{
@@ -29,67 +30,89 @@ inline std::ostream& operator<<(std::ostream& os, const std::vector<T>& vec)
 	return os;
 }
 
-/// @details For each surfaces and for total, output
-/// its @<x@> and @<p@>, population and energy calculated by
-/// analytical integral, direct averaging and monte carlo
-/// integral. For those that is nonexistent (population by
-/// direct averaging and energy by analytical integral), output NAN. @n
-/// Then, output total purity by analytical integral and monte carlo integral. @n
-/// For the nomenclature, prm = parameter (analytical integral),
-/// ave = direct averaing, and mci = monte carlo integral.
+/// @details For each surfaces and for total, output its
+/// population, @<x@> and @<p@>, and energy calculated by
+/// direct averaging and monte carlo integral. For those that
+/// is nonexistent (analytical integrated energy), output NAN. @n
+/// Then, output elementwise purity and total purity
+/// by analytical integral and monte carlo integral. @n
+/// For the nomenclature, prm = parameter (analytical
+/// integral), and mci = monte carlo integral.
 void output_average(
 	std::ostream& os,
-	const Kernels& AllKernels,
+	const TrainingKernels& AllKernels,
 	const AllPoints& density,
-	const ClassicalVector<double>& mass
+	const ClassicalVector<double>& mass,
+	const double PurityFactor
 )
 {
-	// average: time, population, x, p, V, T, E of each PES
-	ClassicalPhaseVector r_ave_all = ClassicalPhaseVector::Zero();
-	double e_ave_all = 0.0;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	// average: population, x, p, E of each PES
+	// output elementwise
+	const QuantumVector<double> ppl_mci_each = calculate_population_each_surface(density);
+	const QuantumVector<double> e_mci_each = calculate_total_energy_average_each_surface(density, mass);
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		const ClassicalPhaseVector r_prm = calculate_1st_order_average_one_surface(AllKernels(iPES));
-		const ClassicalPhaseVector r_ave = calculate_1st_order_average_one_surface(density(iPES));
-		const double ppl_prm = calculate_population_one_surface(AllKernels(iPES));
-		const double e_ave = calculate_total_energy_average_one_surface(density(iPES), mass, iPES);
 		// output for analytcal integral by parameters; energy is NAN
-		os << ' ' << r_prm.format(VectorFormatter) << ' ' << ppl_prm;
-		// output for direct averaging; population is NAN
-		os << ' ' << r_ave.format(VectorFormatter) << ' ' << e_ave;
-		r_ave_all += ppl_prm * r_ave;
-		e_ave_all += ppl_prm * e_ave;
+		if (AllKernels(iPES).has_value())
+		{
+			os << ' ' << calculate_population_one_surface(AllKernels(iPES).value());
+			os << ' ' << calculate_1st_order_average_one_surface(AllKernels(iPES).value()).format(VectorFormatter);
+		}
+		else
+		{
+			// output for analytcal integral by parameters; energy is NAN
+			os << ' ' << 0.0;
+			os << ' ' << (ClassicalPhaseVector::Zero() * NAN).format(VectorFormatter);
+		}
+		os << ' ' << NAN;
+		// output for monte carlo integral
+		os << ' ' << ppl_mci_each[iPES];
+		if (!density(iPES).empty())
+		{
+			os << ' ' << calculate_1st_order_average_one_surface(density(iPES)).format(VectorFormatter);
+		}
+		else
+		{
+			os << ' ' << (ClassicalPhaseVector::Zero() * NAN).format(VectorFormatter);
+		}
+		os << ' ' << e_mci_each[iPES];
 	}
-	const ClassicalPhaseVector r_prm_all = AllKernels.calculate_1st_order_average();
-	// r_ave_all is already calculated
+	// output sum
+	// output for analytcal integral by parameters
 	const double ppl_prm_all = AllKernels.calculate_population();
-	// e_ave_all is already calculated
-	// output for analytcal integral by parameters; energy is NAN
-	os << ' ' << (r_prm_all / ppl_prm_all).format(VectorFormatter) << ' ' << ppl_prm_all;
-	// output for direct averaging; population is NAN
-	os << ' ' << (r_ave_all / ppl_prm_all).format(VectorFormatter) << ' ' << e_ave_all / ppl_prm_all;
+	os << ' ' << ppl_prm_all;
+	os << ' ' << (AllKernels.calculate_1st_order_average() / ppl_prm_all).format(VectorFormatter);
+	os << ' ' << AllKernels.calculate_total_energy_average(e_mci_each) / ppl_prm_all;
+	// output for monte carlo integral
+	const double ppl_mci_all = ppl_mci_each.sum();
+	os << ' ' << ppl_mci_all;
+	os << ' ' << (calculate_1st_order_average_all_surface(density) / ppl_mci_all).format(VectorFormatter);
+	os << ' ' << calculate_total_energy_average_all_surface(density, mass) / ppl_mci_all;
+
 	// output purity
+	// output for analytical integral
 	QuantumMatrix<double> prt_prm = QuantumMatrix<double>::Zero();
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			if (iPES == jPES)
 			{
-				prt_prm(iPES, jPES) = AllKernels(iPES).get_purity();
+				prt_prm(iPES, jPES) = AllKernels(iPES).has_value() ? AllKernels(iPES)->get_purity() : 0.0;
 			}
 			else
 			{
-				prt_prm(iPES, jPES) = AllKernels(iPES, jPES).get_purity();
+				prt_prm(iPES, jPES) = AllKernels(iPES, jPES).has_value() ? AllKernels(iPES, jPES)->get_purity() : 0.0;
 			}
 		}
 	}
 	prt_prm = prt_prm.selfadjointView<Eigen::Lower>();
-	// output elementwise
 	os << ' ' << prt_prm.format(VectorFormatter);
-	// output sum
-	const double prt_prm_all = AllKernels.calculate_purity();
-	os << ' ' << prt_prm_all;
+	os << ' ' << AllKernels.calculate_purity();
+	// output for monte carlo integral
+	const QuantumMatrix<double> prt_mci = calculate_purity_each_element(density) * PurityFactor;
+	os << ' ' << prt_mci.format(VectorFormatter);
+	os << ' ' << prt_mci.sum();
 	// finish
 	os << std::endl;
 }
@@ -97,9 +120,9 @@ void output_average(
 void output_param(std::ostream& os, const Optimization& Optimizer)
 {
 	const QuantumStorage<ParameterVector> lb = Optimizer.get_lower_bounds(), param = Optimizer.get_parameters(), ub = Optimizer.get_upper_bounds();
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			os << lb(iPES, jPES) << '\n';
 			os << param(iPES, jPES) << '\n';
@@ -113,14 +136,13 @@ void output_point(std::ostream& coord, std::ostream& value, const AllPoints& den
 {
 	const std::size_t NumPoints = density(0).size(), NumExtraPoints = extra_points(0).size(), NumTotalPoints = NumPoints + NumExtraPoints;
 	const auto indices = xt::arange(NumPoints), extra_indices = xt::arange(NumExtraPoints);
-	const QuantumMatrix<bool> IsSmall = is_very_small(density);
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			PhasePoints point_coordinates = PhasePoints::Zero(PhasePoints::RowsAtCompileTime, NumTotalPoints);
 			Eigen::VectorXcd point_weight = Eigen::VectorXcd::Zero(NumTotalPoints);
-			if (!IsSmall(iPES, jPES))
+			if (!density(iPES, jPES).empty())
 			{
 				std::for_each(
 					std::execution::par_unseq,
@@ -128,8 +150,9 @@ void output_point(std::ostream& coord, std::ostream& value, const AllPoints& den
 					indices.cend(),
 					[&element_density = density(iPES, jPES), &point_coordinates, &point_weight](const std::size_t iPoint) -> void
 					{
-						point_coordinates.col(iPoint) = element_density[iPoint].get<0>();
-						point_weight(iPoint) = element_density[iPoint].get_exact_element();
+						const auto& [r, rho] = element_density[iPoint];
+						point_coordinates.col(iPoint) = r;
+						point_weight(iPoint) = rho;
 					}
 				);
 				std::for_each(
@@ -138,8 +161,9 @@ void output_point(std::ostream& coord, std::ostream& value, const AllPoints& den
 					extra_indices.cend(),
 					[&element_density = extra_points(iPES, jPES), NumPoints, &point_coordinates, &point_weight](const std::size_t iPoint) -> void
 					{
-						point_coordinates.col(NumPoints + iPoint) = element_density[iPoint].get<0>();
-						point_weight(NumPoints + iPoint) = element_density[iPoint].get_exact_element();
+						const auto& [r, rho] = element_density[iPoint];
+						point_coordinates.col(NumPoints + iPoint) = r;
+						point_weight(NumPoints + iPoint) = rho;
 					}
 				);
 			}
@@ -156,50 +180,51 @@ void output_point(std::ostream& coord, std::ostream& value, const AllPoints& den
 
 void output_phase(
 	std::ostream& phase,
-	std::ostream& phasefactor,
 	std::ostream& variance,
-	const ClassicalVector<double>& mass,
-	const double dt,
-	const std::size_t NumTicks,
-	const Kernels& AllKernels,
+	const TrainingKernels& AllKernels,
 	const PhasePoints& PhaseGrids
 )
 {
 	const std::size_t NumPoints = PhaseGrids.cols();
-	const auto indices = xt::arange(NumPoints);
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	auto output_zero = [&phase, &variance, NumPoints]() -> void
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		phase << Eigen::VectorXd::Zero(NumPoints).format(VectorFormatter) << '\n';
+		phase << Eigen::VectorXd::Zero(NumPoints).format(VectorFormatter) << '\n';
+		variance << Eigen::VectorXd::Zero(NumPoints).format(VectorFormatter) << '\n';
+	};
+	const auto indices = xt::arange(NumPoints);
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
+	{
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			if (iPES == jPES)
 			{
-				const Kernel k(PhaseGrids, AllKernels(iPES), false);
-				phase << k.get_prediction_compared_with_variance().format(VectorFormatter) << '\n';
-				phase << Eigen::VectorXd::Zero(NumPoints).format(VectorFormatter) << '\n';
-				phasefactor << Eigen::VectorXd::Zero(NumPoints).format(VectorFormatter) << '\n';
-				variance << k.get_variance().format(VectorFormatter) << '\n';
+				if (AllKernels(iPES).has_value())
+				{
+					const PredictiveKernel k(PhaseGrids, AllKernels(iPES).value(), false);
+					phase << k.get_cutoff_prediction().format(VectorFormatter) << '\n';
+					phase << Eigen::VectorXd::Zero(NumPoints).format(VectorFormatter) << '\n';
+					variance << k.get_variance().format(VectorFormatter) << '\n';
+				}
+				else
+				{
+					output_zero();
+				}
 			}
 			else
 			{
-				const ComplexKernel ck(PhaseGrids, AllKernels(iPES, jPES), false);
-				const Eigen::VectorXcd& pred = ck.get_prediction_compared_with_variance();
-				Eigen::VectorXd phase_factor = Eigen::VectorXd::Zero(NumPoints);
-				std::for_each(
-					std::execution::par_unseq,
-					indices.cbegin(),
-					indices.cend(),
-					[&pred, &phase_factor, &mass, dt, NumTicks, &PhaseGrids, iPES, jPES](std::size_t iPoint) -> void
-					{
-						if (pred[iPoint] != 0.0)
-						{
-							phase_factor[iPoint] = get_phase_factor(PhaseGrids.col(iPoint), mass, dt, NumTicks, iPES, jPES);
-						}
-					}
-				);
-				phase << pred.real().format(VectorFormatter) << '\n';
-				phase << pred.imag().format(VectorFormatter) << '\n';
-				phasefactor << phase_factor.format(VectorFormatter) << '\n';
-				variance << ck.get_variance().format(VectorFormatter) << '\n';
+				if (AllKernels(iPES, jPES).has_value())
+				{
+					const PredictiveComplexKernel ck(PhaseGrids, AllKernels(iPES, jPES).value(), false);
+					const Eigen::VectorXcd& pred = ck.get_cutoff_prediction();
+					phase << pred.real().format(VectorFormatter) << '\n';
+					phase << pred.imag().format(VectorFormatter) << '\n';
+					variance << ck.get_variance().format(VectorFormatter) << '\n';
+				}
+				else
+				{
+					output_zero();
+				}
 			}
 		}
 	}
@@ -207,35 +232,71 @@ void output_phase(
 	variance << '\n';
 }
 
-void output_autocor(
-	std::ostream& os,
-	MCParameters& MCParams,
-	const DistributionFunction& distribution,
-	const AllPoints& density
-)
-{
-	const AutoCorrelations step_autocor = autocorrelation_optimize_steps(MCParams, distribution, density);
-	const AutoCorrelations displ_autocor = autocorrelation_optimize_displacement(MCParams, distribution, density);
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
-		{
-			os << step_autocor(iPES, jPES).format(VectorFormatter) << ' ' << NAN << ' ' << displ_autocor(iPES, jPES).format(VectorFormatter) << '\n';
-		}
-	}
-	os << '\n';
-}
-
 void output_logging(
 	std::ostream& os,
 	const double time,
 	const Optimization::Result& OptResult,
-	const MCParameters& MCParams,
-	const std::chrono::duration<double>& CPUTime
+	const QuantumStorage<MCParameters>& MCParams,
+	const std::chrono::duration<double>& CPUTime,
+	const TrainingKernels& AllKernels
 )
 {
+	const auto& [error, Steps, OptType] = OptResult;
+	// output current time
+	os << time;
+	// output the time consumption
+	os << ' ' << CPUTime.count();
+	// output the steps and max displacement for Metropolis MCMC
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
+	{
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
+		{
+			os << ' ' << MCParams(iPES, jPES).get_num_MC_steps();
+		}
+	}
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
+	{
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
+		{
+			os << ' ' << MCParams(iPES, jPES).get_max_displacement();
+		}
+	}
+	// output the rescale factor for each kernel
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
+	{
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
+		{
+			if (iPES == jPES)
+			{
+				if (AllKernels(iPES).has_value())
+				{
+					os << ' ' << AllKernels(iPES)->get_rescale_factor();
+				}
+				else
+				{
+					os << ' ' << NAN;
+				}
+			}
+			else
+			{
+				if (AllKernels(iPES, jPES).has_value())
+				{
+					os << ' ' << AllKernels(iPES, jPES)->get_rescale_factor();
+				}
+				else
+				{
+					os << ' ' << NAN;
+				}
+			}
+		}
+	}
+	// output the error from optimization
+	os << ' ' << error;
+	// output the number of steps for optimization
+	os << ' ' << Steps;
+	// output the kind of optimization
+	os << ' ' << OptType;
+	// output current system time
 	const std::time_t CurrentTime = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-	const auto& [error, Steps] = OptResult;
-	os << time << ' ' << error << ' ' << MCParams.get_num_MC_steps() << ' ' << MCParams.get_max_displacement();
-	os << ' ' << Steps << ' ' << CPUTime.count() << ' ' << std::put_time(std::localtime(&CurrentTime), "%F %T %Z") << std::endl;
+	os << ' ' << std::put_time(std::localtime(&CurrentTime), "%F %T %Z") << std::endl;
 }

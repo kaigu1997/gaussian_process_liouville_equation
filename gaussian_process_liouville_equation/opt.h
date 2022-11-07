@@ -9,27 +9,38 @@
 #include "input.h"
 #include "predict.h"
 
-/// @brief To check each element is small or not
-/// @param[in] density The selected points in phase space for each element of density matrices
-/// @return A matrix of boolean type and same size as density matrix,
-/// containing each element of density matrix is small or not.
-QuantumMatrix<bool> is_very_small(const AllPoints& density);
+/// @brief The relative tolerance for averages
+static constexpr double AverageTolerance = 0.05;
 
-/// @brief To store parameters, kernels and optimization algorithms to use.
-/// And, to optimize parameters, and then predict density matrix and given point.
+/// @brief To store parameters, kernels and optimization algorithms to use. @b
+/// Also, to optimize parameters, and then predict density matrix and given point.
 class Optimization final
 {
 public:
-	/// @brief The return type of optimization routine.
-	/// First is the total error (MSE, log likelihood, etc) of all elements of density matrix.
+	/// @brief The type of optimization that decides the parameters
+	enum OptimizationType
+	{
+		/// @brief Default, in case a type is needed but not the following
+		Default,
+		/// @brief Local optimization with previous parameters
+		LocalPrevious,
+		/// @brief Local optimization with initial parameters
+		LocalInitial,
+		/// @brief Global optimization
+		Global
+	};
+
+	/// @brief The return type of optimization routine. @n
+	/// First is the total error (MSE, log likelihood, etc) of all elements of density matrix. @n
 	/// Second is a vector of std::size_t, containing the optimization steps of each element
-	using Result = std::tuple<double, std::vector<std::size_t>>;
+	using Result = std::tuple<double, std::vector<std::size_t>, OptimizationType>;
 
 	/// @brief Constructor. Initial parameters, kernels and optimization algorithms needed
 	/// @param[in] InitParams InitialParameters object containing position, momentum, etc
 	/// @param[in] InitialTotalEnergy The total energy of the system used for energy conservation
 	/// @param[in] InitialPurity The purity of the partial Wigner transformed density matrix, used for purity conservation
-	/// @param[in] LocalAlgorithm The optimization algorithm for local optimization
+	/// @param[in] LocalDiagonalAlgorithm The optimization algorithm for local optimization of diagonal elements
+	/// @param[in] LocalOffDiagonalAlgorithm The optimization algorithm for local optimization of off-diagonal elements
 	/// @param[in] ConstraintAlgorithm The optimization algorithm for local optimization with constraints (population, energy, purity, etc)
 	/// @param[in] GlobalAlgorithm The optimization algorithm for global optimization
 	/// @param[in] GlobalSubAlgorithm The subsidiary local optimization algorithm used in global optimization if needed
@@ -37,7 +48,8 @@ public:
 		const InitialParameters& InitParams,
 		const double InitialTotalEnergy,
 		const double InitialPurity,
-		const nlopt::algorithm LocalAlgorithm = nlopt::algorithm::LD_SLSQP,
+		const nlopt::algorithm LocalDiagonalAlgorithm = nlopt::algorithm::LN_NELDERMEAD,
+		const nlopt::algorithm LocalOffDiagonalAlgorithm = nlopt::algorithm::LN_NELDERMEAD,
 		const nlopt::algorithm ConstraintAlgorithm = nlopt::algorithm::LD_SLSQP,
 		const nlopt::algorithm GlobalAlgorithm = nlopt::algorithm::GN_DIRECT_L,
 		const nlopt::algorithm GlobalSubAlgorithm = nlopt::algorithm::LD_MMA

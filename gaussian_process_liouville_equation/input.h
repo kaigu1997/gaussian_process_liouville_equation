@@ -43,9 +43,9 @@ private:
 	/// @brief The time interval for evolution
 	const double dt;
 	/// @brief The time interval to redo the paramter optimization (in a.u.)
-	const double ReoptimizationTime;
+	const double ReoptimizationFrequency;
 	/// @brief The time interval to give outputs (in a.u.)
-	const double OutputTime;
+	const double OutputFrequency;
 	/// @brief The size of training set for parameter optimization
 	const std::size_t NumberOfSelectedPoints;
 	/// @brief The maximum number of dt to finish the evolution
@@ -128,7 +128,7 @@ public:
 	/// @return Re-selection frequency, i.e. to re-select point by fitting current distribution every how many dt
 	std::size_t get_reoptimize_freq(void) const
 	{
-		return static_cast<std::size_t>(ReoptimizationTime / dt);
+		return ReoptimizationFrequency;
 	}
 
 	/// @brief To get output frequency
@@ -136,8 +136,7 @@ public:
 	/// @details To do less model-training, the program guarantees that there will be reselection at each output time
 	std::size_t get_output_freq(void) const
 	{
-		return static_cast<std::size_t>(OutputTime / ReoptimizationTime)
-			* static_cast<std::size_t>(ReoptimizationTime / dt);
+		return OutputFrequency;
 	}
 
 	/// @brief To get dt
@@ -166,6 +165,6 @@ public:
 /// @brief To return the instance of @p InitialParameters
 /// @param[in] input_file_name The input file name
 /// @return Initial parameters
-InitialParameters read_input(const std::string_view& input_file_name);
+InitialParameters read_input(const std::string_view input_file_name);
 
 #endif // !INPUT_H

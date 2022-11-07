@@ -33,18 +33,12 @@ std::complex<double> initial_distribution(
 
 /// @brief To generate the extra points for the density fitting
 /// @param[in] density The selected points in phase space for each element of density matrices
-/// @param[in] NumPoints The number of points for each elements
-/// @param[in] mass Mass of classical degree of freedom
-/// @param[in] dt Time interval
-/// @param[in] NumTicks Number of @p dt since T=0; i.e., now is @p NumTicks * @p dt
+/// @param[in] NumExtraPoints The number of extra selected points for each elements
 /// @param[in] distribution The current distribution
 /// @return The newly selected points with its corresponding distribution
 AllPoints generate_extra_points(
 	const AllPoints& density,
-	const std::size_t NumPoints,
-	const ClassicalVector<double>& mass,
-	const double dt,
-	const std::size_t NumTicks,
+	const std::size_t NumExtraPoints,
 	const DistributionFunction& distribution
 );
 
@@ -63,7 +57,7 @@ public:
 	/// @brief Constructor. Initialization of parameters.
 	/// @param[in] InitialDisplacement The initial guess of displacement
 	/// @param[in] InitialSteps The initial guess of the number of monte carlo steps
-	MCParameters(const double InitialDisplacement, const std::size_t InitialSteps = 200):
+	MCParameters(const std::size_t InitialSteps = 200, const double InitialDisplacement = 1.0):
 		NOMC(InitialSteps), displacement(InitialDisplacement)
 	{
 	}
@@ -98,58 +92,31 @@ public:
 };
 
 /// @brief Using Metropolis Monte Carlo to select points
-/// @param[in] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
-/// @param[in] mass Mass of classical degree of freedom
-/// @param[in] dt Time interval
-/// @param[in] NumTicks Number of @p dt since T=0; i.e., now is @p NumTicks * @p dt
-/// @param[in] distribution The function object to generate the distribution
 /// @param[inout] density The selected points in phase space for each element of density matrices
+/// @param[inout] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
+/// @param[in] distribution The function object to generate the distribution
 void monte_carlo_selection(
-	const MCParameters& MCParams,
-	const ClassicalVector<double>& mass,
-	const double dt,
-	const std::size_t NumTicks,
-	const DistributionFunction& distribution,
-	AllPoints& density
-);
-
-/// @brief To optimize the number of the monte carlo steps by autocorrelation
-/// @param[inout] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
-/// @param[in] distribution The function object to generate the distribution
-/// @param[in] density The selected points in phase space for each element of density matrices
-/// @return The autocorrelation of all tested number of steps
-AutoCorrelations autocorrelation_optimize_steps(
-	MCParameters& MCParams,
-	const DistributionFunction& distribution,
-	const AllPoints& density
-);
-
-/// @brief To optimize the number of the monte carlo steps by autocorrelation
-/// @param[inout] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
-/// @param[in] distribution The function object to generate the distribution
-/// @param[in] density The selected points in phase space for each element of density matrices
-/// @return The autocorrelation of all tested displacements
-AutoCorrelations autocorrelation_optimize_displacement(
-	MCParameters& MCParams,
-	const DistributionFunction& distribution,
-	const AllPoints& density
+	AllPoints& density,
+	QuantumStorage<MCParameters>& MCParams,
+	const DistributionFunction& distribution
 );
 
 /// @brief To select points for new elements of density matrix
 /// @param[inout] density The selected points in phase space for each element of density matrices
 /// @param[in] extra_points The extra selected points
-/// @param[in] IsNew The matrix that saves whether the element is newly populated or not
+/// @param[in] IsSmallOld Whether the element is small at last step or not
+/// @param[in] IsSmall Whether the element is small at current step or not
+/// @param[in] MCParams Monte carlo parameters (number of steps, maximum displacement, etc)
 /// @param[in] mass Mass of classical degree of freedom
 /// @param[in] dt Time interval
 /// @param[in] NumTicks Number of @p dt since T=0; i.e., now is @p NumTicks * @p dt
 /// @param[in] distribution The function object to generate the distribution
 void new_element_point_selection(
 	AllPoints& density,
-	const AllPoints& extra_points,
-	const QuantumMatrix<bool>& IsNew,
-	const ClassicalVector<double>& mass,
-	const double dt,
-	const std::size_t NumTicks,
+	AllPoints& extra_points,
+	const QuantumStorage<bool>& IsSmallOld,
+	const QuantumStorage<bool>& IsSmall,
+	QuantumStorage<MCParameters>& MCParams,
 	const DistributionFunction& distribution
 );
 

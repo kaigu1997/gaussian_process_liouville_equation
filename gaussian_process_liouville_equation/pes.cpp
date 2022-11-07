@@ -99,16 +99,52 @@ static Tensor3d diabatic_force(const ClassicalVector<double>& x)
 /// and is the transformation matrix at a certain position x.
 static QuantumMatrix<double> diabatic_to_adiabatic_matrix(const ClassicalVector<double>& x)
 {
-	const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(diabatic_potential(x));
-	return solver.eigenvectors();
+	if constexpr (NumPES == 1)
+	{
+		return QuantumMatrix<double>::Identity();
+	}
+	else if constexpr (NumPES == 2)
+	{
+		const QuantumMatrix<double> diaH = diabatic_potential(x);
+		QuantumMatrix<double> result;
+		result.row(0) << -1.0, 1.0;
+		result.row(0) *= std::sqrt(std::norm(diaH(0, 0) - diaH(1, 1)) + 4.0 * std::norm(diaH(0, 1)));
+		result.row(0).array() += diaH(0, 0) - diaH(1, 1);
+		result.row(0) /= 2.0 * diaH(1, 0);
+		result.row(1).setOnes();
+		result.array().rowwise() /= result.array().colwise().norm();
+		return result;
+	}
+	else
+	{
+		const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(diabatic_potential(x));
+		return solver.eigenvectors();
+	}
 }
 
 /// @sa diabatic_to_adiabatic_matrix(), diabatic_potential()
 /// @details This function calculates from the diabatic potential by calculating the eigenvalues as the diagonal elements
 QuantumVector<double> adiabatic_potential(const ClassicalVector<double>& x)
 {
-	const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(diabatic_potential(x));
-	return solver.eigenvalues();
+	if constexpr (NumPES == 1)
+	{
+		return diabatic_potential(x);
+	}
+	else if constexpr (NumPES == 2)
+	{
+		const QuantumMatrix<double> diaH = diabatic_potential(x);
+		QuantumVector<double> result;
+		result << -1.0, 1.0;
+		result *= std::sqrt(std::norm(diaH(0, 0) - diaH(1, 1)) + std::norm(2.0 * diaH(1, 0)));
+		result.array() += diaH(0, 0) + diaH(1, 1);
+		result /= 2.0;
+		return result;
+	}
+	else
+	{
+		const Eigen::SelfAdjointEigenSolver<QuantumMatrix<double>> solver(diabatic_potential(x));
+		return solver.eigenvalues();
+	}
 }
 
 /// @sa diabatic_to_adiabatic_matrix(), diabatic_force(), adiabatic_potential()
@@ -118,9 +154,8 @@ QuantumVector<double> adiabatic_potential(const ClassicalVector<double>& x)
 Tensor3d adiabatic_force(const ClassicalVector<double>& x)
 {
 	Tensor3d result = diabatic_force(x);
-	;
 	const QuantumMatrix<double>& TransformMatrix = diabatic_to_adiabatic_matrix(x);
-	for (std::size_t iDim = 0; iDim < Dim; iDim++)
+	for (const std::size_t iDim : std::ranges::iota_view{0ul, Dim})
 	{
 		// slice the force out using Eigen mapping
 		// because both of them are row-major, no stride needed
@@ -139,11 +174,11 @@ Tensor3d adiabatic_coupling(const ClassicalVector<double>& x)
 	Tensor3d NAC = xt::zeros<Tensor3d::value_type>(Tensor3d::shape_type{});
 	const Eigen::VectorXd& E = adiabatic_potential(x);
 	const Tensor3d& F = adiabatic_force(x);
-	for (std::size_t i = 0; i < Dim; i++)
+	for (const std::size_t i : std::ranges::iota_view{0ul, Dim})
 	{
-		for (std::size_t j = 1; j < NumPES; j++)
+		for (const std::size_t j : std::ranges::iota_view{1ul, NumPES})
 		{
-			for (std::size_t k = 0; k < j; k++)
+			for (const std::size_t k : std::ranges::iota_view{0ul, j})
 			{
 				NAC(i, j, k) = F(i, j, k) / (E[j] - E[k]);
 				NAC(i, k, j) = -NAC(i, j, k);

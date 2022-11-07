@@ -19,9 +19,9 @@ Eigen::MatrixXd delta_kernel(const PhasePoints& LeftFeature, const PhasePoints& 
 		std::execution::par_unseq,
 		indices.cbegin(),
 		indices.cend(),
-		[&result, &LeftFeature, &RightFeature, Rows](std::size_t iCol) -> void
+		[&result, &LeftFeature, &RightFeature, Rows](const std::size_t iCol) -> void
 		{
-			for (std::size_t iRow = 0; iRow < Rows; iRow++)
+			for (const std::size_t iRow : std::ranges::iota_view{0ul, Rows})
 			{
 				result(iRow, iCol) = static_cast<double>(LeftFeature.col(iRow) == RightFeature.col(iCol));
 			}
@@ -54,13 +54,13 @@ static Eigen::MatrixXd gaussian_kernel(
 		std::execution::par_unseq,
 		indices.cbegin(),
 		indices.cend(),
-		[&result, &calculate_element, Rows, IsTrainingSet](std::size_t iCol) -> void
+		[&result, &calculate_element, Rows, IsTrainingSet](const std::size_t iCol) -> void
 		{
 			// column major
 			if (IsTrainingSet)
 			{
 				// training set, the matrix is symmetric
-				for (std::size_t iRow = iCol + 1; iRow < Rows; iRow++)
+				for (const std::size_t iRow : std::ranges::iota_view{iCol + 1, Rows})
 				{
 					result(iRow, iCol) += calculate_element(iRow, iCol);
 				}
@@ -68,7 +68,7 @@ static Eigen::MatrixXd gaussian_kernel(
 			else
 			{
 				// general rectangular
-				for (std::size_t iRow = 0; iRow < Rows; iRow++)
+				for (const std::size_t iRow : std::ranges::iota_view{0ul, Rows})
 				{
 					result(iRow, iCol) += calculate_element(iRow, iCol);
 				}
@@ -117,16 +117,16 @@ static std::array<Eigen::MatrixXd, PhaseDim> gaussian_derivative_over_char_lengt
 		std::execution::par_unseq,
 		indices.cbegin(),
 		indices.cend(),
-		[&result, &calculate_factor, Rows, IsTrainingSet](std::size_t iCol) -> void
+		[&result, &calculate_factor, Rows, IsTrainingSet](const std::size_t iCol) -> void
 		{
 			// column major
 			if (IsTrainingSet)
 			{
 				// training set, the matrix is symmetric
-				for (std::size_t iRow = iCol + 1; iRow < Rows; iRow++)
+				for (const std::size_t iRow : std::ranges::iota_view{iCol + 1, Rows})
 				{
 					const ClassicalPhaseVector& factor = calculate_factor(iRow, iCol);
-					for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+					for (const std::size_t iDim : std::ranges::iota_view{0ul, PhaseDim})
 					{
 						result[iDim](iRow, iCol) *= factor[iDim];
 					}
@@ -135,10 +135,10 @@ static std::array<Eigen::MatrixXd, PhaseDim> gaussian_derivative_over_char_lengt
 			else
 			{
 				// general rectangular
-				for (std::size_t iRow = 0; iRow < Rows; iRow++)
+				for (const std::size_t iRow : std::ranges::iota_view{0ul, Rows})
 				{
 					const ClassicalPhaseVector& factor = calculate_factor(iRow, iCol);
-					for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+					for (const std::size_t iDim : std::ranges::iota_view{0ul, PhaseDim})
 					{
 						result[iDim](iRow, iCol) *= factor[iDim];
 					}
@@ -149,7 +149,7 @@ static std::array<Eigen::MatrixXd, PhaseDim> gaussian_derivative_over_char_lengt
 	if (IsTrainingSet)
 	{
 		// training set, the matrix is symmetric
-		for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+		for (const std::size_t iDim : std::ranges::iota_view{0ul, PhaseDim})
 		{
 			// as it is symmetric, only lower part of the matrix are necessary to calculate
 			result[iDim].diagonal() = Eigen::VectorXd::Zero(Rows);
@@ -159,14 +159,14 @@ static std::array<Eigen::MatrixXd, PhaseDim> gaussian_derivative_over_char_lengt
 	return result;
 }
 
-/// @brief To calculate the derivatives over parameters
+/// @brief To calculate the derivative over parameters
 /// @param[in] KernelParams Deserialized parameters of gaussian kernel
 /// @param[in] LeftFeature The left feature
 /// @param[in] RightFeature The right feature
 /// @param[in] KernelMatrix The kernel matrix
 /// @return The derivative of kernel matrix over parameters
-static Kernel::ParameterArray<Eigen::MatrixXd> calculate_derivatives(
-	const Kernel::KernelParameter& KernelParams,
+static KernelBase::ParameterArray<Eigen::MatrixXd> calculate_derivative(
+	const KernelBase::KernelParameter& KernelParams,
 	const PhasePoints& LeftFeature,
 	const PhasePoints& RightFeature,
 	const Eigen::MatrixXd& KernelMatrix
@@ -174,14 +174,15 @@ static Kernel::ParameterArray<Eigen::MatrixXd> calculate_derivatives(
 {
 	const std::size_t Rows = LeftFeature.cols(), Cols = RightFeature.cols();
 	[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
-	Kernel::ParameterArray<Eigen::MatrixXd> result;
+	KernelBase::ParameterArray<Eigen::MatrixXd> result;
 	result.fill(KernelMatrix);
 	std::size_t iParam = 0;
 	// first, magnitude
 	result[iParam] *= 2.0 / Magnitude;
 	iParam++;
 	// second, Gaussian
-	const std::array<Eigen::MatrixXd, PhaseDim> GaussianDerivOverCharLength = [&LeftFeature, &RightFeature, &KernelMatrix, &CharLength = CharLength, Noise = Magnitude * Noise](void) -> std::array<Eigen::MatrixXd, PhaseDim>
+	const std::array<Eigen::MatrixXd, PhaseDim> GaussianDerivOverCharLength =
+		[&LeftFeature, &RightFeature, &KernelMatrix, &CharLength, Noise = Magnitude * Noise](void) -> std::array<Eigen::MatrixXd, PhaseDim>
 	{
 		if (LeftFeature.data() == RightFeature.data())
 		{
@@ -195,7 +196,7 @@ static Kernel::ParameterArray<Eigen::MatrixXd> calculate_derivatives(
 			return gaussian_derivative_over_char_length(CharLength, LeftFeature, RightFeature, KernelMatrix);
 		}
 	}();
-	for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+	for (const std::size_t iDim : std::ranges::iota_view{0ul, PhaseDim})
 	{
 		result[iDim + iParam] = GaussianDerivOverCharLength[iDim];
 	}
@@ -213,7 +214,34 @@ static Kernel::ParameterArray<Eigen::MatrixXd> calculate_derivatives(
 	return result;
 }
 
-Kernel::Kernel(
+KernelBase::KernelBase(
+	const KernelParameter& Parameter,
+	const PhasePoints& left_feature,
+	const PhasePoints& right_feature,
+	const bool IsToCalculateDerivative
+):
+	// general calculations
+	KernelParams(Parameter),
+	LeftFeature(left_feature),
+	RightFeature(right_feature),
+	KernelMatrix(power<2>(std::get<0>(KernelParams)) * (gaussian_kernel(std::get<1>(KernelParams), LeftFeature, RightFeature) + power<2>(std::get<2>(KernelParams)) * delta_kernel(left_feature, right_feature))),
+	// calculation only for derivative
+	Derivatives(
+		IsToCalculateDerivative
+			? std::optional<ParameterArray<Eigen::MatrixXd>>(
+				calculate_derivative(
+					KernelParams,
+					left_feature,
+					right_feature,
+					KernelMatrix
+				)
+			)
+			: std::nullopt
+	)
+{
+}
+
+TrainingKernel::TrainingKernel(
 	const ParameterVector& Parameter,
 	const ElementTrainingSet& TrainingSet,
 	const bool IsToCalculateError,
@@ -221,22 +249,19 @@ Kernel::Kernel(
 	const bool IsToCalculateDerivative
 ):
 	// general calculations
-	LeftFeature(std::get<0>(TrainingSet)),
-	RightFeature(std::get<0>(TrainingSet)),
-	Params(Parameter),
-	KernelParams(
-		[&Parameter](void) -> KernelParameter
+	KernelBase(
+		[&Parameter](void) -> KernelBase::KernelParameter
 		{
 			assert(Parameter.size() == NumTotalParameters);
 			// have all the parameters
-			KernelParameter result;
+			KernelBase::KernelParameter result;
 			auto& [magnitude, char_length, noise] = result;
 			std::size_t iParam = 0;
 			// first, magnitude
 			magnitude = Parameter[iParam];
 			iParam++;
 			// second, Gaussian
-			for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+			for (const std::size_t iDim : std::ranges::iota_view{0ul, PhaseDim})
 			{
 				char_length[iDim] = Parameter[iDim + iParam];
 			}
@@ -245,28 +270,27 @@ Kernel::Kernel(
 			noise = Parameter[iParam];
 			iParam++;
 			return result;
-		}()
+		}(),
+		std::get<0>(TrainingSet),
+		std::get<0>(TrainingSet),
+		IsToCalculateDerivative
 	),
-	KernelMatrix(power<2>(std::get<0>(KernelParams)) * (gaussian_kernel(std::get<1>(KernelParams), LeftFeature, RightFeature) + power<2>(std::get<2>(KernelParams)) * Eigen::MatrixXd::Identity(LeftFeature.cols(), RightFeature.cols()))),
-	// calculations only for training set
-	Label(std::get<1>(TrainingSet).real()),
-	DecompositionOfKernel(Eigen::LDLT<Eigen::MatrixXd>(KernelMatrix)),
-	Inverse(DecompositionOfKernel->solve(Eigen::MatrixXd::Identity(KernelMatrix.rows(), KernelMatrix.cols()))),
-	InvLbl(DecompositionOfKernel->solve(Label.value())),
-	// calculation only for test set
-	Prediction(std::nullopt),
-	ElementwiseVariance(std::nullopt),
-	CutoffPrediction(std::nullopt),
+	Params(Parameter),
+	RescaleFactor(KernelBase::RescaleMaximum / std::get<1>(TrainingSet).real().array().abs().maxCoeff()),
+	Label(std::get<1>(TrainingSet).real() * RescaleFactor),
+	DecompositionOfKernel(KernelBase::get_kernel()),
+	Inverse(DecompositionOfKernel.solve(Eigen::MatrixXd::Identity(Label.size(), Label.size()))),
+	InvLbl(DecompositionOfKernel.solve(Label)),
 	// calculation only for error/averages (averages are only for training set set only)
-	Error(IsToCalculateError ? std::optional<double>((InvLbl->array() / Inverse->diagonal().array()).square().sum()) : std::nullopt),
+	Error(IsToCalculateError ? std::optional<double>((InvLbl.array() / Inverse.diagonal().array()).square().sum()) : std::nullopt),
 	Population(
 		IsToCalculateAverage
 			? std::optional<double>(
-				[&KernelParams = KernelParams, &v = InvLbl.value()](void) -> double
+				[&KernelParams = KernelBase::get_formatted_parameters(), &v = InvLbl, RescaleFactor = RescaleFactor](void) -> double
 				{
-					static constexpr double GlobalFactor = power<Dim>(2.0 * M_PI);
+					static constexpr double GlobalFactor = power<Dim>(2.0 * std::numbers::pi);
 					[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
-					return GlobalFactor * power<2>(Magnitude) * CharLength.prod() * v.sum();
+					return GlobalFactor * power<2>(Magnitude) * CharLength.prod() * v.sum() / RescaleFactor;
 				}()
 			)
 			: std::nullopt
@@ -274,53 +298,48 @@ Kernel::Kernel(
 	FirstOrderAverage(
 		IsToCalculateAverage
 			? std::optional<ClassicalPhaseVector>(
-				[&feature = LeftFeature, &KernelParams = KernelParams, &v = InvLbl.value()](void) -> ClassicalPhaseVector
+				[&feature = std::get<0>(TrainingSet),
+				 &KernelParams = KernelBase::get_formatted_parameters(),
+				 &v = InvLbl,
+				 RescaleFactor = RescaleFactor](void) -> ClassicalPhaseVector
 				{
-					static constexpr double GlobalFactor = power<Dim>(2.0 * M_PI);
+					static constexpr double GlobalFactor = power<Dim>(2.0 * std::numbers::pi);
 					[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
-					return GlobalFactor * power<2>(Magnitude) * CharLength.prod() * feature * v;
+					return GlobalFactor * power<2>(Magnitude) * CharLength.prod() * feature * v / RescaleFactor;
 				}()
 			)
 			: std::nullopt
 	),
-	PurityAuxiliaryParams(construct_purity_auxiliary_kernel_params(KernelParams)),
+	PurityAuxiliaryParams(construct_purity_auxiliary_kernel_params(KernelBase::get_formatted_parameters())),
 	PurityAuxiliaryKernel(
 		IsToCalculateAverage
-			? std::make_unique<Kernel>(
+			? std::optional<KernelBase>(
+				std::in_place,
 				PurityAuxiliaryParams.value(),
-				LeftFeature,
-				RightFeature,
+				std::get<0>(TrainingSet),
+				std::get<0>(TrainingSet),
 				IsToCalculateDerivative
 			)
-			: nullptr
+			: std::nullopt
 	),
 	Purity(
 		IsToCalculateAverage
 			? std::optional<double>(
-				[&v = InvLbl.value(), &K1 = PurityAuxiliaryKernel->KernelMatrix](void) -> double
+				[&v = InvLbl, &K1 = PurityAuxiliaryKernel->get_kernel(), RescaleFactor = RescaleFactor](void) -> double
 				{
-					static constexpr double GlobalFactor = PurityFactor * power<Dim>(M_PI);
-					return GlobalFactor * (v.transpose() * K1 * v).value();
+					static constexpr double GlobalFactor = PurityFactor * power<Dim>(std::numbers::pi);
+					return GlobalFactor * (v.transpose() * K1 * v).value() / power<2>(RescaleFactor);
 				}()
 			)
 			: std::nullopt
 	),
-	// calculation only for derivatives (items apart from derivative of kernel are for training set only)
-	Derivatives(
-		IsToCalculateDerivative
-			? std::optional<ParameterArray<Eigen::MatrixXd>>(calculate_derivatives(
-				KernelParams,
-				std::get<0>(TrainingSet),
-				std::get<0>(TrainingSet),
-				KernelMatrix
-			)
-			)
-			: std::nullopt
-	),
+	// calculation only for derivative (items apart from derivative of kernel are for training set only)
 	InverseDerivatives(
 		IsToCalculateDerivative
 			? std::optional<ParameterArray<Eigen::MatrixXd>>(
-				[&KernelParams = KernelParams, &Inverse = Inverse.value(), &Derivatives = Derivatives.value()](void) -> ParameterArray<Eigen::MatrixXd>
+				[&KernelParams = KernelBase::get_formatted_parameters(),
+				 &Inverse = Inverse,
+				 &Derivatives = KernelBase::get_derivative()](void) -> ParameterArray<Eigen::MatrixXd>
 				{
 					[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 					ParameterArray<Eigen::MatrixXd> result;
@@ -330,7 +349,7 @@ Kernel::Kernel(
 					result[iParam] *= -2.0 / Magnitude;
 					iParam++;
 					// second, Gaussian
-					for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+					for (const std::size_t iDim : std::ranges::iota_view{0ul, PhaseDim})
 					{
 						result[iDim + iParam] = -Inverse * Derivatives[iDim + iParam] * Inverse;
 					}
@@ -346,10 +365,10 @@ Kernel::Kernel(
 	InvLblDerivatives(
 		IsToCalculateDerivative
 			? std::optional<ParameterArray<Eigen::VectorXd>>(
-				[&y = Label.value(), &InverseDerivatives = InverseDerivatives.value()](void) -> ParameterArray<Eigen::VectorXd>
+				[&y = Label, &InverseDerivatives = InverseDerivatives.value()](void) -> ParameterArray<Eigen::VectorXd>
 				{
 					ParameterArray<Eigen::VectorXd> result;
-					for (std::size_t iParam = 0; iParam < NumTotalParameters; iParam++)
+					for (const std::size_t iParam : std::ranges::iota_view{0ul, NumTotalParameters})
 					{
 						result[iParam] = InverseDerivatives[iParam] * y;
 					}
@@ -358,19 +377,19 @@ Kernel::Kernel(
 			)
 			: std::nullopt
 	),
-	// calculation for both error/average and derivatives
+	// calculation for both error/average and derivative
 	ErrorDerivatives(
 		IsToCalculateError && IsToCalculateDerivative
 			? std::optional<ParameterArray<double>>(
-				[&Inverse = Inverse.value(),
-				 &v = InvLbl.value(),
+				[&Inverse = Inverse,
+				 &v = InvLbl,
 				 &InverseDerivatives = InverseDerivatives.value(),
 				 &vDerivatives = InvLblDerivatives.value()](void) -> ParameterArray<double>
 				{
 					ParameterArray<double> result;
 					const auto& InvDiag = Inverse.diagonal().array();
 					const auto& Diff = v.array() / InvDiag;
-					for (std::size_t iParam = 0; iParam < NumTotalParameters; iParam++)
+					for (const std::size_t iParam : std::ranges::iota_view{0ul, NumTotalParameters})
 					{
 						result[iParam] = 2.0 * (Diff / InvDiag * (vDerivatives[iParam].array() - Diff * InverseDerivatives[iParam].diagonal().array())).sum();
 					}
@@ -382,9 +401,12 @@ Kernel::Kernel(
 	PopulationDerivatives(
 		IsToCalculateAverage && IsToCalculateDerivative
 			? std::optional<ParameterArray<double>>(
-				[&KernelParams = KernelParams, &v = InvLbl.value(), &vDerivatives = InvLblDerivatives.value()](void) -> ParameterArray<double>
+				[&KernelParams = KernelBase::get_formatted_parameters(),
+				 &v = InvLbl,
+				 &vDerivatives = InvLblDerivatives.value(),
+				 RescaleFactor = RescaleFactor](void) -> ParameterArray<double>
 				{
-					static constexpr double GlobalFactor = power<Dim>(2.0 * M_PI);
+					static constexpr double GlobalFactor = power<Dim>(2.0 * std::numbers::pi);
 					[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 					const double ThisTimeFactor = GlobalFactor * power<2>(Magnitude) * CharLength.prod();
 					ParameterArray<double> result;
@@ -393,14 +415,19 @@ Kernel::Kernel(
 					result[iParam] = 0.0;
 					iParam++;
 					// second, Gaussian
-					for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+					for (const std::size_t iDim : std::ranges::iota_view{0ul, PhaseDim})
 					{
-						result[iParam] = ThisTimeFactor * (v.sum() / CharLength[iDim] + vDerivatives[iParam].sum());
-						iParam++;
+						result[iParam + iDim] = ThisTimeFactor * (v.sum() / CharLength[iDim] + vDerivatives[iParam + iDim].sum());
 					}
+					iParam += PhaseDim;
 					// third, noise
 					result[iParam] = ThisTimeFactor * vDerivatives[iParam].sum();
 					iParam++;
+					// divide over rescale factor
+					for (double& d : result)
+					{
+						d /= RescaleFactor;
+					}
 					return result;
 				}()
 			)
@@ -409,13 +436,14 @@ Kernel::Kernel(
 	PurityDerivatives(
 		IsToCalculateAverage && IsToCalculateDerivative
 			? std::optional<ParameterArray<double>>(
-				[&KernelParams = KernelParams,
-				 &v = InvLbl.value(),
-				 &K1 = PurityAuxiliaryKernel->KernelMatrix,
+				[&KernelParams = KernelBase::get_formatted_parameters(),
+				 &v = InvLbl,
+				 &K1 = PurityAuxiliaryKernel->get_kernel(),
 				 &vDerivatives = InvLblDerivatives.value(),
-				 &K1Derivatives = PurityAuxiliaryKernel->Derivatives.value()](void) -> ParameterArray<double>
+				 &K1Derivatives = PurityAuxiliaryKernel->get_derivative(),
+				 RescaleFactor = RescaleFactor](void) -> ParameterArray<double>
 				{
-					static constexpr double GlobalFactor = PurityFactor * power<Dim>(M_PI);
+					static constexpr double GlobalFactor = PurityFactor * power<Dim>(std::numbers::pi);
 					[[maybe_unused]] const auto& [Magnitude, CharLength, Noise] = KernelParams;
 					ParameterArray<double> result;
 					std::size_t iParam = 0;
@@ -423,18 +451,25 @@ Kernel::Kernel(
 					result[iParam] = 0.0;
 					iParam++;
 					// second, Gaussian
-					for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+					for (const std::size_t iDim : std::ranges::iota_view{0ul, PhaseDim})
 					{
 						const Eigen::VectorXd& v_deriv = vDerivatives[iDim + iParam];
 						// as the characteristic lengths is changed in K1,
 						// the result needed to multiply with the amplitude factor, sqrt(2)
-						result[iDim + iParam] = GlobalFactor * (v.transpose() * (K1 / CharLength[iDim] + M_SQRT2 * K1Derivatives[iDim + iParam]) * v).value()
-							+ GlobalFactor * 2.0 * (v_deriv.transpose() * K1 * v).value();
+						result[iDim + iParam] =
+							(v.transpose() * (K1 / CharLength[iDim] + std::numbers::sqrt2 * K1Derivatives[iDim + iParam]) * v).value()
+							+ 2.0 * (v_deriv.transpose() * K1 * v).value();
+						result[iDim + iParam] *= GlobalFactor;
 					}
 					iParam += PhaseDim;
 					// third, noise
 					result[iParam] = 2.0 * GlobalFactor * (vDerivatives[iParam].transpose() * K1 * v).value();
 					iParam++;
+					// divide over rescale factor
+					for (double& d : result)
+					{
+						d /= power<2>(RescaleFactor);
+					}
 					return result;
 				}()
 			)
@@ -443,56 +478,26 @@ Kernel::Kernel(
 {
 }
 
-Kernel::Kernel(
-	const KernelParameter& Parameter,
-	const PhasePoints& left_feature,
-	const PhasePoints& right_feature,
-	const bool IsToCalculateDerivative
-):
-	// general calculations
-	LeftFeature(left_feature),
-	RightFeature(right_feature),
-	KernelParams(Parameter),
-	KernelMatrix(power<2>(std::get<0>(KernelParams)) * (gaussian_kernel(std::get<1>(KernelParams), LeftFeature, RightFeature) + power<2>(std::get<2>(KernelParams)) * delta_kernel(left_feature, right_feature))),
-	// calculations only for training set
-	// calculation only for test set
-	// calculation only for error/averages (averages are only for training set set only)
-	// calculation only for derivatives (items apart from derivative of kernel are for training set only)
-	Derivatives(
-		IsToCalculateDerivative
-			? std::optional<ParameterArray<Eigen::MatrixXd>>(calculate_derivatives(
-				KernelParams,
-				LeftFeature,
-				RightFeature,
-				KernelMatrix
-			))
-			: std::nullopt
-	)
-// calculation for both average and derivatives
-{
-}
-
-Kernel::Kernel(
+PredictiveKernel::PredictiveKernel(
 	const PhasePoints& TestFeature,
-	const Kernel& TrainingKernel,
+	const TrainingKernel& kernel,
 	const bool IsToCalculateDerivative,
 	const std::optional<Eigen::VectorXd> TestLabel
 ):
 	// general calculations
-	LeftFeature(TestFeature),
-	RightFeature(TrainingKernel.LeftFeature),
-	Params(TrainingKernel.Params),
-	KernelParams(TrainingKernel.KernelParams),
-	KernelMatrix(power<2>(std::get<0>(KernelParams)) * (gaussian_kernel(std::get<1>(KernelParams), LeftFeature, RightFeature) + power<2>(std::get<2>(KernelParams)) * delta_kernel(LeftFeature, RightFeature))),
-	// calculations only for training set
-	Label(TestLabel),
-	// calculation only for test set
-	Prediction(KernelMatrix * TrainingKernel.InvLbl.value()),
+	KernelBase(
+		kernel.get_formatted_parameters(),
+		TestFeature,
+		kernel.get_left_feature(),
+		IsToCalculateDerivative
+	),
+	RescaleFactor(kernel.get_rescale_factor()),
+	Prediction(KernelBase::get_kernel() * kernel.get_inverse_times_label()),
 	ElementwiseVariance(
 		[&TestFeature,
-		 &KernelParams = KernelParams,
-		 &KernelMatrix = KernelMatrix,
-		 &TrainingKernelInverse = TrainingKernel.Inverse.value()](void) -> Eigen::VectorXd
+		 &KernelParams = KernelBase::get_formatted_parameters(),
+		 &KernelMatrix = KernelBase::get_kernel(),
+		 &TrainingKernelInverse = kernel.get_inverse()](void) -> Eigen::VectorXd
 		{
 			const std::size_t NumPoints = TestFeature.cols();
 			const auto indices = xt::arange(NumPoints);
@@ -501,42 +506,32 @@ Kernel::Kernel(
 				std::execution::par_unseq,
 				indices.cbegin(),
 				indices.cend(),
-				[&result, &KernelParams, &TestFeature, &KernelMatrix, &TrainingKernelInverse](std::size_t iCol) -> void
+				[&result, &KernelParams, &TestFeature, &KernelMatrix, &TrainingKernelInverse](const std::size_t iCol) -> void
 				{
-					const auto& col = PhasePoints::Map(TestFeature.col(iCol).data(), PhaseDim, 1);
-					result(iCol) = Kernel(KernelParams, col, col, false).KernelMatrix.value()
+					const auto& col = ClassicalPhaseVector::Map(TestFeature.col(iCol).data());
+					result(iCol) = KernelBase(KernelParams, col, col, false).get_kernel().value()
 						- (KernelMatrix.row(iCol) * TrainingKernelInverse * KernelMatrix.row(iCol).transpose()).value();
 				}
 			);
 			return result;
 		}()
 	),
-	CutoffPrediction(Prediction.value().array() * cutoff_factor(Prediction.value(), ElementwiseVariance.value()).array()),
-	// calculation only for error/averages (averages are only for training set set only)
-	Error(Label.has_value() ? std::optional<double>((Prediction.value() - Label.value()).squaredNorm()) : std::nullopt),
-	// calculation only for derivatives (items apart from derivative of kernel are for training set only)
-	Derivatives(
-		IsToCalculateDerivative
-			? std::optional<ParameterArray<Eigen::MatrixXd>>(calculate_derivatives(
-				KernelParams,
-				LeftFeature,
-				RightFeature,
-				KernelMatrix
-			))
-			: std::nullopt
-	),
-	// calculation for both average and derivatives
+	CutoffPrediction(Prediction.array() * cutoff_factor(Prediction, ElementwiseVariance).array() / RescaleFactor),
+	// calculation only for error
+	Label(TestLabel.has_value() ? std::optional<Eigen::VectorXd>(TestLabel.value() * RescaleFactor) : std::nullopt),
+	Error(Label.has_value() ? std::optional<double>((Prediction - Label.value()).squaredNorm()) : std::nullopt),
+	// calculation for both error and derivative
 	ErrorDerivatives(
 		Label.has_value() && IsToCalculateDerivative
 			? std::optional<ParameterArray<double>>(
-				[PredictionDifference = Prediction.value().real() - Label.value(),
-				 &KernelMatrix = KernelMatrix,
-				 &v = TrainingKernel.InvLbl.value(),
-				 &Derivatives = Derivatives.value(),
-				 &vDerivatives = TrainingKernel.InvLblDerivatives.value()](void) -> ParameterArray<double>
+				[PredictionDifference = CutoffPrediction * RescaleFactor - Label.value(),
+				 &KernelMatrix = KernelBase::get_kernel(),
+				 &v = kernel.get_inverse_times_label(),
+				 &Derivatives = KernelBase::get_derivative(),
+				 &vDerivatives = kernel.get_inverse_times_label_derivative()](void) -> ParameterArray<double>
 				{
 					ParameterArray<double> result;
-					for (std::size_t iParam = 0; iParam < NumTotalParameters; iParam++)
+					for (const std::size_t iParam : std::ranges::iota_view{0ul, NumTotalParameters})
 					{
 						result[iParam] = 2.0 * PredictionDifference.dot(Derivatives[iParam] * v + KernelMatrix * vDerivatives[iParam]);
 					}

@@ -34,17 +34,16 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
-#include <map>
 #include <memory>
+#include <numbers>
 #include <numeric>
 #include <optional>
 #include <random>
+#include <ranges>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <tuple>
 #include <type_traits>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -81,21 +80,25 @@ public:
 };
 
 /// @brief To calculate power of numeric types
-/// @tparam n To calculate n-th power
+/// @tparam N To calculate n-th power
 /// @tparam T The input type
 /// @param t The value, could be integer or floating point
 /// @return Its nth power
-template <std::size_t n, typename T>
+template <std::size_t N, typename T>
+	requires std::is_arithmetic_v<std::decay_t<T>>
 inline constexpr T power([[maybe_unused]] const T t)
 {
-	static_assert(std::is_arithmetic_v<std::decay_t<T>>);
-	if constexpr (n == 0)
+	if constexpr (N == 0)
 	{
 		return 1;
 	}
+	else if constexpr (N == 1)
+	{
+		return t;
+	}
 	else
 	{
-		return t * power<n - 1>(t);
+		return power<N / 2>(t) * power<N - N / 2>(t);
 	}
 }
 
@@ -119,7 +122,7 @@ constexpr std::size_t PhaseDim = Dim * 2;
 
 // other constants
 /// @brief The factor for purity. @f$ S=(2\pi\hbar)^D\int\mathrm{d}\Gamma\ \mathrm{Tr}\rho^2 @f$
-constexpr double PurityFactor = power<Dim>(2.0 * M_PI * hbar);
+constexpr double PurityFactor = power<Dim>(2.0 * std::numbers::pi * hbar);
 
 // formatters
 /// @brief Formatter for output vector
@@ -142,8 +145,8 @@ template <typename T>
 using EigenVector = std::vector<T, Eigen::aligned_allocator<T>>;
 /// @brief The vector to depict a phase space point (i.e. coordinate)
 using ClassicalPhaseVector = Eigen::Matrix<double, PhaseDim, 1>;
-/// @brief rank-3 tensor type for Force and NAC,
-/// based on Matrix with extra dimenstion from classical degree.
+/// @brief Rank-3 tensor type for Force and NAC,
+/// based on Matrix with extra dimenstion from classical degree. @n
 /// 1st rank is classical dim, 2nd is row in mat, 3rd is column in mat
 using Tensor3d = xt::xtensor_fixed<double, xt::xshape<Dim, NumPES, NumPES>>;
 /// @brief The type for bunches of phase space points, coordinates only, without information of density

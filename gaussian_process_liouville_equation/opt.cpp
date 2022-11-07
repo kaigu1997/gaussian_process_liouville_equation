@@ -25,31 +25,6 @@ using AnalyticalConstraintParameters = std::tuple<const AllTrainingSets&, const 
 static constexpr double InitialMagnitude = 1.0;
 /// @brief The initial weight for noise
 static constexpr double InitialNoise = 1e-2;
-/// @brief The number of parameters for all elements
-static constexpr std::size_t NumTotalParameters = Kernel::NumTotalParameters * NumPES + ComplexKernel::NumTotalParameters * NumOffDiagonalElements;
-
-QuantumMatrix<bool> is_very_small(const AllPoints& density)
-{
-	// squared value below this are regarded as 0
-	QuantumMatrix<bool> result;
-	// as density is symmetric, only lower-triangular elements needs evaluating
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
-		{
-			result(iPES, jPES) = std::all_of(
-				std::execution::par_unseq,
-				density(iPES, jPES).cbegin(),
-				density(iPES, jPES).cend(),
-				[iPES, jPES](const PhaseSpacePoint& psp) -> bool
-				{
-					return psp.get<1>() == 0.0;
-				}
-			);
-		}
-	}
-	return result.selfadjointView<Eigen::Lower>();
-}
 
 /// @brief To calculate the lower and upper bound for kernel
 /// @param[in] CharLengthLowerBound The lower bound for characteristic lengths
@@ -62,7 +37,7 @@ static Bounds calculate_kernel_bounds(
 {
 	const Bounds& KernelBounds = [&CharLengthLowerBound, &CharLengthUpperBound](void) -> Bounds
 	{
-		Bounds result{ParameterVector(Kernel::NumTotalParameters), ParameterVector(Kernel::NumTotalParameters)};
+		Bounds result{ParameterVector(KernelBase::NumTotalParameters), ParameterVector(KernelBase::NumTotalParameters)};
 		auto& [lb, ub] = result;
 		std::size_t iParam = 0;
 		// first, magnitude
@@ -70,12 +45,12 @@ static Bounds calculate_kernel_bounds(
 		ub[iParam] = InitialMagnitude;
 		iParam++;
 		// second, Gaussian
-		for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+		for (const std::size_t iDim : std::ranges::iota_view{0ul, PhaseDim})
 		{
-			lb[iParam] = CharLengthLowerBound[iDim];
-			ub[iParam] = CharLengthUpperBound[iDim];
-			iParam++;
+			lb[iParam + iDim] = CharLengthLowerBound[iDim];
+			ub[iParam + iDim] = CharLengthUpperBound[iDim];
 		}
+		iParam += PhaseDim;
 		// third, noise
 		lb[iParam] = InitialNoise;
 		ub[iParam] = InitialNoise;
@@ -96,7 +71,7 @@ static Bounds calculate_complex_kernel_bounds(
 {
 	const Bounds& ComplexKernelBounds = [&CharLengthLowerBound, &CharLengthUpperBound](void) -> Bounds
 	{
-		Bounds result{ParameterVector(ComplexKernel::NumTotalParameters), ParameterVector(ComplexKernel::NumTotalParameters)};
+		Bounds result{ParameterVector(ComplexKernelBase::NumTotalParameters), ParameterVector(ComplexKernelBase::NumTotalParameters)};
 		auto& [lb, ub] = result;
 		std::size_t iParam = 0;
 		// complex kernel, similarly
@@ -105,19 +80,19 @@ static Bounds calculate_complex_kernel_bounds(
 		ub[iParam] = InitialMagnitude;
 		iParam++;
 		// second, kernels
-		for (std::size_t iKernel = 0; iKernel < ComplexKernel::NumKernels; iKernel++)
+		for ([[maybe_unused]] const std::size_t iKernel : std::ranges::iota_view{0ul, ComplexKernelBase::NumKernels})
 		{
 			// first, magnitude
 			lb[iParam] = InitialMagnitude / 10.0;
 			ub[iParam] = InitialMagnitude * 10.0;
 			iParam++;
 			// second, Gaussian
-			for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+			for (const std::size_t iDim : std::ranges::iota_view{0ul, PhaseDim})
 			{
-				lb[iParam] = CharLengthLowerBound[iDim];
-				ub[iParam] = CharLengthUpperBound[iDim];
-				iParam++;
+				lb[iParam + iDim] = CharLengthLowerBound[iDim];
+				ub[iParam + iDim] = CharLengthUpperBound[iDim];
 			}
+			iParam += PhaseDim;
 		}
 		// third, noise
 		lb[iParam] = InitialNoise;
@@ -128,73 +103,21 @@ static Bounds calculate_complex_kernel_bounds(
 	return ComplexKernelBounds;
 }
 
-/// @brief To set up the bounds for the parameter
-/// @param[in] rSize The size of the box on all classical directions
-/// @return Lower and upper bounds
-static QuantumStorage<Bounds> calculate_bounds(const ClassicalPhaseVector& rSize)
-{
-	static constexpr double GaussKerMinCharLength = 1.0 / 100.0; // Minimal characteristic length for Gaussian kernel
-	const Bounds& KernelBounds = calculate_kernel_bounds(ClassicalPhaseVector::Ones() * GaussKerMinCharLength, rSize);
-	const Bounds& ComplexKernelBounds = calculate_complex_kernel_bounds(ClassicalPhaseVector::Ones() * GaussKerMinCharLength, rSize);
-	// then assignment
-	QuantumStorage<Bounds> result;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
-		{
-			if (iPES == jPES)
-			{
-				result(iPES) = KernelBounds;
-			}
-			else
-			{
-				result(iPES, jPES) = ComplexKernelBounds;
-			}
-		}
-	}
-	return result;
-}
-
-/// @brief To set up the bounds for the parameter
-/// @param[in] density The selected points in phase space of one element of density matrices
-/// @return Lower and upper bounds
-static QuantumStorage<Bounds> calculate_bounds(const AllPoints& density)
-{
-	QuantumStorage<Bounds> result;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
-		{
-			const ClassicalPhaseVector StdDev = calculate_standard_deviation_one_surface(density(iPES, jPES));
-			const ClassicalPhaseVector CharLengthLB = StdDev / std::sqrt(density(iPES, jPES).size()), CharLengthUB = 2.0 * StdDev;
-			if (iPES == jPES)
-			{
-				result(iPES) = calculate_kernel_bounds(CharLengthLB, CharLengthUB);
-			}
-			else
-			{
-				result(iPES, jPES) = calculate_complex_kernel_bounds(CharLengthLB, CharLengthUB);
-			}
-		}
-	}
-	return result;
-}
-
 /// @brief To transform local parameters to global parameters by ln
 /// @param[in] param The parameters for local optimizer, i.e., the normal parameter
 /// @return The parameters for global optimizer, i.e., the changed parameter
 static inline ParameterVector local_parameter_to_global(const ParameterVector& param)
 {
-	assert(param.size() == Kernel::NumTotalParameters || param.size() == ComplexKernel::NumTotalParameters);
+	assert(param.size() == KernelBase::NumTotalParameters || param.size() == ComplexKernelBase::NumTotalParameters);
 	ParameterVector result = param;
 	std::size_t iParam = 0;
-	if (param.size() == ComplexKernel::NumTotalParameters)
+	if (param.size() == ComplexKernelBase::NumTotalParameters)
 	{
 		// real, imaginary and noise to log
 		// first, magnitude
 		iParam++;
 		// second, real and imaginary kernel
-		for (std::size_t iKernel = 0; iKernel < ComplexKernel::NumKernels; iKernel++)
+		for ([[maybe_unused]] const std::size_t iKernel : std::ranges::iota_view{0ul, ComplexKernelBase::NumKernels})
 		{
 			// magnitude
 			result[iParam] = std::log(result[iParam]);
@@ -206,7 +129,7 @@ static inline ParameterVector local_parameter_to_global(const ParameterVector& p
 		result[iParam] = std::log(result[iParam]);
 		iParam++;
 	}
-	else // if (param.size() == Kernel::NumTotalParameters)
+	else // if (param.size() == KernelBase::NumTotalParameters)
 	{
 		// noise to log
 		// first, magnitude
@@ -231,17 +154,17 @@ static inline ParameterVector local_parameter_to_global(const ParameterVector& p
 /// the multiplication of the normal magnitude is needed.
 static inline ParameterVector local_gradient_to_global(const ParameterVector& param, const ParameterVector& grad)
 {
-	assert(param.size() == Kernel::NumTotalParameters || param.size() == ComplexKernel::NumTotalParameters);
+	assert(param.size() == KernelBase::NumTotalParameters || param.size() == ComplexKernelBase::NumTotalParameters);
 	assert(grad.size() == param.size() || grad.empty());
 	ParameterVector result = grad;
 	std::size_t iParam = 0;
-	if (result.size() == ComplexKernel::NumTotalParameters)
+	if (result.size() == ComplexKernelBase::NumTotalParameters)
 	{
 		// real, imaginary and noise to log
 		// first, magnitude
 		iParam++;
 		// second, real and imaginary kernel
-		for (std::size_t iKernel = 0; iKernel < ComplexKernel::NumKernels; iKernel++)
+		for ([[maybe_unused]] const std::size_t iKernel : std::ranges::iota_view{0ul, ComplexKernelBase::NumKernels})
 		{
 			// magnitude
 			result[iParam] *= param[iParam];
@@ -253,7 +176,7 @@ static inline ParameterVector local_gradient_to_global(const ParameterVector& pa
 		result[iParam] *= param[iParam];
 		iParam++;
 	}
-	else if (result.size() == Kernel::NumTotalParameters)
+	else if (result.size() == KernelBase::NumTotalParameters)
 	{
 		std::size_t iParam = 0;
 		// first, magnitude
@@ -273,16 +196,16 @@ static inline ParameterVector local_gradient_to_global(const ParameterVector& pa
 /// @return The parameters for local optimizer, i.e., the normal parameter
 static inline ParameterVector global_parameter_to_local(const ParameterVector& param)
 {
-	assert(param.size() == Kernel::NumTotalParameters || param.size() == ComplexKernel::NumTotalParameters);
+	assert(param.size() == KernelBase::NumTotalParameters || param.size() == ComplexKernelBase::NumTotalParameters);
 	ParameterVector result = param;
 	std::size_t iParam = 0;
-	if (param.size() == ComplexKernel::NumTotalParameters)
+	if (param.size() == ComplexKernelBase::NumTotalParameters)
 	{
 		// real, imaginary and noise to log
 		// first, magnitude
 		iParam++;
 		// second, real and imaginary kernel
-		for (std::size_t iKernel = 0; iKernel < ComplexKernel::NumKernels; iKernel++)
+		for ([[maybe_unused]] const std::size_t iKernel : std::ranges::iota_view{0ul, ComplexKernelBase::NumKernels})
 		{
 			// magnitude
 			result[iParam] = std::exp(result[iParam]);
@@ -294,7 +217,7 @@ static inline ParameterVector global_parameter_to_local(const ParameterVector& p
 		result[iParam] = std::exp(result[iParam]);
 		iParam++;
 	}
-	else // if (param.size() == Kernel::NumTotalParameters)
+	else // if (param.size() == KernelBase::NumTotalParameters)
 	{
 		// noise to log
 		// first, magnitude
@@ -323,9 +246,9 @@ void set_optimizer_bounds(
 )
 {
 	ParameterVector diagonal_lower_bound, full_lower_bound, diagonal_upper_bound, full_upper_bound;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			const auto& [LowerBound, UpperBound] = Bounds(iPES, jPES);
 			local_optimizers(iPES, jPES).set_lower_bounds(LowerBound);
@@ -351,7 +274,8 @@ Optimization::Optimization(
 	const InitialParameters& InitParams,
 	const double InitialTotalEnergy,
 	const double InitialPurity,
-	const nlopt::algorithm LocalAlgorithm,
+	const nlopt::algorithm LocalDiagonalAlgorithm,
+	const nlopt::algorithm LocalOffDiagonalAlgorithm,
 	const nlopt::algorithm ConstraintAlgorithm,
 	const nlopt::algorithm GlobalAlgorithm,
 	const nlopt::algorithm GlobalSubAlgorithm
@@ -362,17 +286,17 @@ Optimization::Optimization(
 	InitialKernelParameter(
 		[&rSigma = InitParams.get_sigma_r0()](void) -> ParameterVector
 		{
-			ParameterVector result(Kernel::NumTotalParameters);
+			ParameterVector result(KernelBase::NumTotalParameters);
 			std::size_t iParam = 0;
 			// first, magnitude
 			result[iParam] = InitialMagnitude;
 			iParam++;
 			// second, Gaussian
-			for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+			for (const std::size_t iDim : std::ranges::iota_view{0ul, PhaseDim})
 			{
-				result[iParam] = rSigma[iDim];
-				iParam++;
+				result[iParam + iDim] = rSigma[iDim];
 			}
+			iParam += PhaseDim;
 			// thrid, noise
 			result[iParam] = InitialNoise;
 			iParam++;
@@ -382,23 +306,23 @@ Optimization::Optimization(
 	InitialComplexKernelParameter(
 		[&rSigma = InitParams.get_sigma_r0()](void) -> ParameterVector
 		{
-			ParameterVector result(ComplexKernel::NumTotalParameters);
+			ParameterVector result(ComplexKernelBase::NumTotalParameters);
 			std::size_t iParam = 0;
 			// first, magnitude
 			result[iParam] = InitialMagnitude;
 			iParam++;
 			// second, real and imaginary kernel
-			for (std::size_t iKernel = 0; iKernel < ComplexKernel::NumKernels; iKernel++)
+			for ([[maybe_unused]] const std::size_t iKernel : std::ranges::iota_view{0ul, ComplexKernelBase::NumKernels})
 			{
 				// first, magnitude
 				result[iParam] = InitialMagnitude;
 				iParam++;
 				// second, Gaussian
-				for (std::size_t iDim = 0; iDim < PhaseDim; iDim++)
+				for (const std::size_t iDim : std::ranges::iota_view{0ul, PhaseDim})
 				{
-					result[iParam] = rSigma[iDim];
-					iParam++;
+					result[iParam + iDim] = rSigma[iDim];
 				}
+				iParam += PhaseDim;
 			}
 			// finally, noise
 			result[iParam] = InitialNoise;
@@ -406,10 +330,10 @@ Optimization::Optimization(
 			return result;
 		}()
 	),
-	LocalMinimizers(nlopt::opt(LocalAlgorithm, Kernel::NumTotalParameters), nlopt::opt(LocalAlgorithm, ComplexKernel::NumTotalParameters)),
-	DiagonalMinimizer(nlopt::algorithm::AUGLAG_EQ, Kernel::NumTotalParameters * NumPES),
+	LocalMinimizers(nlopt::opt(LocalDiagonalAlgorithm, KernelBase::NumTotalParameters), nlopt::opt(LocalOffDiagonalAlgorithm, ComplexKernelBase::NumTotalParameters)),
+	DiagonalMinimizer(nlopt::algorithm::AUGLAG_EQ, KernelBase::NumTotalParameters * NumPES),
 	FullMinimizer(nlopt::algorithm::AUGLAG_EQ, NumTotalParameters),
-	GlobalMinimizers(nlopt::opt(GlobalAlgorithm, Kernel::NumTotalParameters), nlopt::opt(GlobalAlgorithm, ComplexKernel::NumTotalParameters)),
+	GlobalMinimizers(nlopt::opt(GlobalAlgorithm, KernelBase::NumTotalParameters), nlopt::opt(GlobalAlgorithm, ComplexKernelBase::NumTotalParameters)),
 	ParameterVectors(InitialKernelParameter, InitialComplexKernelParameter)
 {
 	static constexpr std::size_t MaximumEvaluations = 100000; // Maximum evaluations for global optimizer
@@ -438,9 +362,9 @@ Optimization::Optimization(
 	};
 
 	// minimizer for each element
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			set_optimizer(LocalMinimizers(iPES, jPES));
 			set_optimizer(GlobalMinimizers(iPES, jPES));
@@ -467,7 +391,28 @@ Optimization::Optimization(
 	set_optimizer(FullMinimizer);
 	set_subsidiary_optimizer(FullMinimizer, ConstraintAlgorithm);
 	// set up bounds
-	set_optimizer_bounds(calculate_bounds(InitParams.get_rmax() - InitParams.get_rmin()), LocalMinimizers, DiagonalMinimizer, FullMinimizer, GlobalMinimizers);
+	set_optimizer_bounds(
+		[](const ClassicalPhaseVector& rSize) -> QuantumStorage<Bounds>
+		{
+			static constexpr double GaussKerMinCharLength = 1.0 / 100.0; // Minimal characteristic length for Gaussian kernel
+			const Bounds& KernelBounds = calculate_kernel_bounds(ClassicalPhaseVector::Ones() * GaussKerMinCharLength, rSize);
+			const Bounds& ComplexKernelBounds = calculate_complex_kernel_bounds(ClassicalPhaseVector::Ones() * GaussKerMinCharLength, rSize);
+			// then assignment
+			QuantumStorage<Bounds> result;
+			for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
+			{
+				for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
+				{
+					result(iPES, jPES) = iPES == jPES ? KernelBounds : ComplexKernelBounds;
+				}
+			}
+			return result;
+		}(InitParams.get_rmax() - InitParams.get_rmin()),
+		LocalMinimizers,
+		DiagonalMinimizer,
+		FullMinimizer,
+		GlobalMinimizers
+	);
 }
 
 /// @brief If the value is abnormal (inf, nan), set it to be the extreme
@@ -492,7 +437,7 @@ static inline void make_normal(double& d)
 /// @return The error
 /// @details The error is the squared error. @n
 /// For the training set, difference is @f$ [K^{-1}\vec{y}]_i/[K^{-1}]_{ii} @f$; @n
-/// For the extra training set, difference is @f$ K(\vec{x}_i,X)K^{-1}\vec{y}-y_i @f$. @n
+/// For the extra training set, difference is @f$ K(\vec{x}_i,X)K^{-1}\vec{y}-y_i @f$.
 static double loose_function(const ParameterVector& x, ParameterVector& grad, void* params)
 {
 	// unpack the parameters
@@ -500,29 +445,31 @@ static double loose_function(const ParameterVector& x, ParameterVector& grad, vo
 	const auto& [ExtraTrainingFeature, ExtraTrainingLabel] = ExtraTrainingSet;
 	// construct the kernel, then pass it to the error function
 	double result = 0.0;
-	if (x.size() == Kernel::NumTotalParameters)
+	if (x.size() == KernelBase::NumTotalParameters)
 	{
-		const Kernel kernel(x, TrainingSet, true, false, !grad.empty());
-		const Kernel ExtraKernel(ExtraTrainingFeature, kernel, !grad.empty(), ExtraTrainingLabel.real());
+		const TrainingKernel kernel(x, TrainingSet, true, false, !grad.empty());
+		const PredictiveKernel ExtraKernel(ExtraTrainingFeature, kernel, !grad.empty(), ExtraTrainingLabel.real());
 		result = kernel.get_error() + ExtraKernel.get_error();
 		if (!grad.empty())
 		{
-			for (std::size_t iParam = 0; iParam < Kernel::NumTotalParameters; iParam++)
+			const KernelBase::ParameterArray<double> trn_deriv = kernel.get_error_derivative(), vld_deriv = ExtraKernel.get_error_derivative();
+			for (const std::size_t iParam : std::ranges::iota_view{0ul, KernelBase::NumTotalParameters})
 			{
-				grad[iParam] = kernel.get_error_derivative()[iParam] + ExtraKernel.get_error_derivative()[iParam];
+				grad[iParam] = trn_deriv[iParam] + vld_deriv[iParam];
 			}
 		}
 	}
-	else // x.size() == ComplexKernel::NumTotalParameters
+	else // x.size() == ComplexKernelBase::NumTotalParameters
 	{
-		const ComplexKernel kernel(x, TrainingSet, true, false, !grad.empty());
-		const ComplexKernel ExtraKernel(ExtraTrainingFeature, kernel, !grad.empty(), ExtraTrainingLabel);
+		const TrainingComplexKernel kernel(x, TrainingSet, true, false, !grad.empty());
+		const PredictiveComplexKernel ExtraKernel(ExtraTrainingFeature, kernel, !grad.empty(), ExtraTrainingLabel);
 		result = kernel.get_error() + ExtraKernel.get_error();
 		if (!grad.empty())
 		{
-			for (std::size_t iParam = 0; iParam < ComplexKernel::NumTotalParameters; iParam++)
+			const ComplexKernelBase::ParameterArray<double> trn_deriv = kernel.get_error_derivative(), vld_deriv = ExtraKernel.get_error_derivative();
+			for (const std::size_t iParam : std::ranges::iota_view{0ul, ComplexKernelBase::NumTotalParameters})
 			{
-				grad[iParam] = kernel.get_error_derivative()[iParam] + ExtraKernel.get_error_derivative()[iParam];
+				grad[iParam] = trn_deriv[iParam] + vld_deriv[iParam];
 			}
 		}
 	}
@@ -564,29 +511,30 @@ static inline std::string get_element_name(const std::size_t iPES, const std::si
 /// @brief To optimize parameters of each density matrix element based on the given density
 /// @param[in] TrainingSets The training features and labels of all elements
 /// @param[in] ExtraTrainingSets The extra features and labels that only used for training (but not for prediction)
-/// @param[in] IsSmall Whether each element is small or not
 /// @param[inout] minimizers The minimizers to use
 /// @param[inout] ParameterVectors The parameters for all elements of density matrix
 /// @return The total error and the optimization steps of each element
 static Optimization::Result optimize_elementwise(
 	const AllTrainingSets& TrainingSets,
 	const AllTrainingSets& ExtraTrainingSets,
-	const QuantumMatrix<bool>& IsSmall,
 	QuantumStorage<nlopt::opt>& minimizers,
 	QuantumStorage<ParameterVector>& ParameterVectors
 )
 {
-	const bool is_global = std::string_view(minimizers(0).get_algorithm_name()).find("global") != std::string_view::npos || minimizers(0).get_algorithm() == nlopt::algorithm::GN_ESCH; // judge if it is global optimizer by checking its name
+	const bool is_global = std::string_view(minimizers(0).get_algorithm_name()).find("global") != std::string_view::npos
+		|| minimizers(0).get_algorithm() == nlopt::algorithm::GN_ESCH; // judge if it is global optimizer by checking its name
 	double total_error = 0.0;
 	std::vector<std::size_t> num_steps;
 	num_steps.reserve(NumPES + NumOffDiagonalElements);
 	// optimize element by element
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	spdlog::info("{}Start elementwise optimization...", indents<2>::apply());
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
-			if (!IsSmall(iPES, jPES))
+			if (std::get<0>(TrainingSets(iPES, jPES)).size() != 0)
 			{
+				// calculate error for non-zero case
 				ElementTrainingParameters etp = std::tie(TrainingSets(iPES, jPES), ExtraTrainingSets(iPES, jPES));
 				if (is_global)
 				{
@@ -596,6 +544,7 @@ static Optimization::Result optimize_elementwise(
 				{
 					minimizers(iPES, jPES).set_min_objective(loose_function, static_cast<void*>(&etp));
 				}
+				spdlog::info("{}Start {} optimization...", indents<3>::apply(), get_element_name(iPES, jPES));
 				double err = 0.0;
 				try
 				{
@@ -608,7 +557,7 @@ static Optimization::Result optimize_elementwise(
 #else
 				catch (std::exception& e)
 				{
-					spdlog::error("{}Optimization of {} failed by {}", indents<2>::apply(), get_element_name(iPES, jPES), e.what());
+					spdlog::error("{}Optimization of {} failed by {}", indents<3>::apply(), get_element_name(iPES, jPES), e.what());
 				}
 #endif
 				spdlog::info(
@@ -619,7 +568,7 @@ static Optimization::Result optimize_elementwise(
 				);
 				spdlog::info(
 					"{}Error of {} = {}, using {} steps.",
-					indents<2>::apply(),
+					indents<3>::apply(),
 					get_element_name(iPES, jPES),
 					err,
 					minimizers(iPES, jPES).get_numevals()
@@ -629,12 +578,12 @@ static Optimization::Result optimize_elementwise(
 			}
 			else
 			{
-				spdlog::info("{}{} is 0 everywhere.", indents<2>::apply(), get_element_name(iPES, jPES));
+				spdlog::info("{}{} is 0 everywhere.", indents<3>::apply(), get_element_name(iPES, jPES));
 				num_steps.push_back(0);
 			}
 		}
 	}
-	return std::make_tuple(total_error, num_steps);
+	return std::make_tuple(total_error, num_steps, Optimization::OptimizationType::Default);
 }
 
 /// @brief To calculate the overall loose for diagonal elements
@@ -646,14 +595,18 @@ static double diagonal_loose(const ParameterVector& x, ParameterVector& grad, vo
 {
 	const auto& [TrainingSets, ExtraTrainingSets] = *static_cast<AnalyticalLooseFunctionParameters*>(params);
 	double err = 0.0;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		const std::size_t BeginIndex = iPES * Kernel::NumTotalParameters;
-		const ParameterVector x_element(x.cbegin() + BeginIndex, x.cbegin() + BeginIndex + Kernel::NumTotalParameters);
-		ParameterVector grad_element(!grad.empty() ? Kernel::NumTotalParameters : 0);
-		ElementTrainingParameters etp = std::tie(TrainingSets(iPES), ExtraTrainingSets(iPES));
-		err += loose_function(x_element, grad_element, static_cast<void*>(&etp));
-		std::copy(grad_element.cbegin(), grad_element.cend(), grad.begin() + BeginIndex);
+		if (std::get<0>(TrainingSets(iPES)).size() != 0)
+		{
+			// calculate error for non-zero case
+			const std::size_t BeginIndex = iPES * KernelBase::NumTotalParameters;
+			const ParameterVector x_element(x.cbegin() + BeginIndex, x.cbegin() + BeginIndex + KernelBase::NumTotalParameters);
+			ParameterVector grad_element(!grad.empty() ? KernelBase::NumTotalParameters : 0);
+			ElementTrainingParameters etp = std::tie(TrainingSets(iPES), ExtraTrainingSets(iPES));
+			err += loose_function(x_element, grad_element, static_cast<void*>(&etp));
+			std::copy(std::execution::par_unseq, grad_element.cbegin(), grad_element.cend(), grad.begin() + BeginIndex);
+		}
 	}
 	make_normal(err);
 	for (double& d : grad)
@@ -669,18 +622,13 @@ static double diagonal_loose(const ParameterVector& x, ParameterVector& grad, vo
 static QuantumStorage<ParameterVector> construct_all_parameters_from_diagonal(const double* x)
 {
 	QuantumStorage<ParameterVector> result;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
-			if (iPES == jPES)
-			{
-				result(iPES) = ParameterVector(x + iPES * Kernel::NumTotalParameters, x + (iPES + 1) * Kernel::NumTotalParameters);
-			}
-			else
-			{
-				result(iPES, jPES) = ParameterVector(ComplexKernel::NumTotalParameters, 0.0);
-			}
+			result(iPES, jPES) = iPES == jPES
+				? ParameterVector(x + iPES * KernelBase::NumTotalParameters, x + (iPES + 1) * KernelBase::NumTotalParameters)
+				: ParameterVector(ComplexKernelBase::NumTotalParameters, 0.0);
 		}
 	}
 	return result;
@@ -689,7 +637,7 @@ static QuantumStorage<ParameterVector> construct_all_parameters_from_diagonal(co
 /// @brief To calculate the error on all constraints (population, energy, and maybe purity) by analytical integral of parameters
 /// @param[in] NumConstraints The number of constraints, could be 2 (population + energy) or 3 (+ purity)
 /// @param[out] result The error of each constraints
-/// @param[in] NumParams The number of parameters, which should be @p NumPES * @p Kernel::NumTotalParameters
+/// @param[in] NumParams The number of parameters, which should be @p NumPES * @p KernelBase::NumTotalParameters
 /// @param[in] x The input parameters, need to calculate the function value and gradient at this point
 /// @param[out] grad The gradient at the given point
 /// @param[in] params Other parameters. Here it is the training sets, energies on each surface, total energy and purity
@@ -704,60 +652,66 @@ static void diagonal_constraints(
 {
 	[[maybe_unused]] const auto& [TrainingSets, Energies, TotalEnergy, Purity] = *static_cast<AnalyticalConstraintParameters*>(params);
 	// construct predictors
-	const Kernels AllKernels(construct_all_parameters_from_diagonal(x), TrainingSets, false, true, grad != nullptr);
-	// calculate population and energy
+	const TrainingKernels AllKernels(construct_all_parameters_from_diagonal(x), TrainingSets, false, true, grad != nullptr);
+	// calculate population and energy, and purity sometimes
 	result[0] = AllKernels.calculate_population() - 1.0;
 	result[1] = AllKernels.calculate_total_energy_average(Energies) - TotalEnergy;
 	if (NumConstraints == 3)
 	{
 		result[2] = AllKernels.calculate_purity() - Purity;
 	}
+	// gradient
 	if (grad != nullptr)
 	{
 		std::size_t iParam = 0;
 		// population derivative
 		{
 			const ParameterVector& PplDeriv = AllKernels.population_derivative();
-			std::copy(PplDeriv.cbegin(), PplDeriv.cend(), grad + iParam);
-			iParam += NumPES * Kernel::NumTotalParameters;
+			std::copy(std::execution::par_unseq, PplDeriv.cbegin(), PplDeriv.cend(), grad + iParam);
+			iParam += NumPES * KernelBase::NumTotalParameters;
 		}
 		// energy derivative
 		{
 			const ParameterVector& EngDeriv = AllKernels.total_energy_derivative(Energies);
-			std::copy(EngDeriv.cbegin(), EngDeriv.cend(), grad + iParam);
-			iParam += NumPES * Kernel::NumTotalParameters;
+			std::copy(std::execution::par_unseq, EngDeriv.cbegin(), EngDeriv.cend(), grad + iParam);
+			iParam += NumPES * KernelBase::NumTotalParameters;
 		}
 		// purity derivative
 		if (NumConstraints == 3)
 		{
 			const ParameterVector& PrtDeriv = AllKernels.purity_derivative();
 			std::size_t iPrtParam = 0;
-			for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+			for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 			{
-				for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+				for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 				{
 					if (iPES == jPES)
 					{
-						std::copy(PrtDeriv.cbegin() + iPrtParam, PrtDeriv.cbegin() + iPrtParam + Kernel::NumTotalParameters, grad + iParam);
-						iPrtParam += Kernel::NumTotalParameters;
-						iParam += Kernel::NumTotalParameters;
+						std::copy(
+							std::execution::par_unseq,
+							PrtDeriv.cbegin() + iPrtParam,
+							PrtDeriv.cbegin() + iPrtParam + KernelBase::NumTotalParameters,
+							grad + iParam
+						);
+						iPrtParam += KernelBase::NumTotalParameters;
+						iParam += KernelBase::NumTotalParameters;
 					}
 					else
 					{
-						iPrtParam += ComplexKernel::NumTotalParameters;
+						iPrtParam += ComplexKernelBase::NumTotalParameters;
 					}
 				}
 			}
 		}
 	}
 	// prevent result from inf or nan
-	for (std::size_t i = 0; i < NumConstraints; i++)
+	for (const unsigned i : std::ranges::iota_view{0u, NumConstraints})
 	{
 		make_normal(result[i]);
 	}
 	if (grad != nullptr)
 	{
-		for (std::size_t i = 0; i < NumConstraints * NumParams; i++)
+		for (const unsigned i : std::ranges::iota_view{0u, NumConstraints * NumParams})
 		{
 			make_normal(grad[i]);
 		}
@@ -785,7 +739,8 @@ static Optimization::Result optimize_diagonal(
 {
 	// construct training set and parameters
 	ParameterVector diagonal_parameters;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	diagonal_parameters.reserve(KernelBase::NumTotalParameters * NumPES);
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
 		// diagonal elements, save parameters
 		diagonal_parameters.insert(
@@ -800,6 +755,7 @@ static Optimization::Result optimize_diagonal(
 	AnalyticalConstraintParameters acp = std::tie(TrainingSets, Energies, TotalEnergy, Purity);
 	minimizer.add_equality_mconstraint(diagonal_constraints, static_cast<void*>(&acp), ParameterVector(Purity > 0 ? 3 : 2, 0.0));
 	// optimize
+	spdlog::info("{}Start diagonal elements optimization...", indents<2>::apply());
 	double err = 0.0;
 	try
 	{
@@ -817,20 +773,20 @@ static Optimization::Result optimize_diagonal(
 #endif
 	minimizer.remove_equality_constraints();
 	// set up parameters
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
 		ParameterVectors(iPES) = ParameterVector(
-			diagonal_parameters.cbegin() + iPES * Kernel::NumTotalParameters,
-			diagonal_parameters.cbegin() + (iPES + 1) * Kernel::NumTotalParameters
+			diagonal_parameters.cbegin() + iPES * KernelBase::NumTotalParameters,
+			diagonal_parameters.cbegin() + (iPES + 1) * KernelBase::NumTotalParameters
 		);
 		spdlog::info(
 			"{}Parameter of {}: {}.",
 			indents<3>::apply(),
 			get_element_name(iPES, iPES),
-			Eigen::VectorXd::Map(ParameterVectors(iPES).data(), Kernel::NumTotalParameters).format(VectorFormatter)
+			Eigen::VectorXd::Map(ParameterVectors(iPES).data(), KernelBase::NumTotalParameters).format(VectorFormatter)
 		);
 	}
-	const Kernels AllKernels(ParameterVectors, TrainingSets, false, true, false);
+	const TrainingKernels AllKernels(ParameterVectors, TrainingSets, false, true, false);
 	spdlog::info(
 		"{}Diagonal error = {}; Population = {}; Energy = {}; Purity = {}; using {} steps",
 		indents<2>::apply(),
@@ -840,7 +796,7 @@ static Optimization::Result optimize_diagonal(
 		AllKernels.calculate_purity(),
 		minimizer.get_numevals()
 	);
-	return std::make_tuple(err, std::vector<std::size_t>(1, minimizer.get_numevals()));
+	return std::make_tuple(err, std::vector<std::size_t>(1, minimizer.get_numevals()), Optimization::OptimizationType::Default);
 }
 
 /// @brief To construct parameters for all elements from parameters of all elements
@@ -850,22 +806,14 @@ static QuantumStorage<ParameterVector> construct_all_parameters(const double* x)
 {
 	QuantumStorage<ParameterVector> result;
 	std::size_t iParam = 0;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
-			if (iPES == jPES)
-			{
-				result(iPES).resize(Kernel::NumTotalParameters, 0);
-				std::copy(x + iParam, x + iParam + Kernel::NumTotalParameters, result(iPES).begin());
-				iParam += Kernel::NumTotalParameters;
-			}
-			else
-			{
-				result(iPES, jPES).resize(ComplexKernel::NumTotalParameters, 0);
-				std::copy(x + iParam, x + iParam + ComplexKernel::NumTotalParameters, result(iPES, jPES).begin());
-				iParam += ComplexKernel::NumTotalParameters;
-			}
+			const std::size_t Length = iPES == jPES ? KernelBase::NumTotalParameters : ComplexKernelBase::NumTotalParameters;
+			result(iPES, jPES).resize(Length);
+			std::copy(x + iParam, x + iParam + Length, result(iPES, jPES).begin());
+			iParam += Length;
 		}
 	}
 	return result;
@@ -878,9 +826,9 @@ static ParameterVector construct_combined_parameters(const QuantumStorage<Parame
 {
 	ParameterVector result;
 	result.reserve(NumTotalParameters);
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			result.insert(result.cend(), x(iPES, jPES).cbegin(), x(iPES, jPES).cend());
 		}
@@ -900,13 +848,16 @@ static double full_loose(const ParameterVector& x, ParameterVector& grad, void* 
 	const auto& [TrainingSets, ExtraTrainingSets] = *static_cast<AnalyticalLooseFunctionParameters*>(params);
 	const QuantumStorage<ParameterVector> AllParams = construct_all_parameters(x.data());
 	QuantumStorage<ParameterVector> all_grads;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
-			ElementTrainingParameters etp = std::tie(TrainingSets(iPES, jPES), ExtraTrainingSets(iPES, jPES));
-			all_grads(iPES, jPES) = ParameterVector(!grad.empty() ? (iPES == jPES ? Kernel::NumTotalParameters : ComplexKernel::NumTotalParameters) : 0);
-			err += loose_function(AllParams(iPES, jPES), all_grads(iPES, jPES), static_cast<void*>(&etp));
+			if (std::get<0>(TrainingSets(iPES, jPES)).size() != 0)
+			{
+				ElementTrainingParameters etp = std::tie(TrainingSets(iPES, jPES), ExtraTrainingSets(iPES, jPES));
+				all_grads(iPES, jPES) = ParameterVector(!grad.empty() ? (iPES == jPES ? KernelBase::NumTotalParameters : ComplexKernelBase::NumTotalParameters) : 0);
+				err += loose_function(AllParams(iPES, jPES), all_grads(iPES, jPES), static_cast<void*>(&etp));
+			}
 		}
 	}
 	grad = construct_combined_parameters(all_grads);
@@ -934,9 +885,9 @@ static void full_constraints(
 	void* params
 )
 {
-	[[maybe_unused]] const auto& [TrainingSets, Energies, TotalEnergy, Purity] = *static_cast<AnalyticalConstraintParameters*>(params);
+	const auto& [TrainingSets, Energies, TotalEnergy, Purity] = *static_cast<AnalyticalConstraintParameters*>(params);
 	// construct predictors
-	const Kernels AllKernels(construct_all_parameters(x), TrainingSets, false, true, grad != nullptr);
+	const TrainingKernels AllKernels(construct_all_parameters(x), TrainingSets, false, true, grad != nullptr);
 	// calculate population and energy
 	result[0] = AllKernels.calculate_population() - 1.0;
 	result[1] = AllKernels.calculate_total_energy_average(Energies) - TotalEnergy;
@@ -947,30 +898,30 @@ static void full_constraints(
 		// population derivative
 		{
 			const ParameterVector& PplDeriv = construct_combined_parameters(construct_all_parameters_from_diagonal(AllKernels.population_derivative().data()));
-			std::copy(PplDeriv.cbegin(), PplDeriv.cend(), grad + iParam);
+			std::copy(std::execution::par_unseq, PplDeriv.cbegin(), PplDeriv.cend(), grad + iParam);
 			iParam += NumTotalParameters;
 		}
 		// energy derivative
 		{
 			const ParameterVector& EngDeriv = construct_combined_parameters(construct_all_parameters_from_diagonal(AllKernels.total_energy_derivative(Energies).data()));
-			std::copy(EngDeriv.cbegin(), EngDeriv.cend(), grad + iParam);
+			std::copy(std::execution::par_unseq, EngDeriv.cbegin(), EngDeriv.cend(), grad + iParam);
 			iParam += NumTotalParameters;
 		}
 		// purity derivative
 		{
 			const ParameterVector& PrtDeriv = AllKernels.purity_derivative();
-			std::copy(PrtDeriv.cbegin(), PrtDeriv.cend(), grad + iParam);
+			std::copy(std::execution::par_unseq, PrtDeriv.cbegin(), PrtDeriv.cend(), grad + iParam);
 			iParam += NumTotalParameters;
 		}
 	}
 	// prevent result from inf or nan
-	for (std::size_t i = 0; i < NumConstraints; i++)
+	for (const unsigned i : std::ranges::iota_view{0u, NumConstraints})
 	{
 		make_normal(result[i]);
 	}
 	if (grad != nullptr)
 	{
-		for (std::size_t i = 0; i < NumConstraints * NumParams; i++)
+		for (const unsigned i : std::ranges::iota_view{0u, NumConstraints * NumParams})
 		{
 			make_normal(grad[i]);
 		}
@@ -998,10 +949,10 @@ Optimization::Result optimize_full(
 {
 	// construct training set
 	ParameterVector full_parameters;
-	full_parameters.reserve(Kernel::NumTotalParameters * NumElements);
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	full_parameters.reserve(NumTotalParameters);
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			full_parameters.insert(
 				full_parameters.cend(),
@@ -1016,6 +967,7 @@ Optimization::Result optimize_full(
 	AnalyticalConstraintParameters acp = std::tie(TrainingSets, Energies, TotalEnergy, Purity);
 	minimizer.add_equality_mconstraint(full_constraints, static_cast<void*>(&acp), ParameterVector(3, 0.0));
 	// optimize
+	spdlog::info("{}Start all elements optimization...", indents<2>::apply());
 	double err = 0.0;
 	try
 	{
@@ -1034,11 +986,11 @@ Optimization::Result optimize_full(
 	minimizer.remove_equality_constraints();
 	// set up parameters
 	std::size_t iParam = 0;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
-			const std::size_t ElementTotalParameters = iPES == jPES ? Kernel::NumTotalParameters : ComplexKernel::NumTotalParameters;
+			const std::size_t ElementTotalParameters = iPES == jPES ? KernelBase::NumTotalParameters : ComplexKernelBase::NumTotalParameters;
 			ParameterVectors(iPES, jPES) = ParameterVector(full_parameters.cbegin() + iParam, full_parameters.cbegin() + iParam + ElementTotalParameters);
 			spdlog::info(
 				"{}Parameter of {}: {}.",
@@ -1049,7 +1001,7 @@ Optimization::Result optimize_full(
 			iParam += ElementTotalParameters;
 		}
 	}
-	const Kernels AllKernels(ParameterVectors, TrainingSets, false, true, false);
+	const TrainingKernels AllKernels(ParameterVectors, TrainingSets, false, true, false);
 	spdlog::info(
 		"{}Total error = {}; Population = {}; Energy = {}; Purity = {}; using {} steps.",
 		indents<2>::apply(),
@@ -1059,35 +1011,206 @@ Optimization::Result optimize_full(
 		AllKernels.calculate_purity(),
 		minimizer.get_numevals()
 	);
-	return std::make_tuple(err, std::vector<std::size_t>(1, minimizer.get_numevals()));
+	return std::make_tuple(err, std::vector<std::size_t>(1, minimizer.get_numevals()), Optimization::OptimizationType::Default);
 }
 
-/// @brief To check each of the averages (@<r@>, @<1@>, @<E@> and purity) is satisfactory or not
-/// @param[in] AllKernels Kernels of all elements for prediction
-/// @param[in] density The vector containing all known density matrix
-/// @param[in] Energies The energy of each surfaces and the total energy
-/// @param[in] TotalEnergy The energy of the whole partial Wigner-transformed density matrics
-/// @param[in] Purity The purity of the partial Wigner transformed density matrix
-/// @return Whether each of the averages (@<r@>, @<1@>, @<E@> and purity) is satisfactory or not
-/// @details The comparison happens between integral and average for @<r@>,
-/// and between integral and exact value for @<1@>, @<E@> and purity.
-static Eigen::Vector4d check_averages(
-	const Kernels& AllKernels,
-	const AllPoints& density,
-	const QuantumVector<double>& Energies,
-	const double TotalEnergy,
-	const double Purity
-)
+/// @details Using Gaussian Process Regression (GPR) to depict phase space distribution. @n
+/// First optimize elementwise, then optimize the diagonal with normalization and energy conservation
+Optimization::Result Optimization::optimize(const AllPoints& density, const AllPoints& extra_points)
 {
-	// to calculate the error that is above the tolerance or not
-	// if within tolerance, return 0; otherwise, return relative error
-	static auto beyond_tolerance_error = [](const auto& calc, const auto& ref) -> double
+	// construct training sets
+	const AllTrainingSets TrainingSets = construct_training_sets(density), ExtraTrainingSets = construct_training_sets(extra_points);
+	// total energy
+	const QuantumVector<double> Energies = calculate_total_energy_average_each_surface(density, mass);
+	// set bounds for current bounds, and calculate energy on each surfaces
+	const QuantumStorage<Bounds> ParameterBounds =
+		[&density, &LocalMinimizers = LocalMinimizers]() -> QuantumStorage<Bounds>
 	{
-		static_assert(std::is_same_v<std::decay_t<decltype(calc)>, std::decay_t<decltype(ref)>>);
-		static_assert(std::is_same_v<decltype(calc), const double&> || std::is_same_v<decltype(calc), const ClassicalPhaseVector&>);
-		if constexpr (std::is_same_v<decltype(calc), const double&>)
+		QuantumStorage<Bounds> result;
+		for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 		{
-			static constexpr double AverageTolerance = 2e-2;
+			for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
+			{
+				if (!density(iPES, jPES).empty())
+				{
+					const ClassicalPhaseVector StdDev = calculate_standard_deviation_one_surface(density(iPES, jPES));
+					const ClassicalPhaseVector CharLengthLB = StdDev / std::sqrt(density(iPES, jPES).size()), CharLengthUB = 2.0 * StdDev;
+					result(iPES, jPES) = iPES == jPES
+						? calculate_kernel_bounds(CharLengthLB, CharLengthUB)
+						: calculate_complex_kernel_bounds(CharLengthLB, CharLengthUB);
+				}
+				else
+				{
+					result(iPES, jPES)[0] = LocalMinimizers(iPES, jPES).get_lower_bounds();
+					result(iPES, jPES)[1] = LocalMinimizers(iPES, jPES).get_upper_bounds();
+				}
+			}
+		}
+		return result;
+	}();
+	// check for the suitable noise
+	set_optimizer_bounds(ParameterBounds, LocalMinimizers, DiagonalMinimizer, FullMinimizer, GlobalMinimizers);
+
+	auto move_into_bounds = [&ParameterBounds](QuantumStorage<ParameterVector>& parameter_vectors)
+	{
+		for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
+		{
+			for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
+			{
+				const auto& [LowerBound, UpperBound] = ParameterBounds(iPES, jPES);
+				for (const std::size_t iParam : std::ranges::iota_view{0ul, (iPES == jPES ? KernelBase::NumTotalParameters : ComplexKernelBase::NumTotalParameters)})
+				{
+					parameter_vectors(iPES, jPES)[iParam] = std::clamp(parameter_vectors(iPES, jPES)[iParam], LowerBound[iParam], UpperBound[iParam]);
+				}
+			}
+		}
+	};
+
+	auto output_average = [&Energies](const TrainingKernels& kernels) -> void
+	{
+		for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
+		{
+			for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
+			{
+				if (iPES == jPES)
+				{
+					if (kernels(iPES).has_value())
+					{
+						spdlog::info(
+							"{}On {}-th surface, population = {}, energy = {}, purity = {}",
+							indents<2>::apply(),
+							iPES,
+							kernels(iPES)->get_population(),
+							kernels(iPES)->get_population() * Energies[iPES],
+							kernels(iPES)->get_purity()
+						);
+					}
+				}
+				else
+				{
+					if (kernels(iPES, jPES).has_value())
+					{
+						spdlog::info("{}For element ({}, {}), purity = {}", indents<2>::apply(), iPES, jPES, kernels(iPES, jPES)->get_purity());
+					}
+				}
+			}
+		}
+	};
+
+	// construct a function for code reuse
+	auto do_optimize =
+		[this,
+		 &density,
+		 &TrainingSets,
+		 &ExtraTrainingSets,
+		 &Energies,
+		 &move_into_bounds,
+		 &output_average](
+			QuantumStorage<ParameterVector>& parameter_vectors,
+			const OptimizationType OptType
+		) -> Result
+	{
+		const bool OffDiagonalOptimization = std::any_of(
+			density.get_offdiagonal_data().cbegin(),
+			density.get_offdiagonal_data().cend(),
+			[](const ElementPoints& points)
+			{
+				return !points.empty();
+			}
+		);
+		// initially, set the magnitude to be 1
+		// and move the parameters into bounds
+		for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
+		{
+			for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
+			{
+				parameter_vectors(iPES, jPES)[0] = InitialMagnitude;
+			}
+		}
+		move_into_bounds(parameter_vectors);
+		Result result = optimize_elementwise(TrainingSets, ExtraTrainingSets, LocalMinimizers, parameter_vectors);
+		output_average(TrainingKernels(parameter_vectors, TrainingSets, false, true, false));
+		auto& [err, steps, type] = result;
+		type = OptType;
+		if (OffDiagonalOptimization)
+		{
+			// do not add purity condition for diagonal, so give a negative purity to indicate no necessity
+			[[maybe_unused]] const auto& [DiagonalError, DiagonalStep, DiagonalOptType] = optimize_diagonal(
+				TrainingSets,
+				ExtraTrainingSets,
+				Energies,
+				TotalEnergy,
+				NAN,
+				DiagonalMinimizer,
+				parameter_vectors
+			);
+			output_average(TrainingKernels(parameter_vectors, TrainingSets, false, true, false));
+			[[maybe_unused]] const auto& [TotalError, TotalStep, TotalOptType] = optimize_full(
+				TrainingSets,
+				ExtraTrainingSets,
+				Energies,
+				TotalEnergy,
+				Purity,
+				FullMinimizer,
+				parameter_vectors
+			);
+			output_average(TrainingKernels(parameter_vectors, TrainingSets, false, true, false));
+			err = TotalError;
+			steps.insert(steps.cend(), DiagonalStep.cbegin(), DiagonalStep.cend());
+			steps.insert(steps.cend(), TotalStep.cbegin(), TotalStep.cend());
+		}
+		else
+		{
+			[[maybe_unused]] const auto& [DiagonalError, DiagonalStep, DiagonalType] = optimize_diagonal(
+				TrainingSets,
+				ExtraTrainingSets,
+				Energies,
+				TotalEnergy,
+				Purity,
+				DiagonalMinimizer,
+				parameter_vectors
+			);
+			output_average(TrainingKernels(parameter_vectors, TrainingSets, false, true, false));
+			err = DiagonalError;
+			steps.insert(steps.cend(), DiagonalStep.cbegin(), DiagonalStep.cend());
+			steps.push_back(0);
+		}
+		// afterwards, calculate the magnitude
+		for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
+		{
+			for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
+			{
+				if (!density(iPES, jPES).empty())
+				{
+					parameter_vectors(iPES, jPES)[0] = iPES == jPES
+						? TrainingKernel(parameter_vectors(iPES, jPES), TrainingSets(iPES, jPES), false, false, false).get_magnitude()
+						: TrainingComplexKernel(parameter_vectors(iPES, jPES), TrainingSets(iPES, jPES), false, false, false).get_magnitude();
+					spdlog::info("{}Magnitude of {} is {}.", indents<2>::apply(), get_element_name(iPES, jPES), parameter_vectors(iPES, jPES)[0]);
+				}
+				else
+				{
+					spdlog::info("{}Magnitude of {} is not needed.", indents<2>::apply(), get_element_name(iPES, jPES));
+				}
+			}
+		}
+		spdlog::info("{}Error = {}", indents<2>::apply(), err);
+		return result;
+	};
+
+	auto check_averages =
+		[&density,
+		 &TrainingSets,
+		 &Energies,
+		 TotalEnergy = this->TotalEnergy,
+		 Purity = this->Purity](
+			const QuantumStorage<ParameterVector>& parameter_vectors
+		) -> Eigen::Vector3d
+	{
+		const TrainingKernels AllKernels(parameter_vectors, TrainingSets, false, true, false);
+		// to calculate the error that is above the tolerance or not
+		// if within tolerance, return 0; otherwise, return relative error
+		static auto beyond_tolerance_error = [](double calc, double ref) -> double
+		{
 			const double err = std::abs((calc / ref) - 1.0);
 			if (err < AverageTolerance)
 			{
@@ -1097,232 +1220,83 @@ static Eigen::Vector4d check_averages(
 			{
 				return err;
 			}
-		}
-		else // if constexpr (std::is_same_v<decltype(calc), const ClassicalPhaseVector&>)
+		};
+
+		static auto check_and_output = [](const double error, const std::string& name) -> void
 		{
-			static constexpr double AbsoluteTolerance = 0.25;
-			static constexpr double RelativeTolerance = 0.1;
-			const auto err = ((calc.array() / ref.array()).abs() - 1.0).abs();
-			if ((err < RelativeTolerance).all() || ((calc - ref).array().abs() < AbsoluteTolerance).all())
+			if (error == 0.0)
 			{
-				return 0.0;
+				spdlog::info("{}{} passes checking.", indents<2>::apply(), name);
 			}
 			else
 			{
-				return err.sum();
+				spdlog::info("{}{} does not pass checking and has total relative error of {}.", indents<2>::apply(), name, error);
 			}
-		}
-	};
+		};
 
-	static auto check_and_output = [](const double error, const std::string& name) -> void
-	{
-		if (error == 0.0)
+		Eigen::Vector3d result = Eigen::Vector3d::Zero();
+		// <r>
+		for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 		{
-			spdlog::info("{}{} passes checking.", indents<2>::apply(), name);
-		}
-		else
-		{
-			spdlog::info("{}{} does not pass checking and has total relative error of {}.", indents<2>::apply(), name, error);
-		}
-	};
-
-	Eigen::Vector4d result = Eigen::Vector4d::Zero();
-	// <r>
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-	{
-		const ClassicalPhaseVector r_ave = calculate_1st_order_average_one_surface(density(iPES));
-		const ClassicalPhaseVector r_prm = calculate_1st_order_average_one_surface(AllKernels(iPES)); // prm = parameters
-		spdlog::info(
-			"{}On surface {}, Exact <r> = {}, Analytical integrated <r> = {}.",
-			indents<3>::apply(),
-			iPES,
-			r_ave.format(VectorFormatter),
-			r_prm.format(VectorFormatter)
-		);
-		result[0] += beyond_tolerance_error(r_prm, r_ave);
-	}
-	check_and_output(result[0], "<r>");
-	// <1>
-	const double ppl_prm = AllKernels.calculate_population();
-	spdlog::info("{}Exact population = {}, analytical integrated population = {}.", indents<3>::apply(), 1.0, ppl_prm);
-	result[1] += beyond_tolerance_error(ppl_prm, 1.0);
-	check_and_output(result[1], "Population");
-	// <E>
-	const double eng_prm_ave = AllKernels.calculate_total_energy_average(Energies);
-	spdlog::info("{}Exact energy = {}, analytical integrated energy = {}", indents<3>::apply(), TotalEnergy, eng_prm_ave);
-	result[2] += beyond_tolerance_error(eng_prm_ave, TotalEnergy);
-	check_and_output(result[2], "Energy");
-	// purity
-	const double prt_prm = AllKernels.calculate_purity();
-	spdlog::info("{}Exact purity = {}, analytical integrated purity = {}.", indents<3>::apply(), Purity, prt_prm);
-	result[3] += beyond_tolerance_error(prt_prm, Purity);
-	check_and_output(result[3], "Purity");
-	return result;
-}
-
-/// @details Using Gaussian Process Regression (GPR) to depict phase space distribution.
-/// First optimize elementwise, then optimize the diagonal with normalization and energy conservation
-Optimization::Result Optimization::optimize(const AllPoints& density, const AllPoints& extra_points)
-{
-	// calculate is small or not
-	const QuantumMatrix<bool> IsSmall = is_very_small(density);
-	// construct training sets
-	const AllTrainingSets TrainingSets = construct_training_sets(density), ExtraTrainingSets = construct_training_sets(extra_points);
-	// set bounds for current bounds, and calculate energy on each surfaces
-	const QuantumStorage<Bounds> ParameterBounds = calculate_bounds(density);
-	// check for the suitable noise
-	set_optimizer_bounds(ParameterBounds, LocalMinimizers, DiagonalMinimizer, FullMinimizer, GlobalMinimizers);
-
-	auto move_into_bounds = [&ParameterBounds](QuantumStorage<ParameterVector>& parameter_vectors)
-	{
-		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-		{
-			for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+			if (!density(iPES).empty())
 			{
-				const auto& [LowerBound, UpperBound] = ParameterBounds(iPES, jPES);
-				for (std::size_t iParam = 0; iParam < (iPES == jPES ? Kernel::NumTotalParameters : ComplexKernel::NumTotalParameters); iParam++)
-				{
-					parameter_vectors(iPES, jPES)[iParam] = std::max(parameter_vectors(iPES, jPES)[iParam], LowerBound[iParam]);
-					parameter_vectors(iPES, jPES)[iParam] = std::min(parameter_vectors(iPES, jPES)[iParam], UpperBound[iParam]);
-				}
+				const ClassicalPhaseVector r_ave = calculate_1st_order_average_one_surface(density(iPES));
+				const ClassicalPhaseVector r_prm = calculate_1st_order_average_one_surface(AllKernels(iPES).value()); // prm = parameters
+				spdlog::info(
+					"{}On surface {}, Exact <r> = {}, Analytical integrated <r> = {}.",
+					indents<3>::apply(),
+					iPES,
+					r_ave.format(VectorFormatter),
+					r_prm.format(VectorFormatter)
+				);
 			}
 		}
-	};
-
-	// construct a function for code reuse
-	auto optimize_and_check =
-		[this,
-		 &density,
-		 &IsSmall,
-		 &TrainingSets,
-		 &ExtraTrainingSets,
-		 &move_into_bounds](
-			QuantumStorage<ParameterVector>& parameter_vectors
-		)
-		-> std::tuple<Optimization::Result, Eigen::Vector4d>
-	{
-		const QuantumVector<double> Energies = calculate_total_energy_average_each_surface(density, mass);
-		const bool OffDiagonalOptimization = [&IsSmall](void) -> bool
-		{
-			if constexpr (NumOffDiagonalElements != 0)
-			{
-				for (std::size_t iPES = 1; iPES < NumPES; iPES++)
-				{
-					for (std::size_t jPES = 0; jPES < iPES; jPES++)
-					{
-						if (!IsSmall(iPES, jPES))
-						{
-							return true;
-						}
-					}
-				}
-			}
-			return false;
-		}();
-		// initially, set the magnitude to be 1
-		// and move the parameters into bounds
-		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-		{
-			for (std::size_t jPES = 0; jPES <= iPES; jPES++)
-			{
-				parameter_vectors(iPES, jPES)[0] = InitialMagnitude;
-			}
-		}
-		move_into_bounds(parameter_vectors);
-		Optimization::Result result = optimize_elementwise(TrainingSets, ExtraTrainingSets, IsSmall, LocalMinimizers, parameter_vectors);
-		auto& [err, steps] = result;
-		if (OffDiagonalOptimization)
-		{
-			// do not add purity condition for diagonal, so give a negative purity to indicate no necessity
-			const auto& [DiagonalError, DiagonalStep] = optimize_diagonal(
-				TrainingSets,
-				ExtraTrainingSets,
-				Energies,
-				TotalEnergy,
-				NAN,
-				DiagonalMinimizer,
-				parameter_vectors
-			);
-			const auto& [TotalError, TotalStep] = optimize_full(
-				TrainingSets,
-				ExtraTrainingSets,
-				Energies,
-				TotalEnergy,
-				Purity,
-				FullMinimizer,
-				parameter_vectors
-			);
-			err = TotalError;
-			steps.insert(steps.cend(), DiagonalStep.cbegin(), DiagonalStep.cend());
-			steps.insert(steps.cend(), TotalStep.cbegin(), TotalStep.cend());
-		}
-		else
-		{
-			const auto& [DiagonalError, DiagonalStep] = optimize_diagonal(
-				TrainingSets,
-				ExtraTrainingSets,
-				Energies,
-				TotalEnergy,
-				Purity,
-				DiagonalMinimizer,
-				parameter_vectors
-			);
-			err = DiagonalError;
-			steps.insert(steps.cend(), DiagonalStep.cbegin(), DiagonalStep.cend());
-			steps.push_back(0);
-		}
-		// afterwards, calculate the magnitude
-		for (std::size_t iPES = 0; iPES < NumPES; iPES++)
-		{
-			for (std::size_t jPES = 0; jPES <= iPES; jPES++)
-			{
-				if (!IsSmall(iPES, jPES))
-				{
-					if (iPES == jPES)
-					{
-						parameter_vectors(iPES, jPES)[0] = Kernel(parameter_vectors(iPES, jPES), TrainingSets(iPES, jPES), false, false, false).get_magnitude();
-						spdlog::info("{}Magnitude of {} is {}.", indents<2>::apply(), get_element_name(iPES, jPES), parameter_vectors(iPES, jPES)[0]);
-					}
-					else
-					{
-						parameter_vectors(iPES, jPES)[0] = ComplexKernel(parameter_vectors(iPES, jPES), TrainingSets(iPES, jPES), false, false, false).get_magnitude();
-						spdlog::info("{}Magnitude of {} is {}.", indents<2>::apply(), get_element_name(iPES, jPES), parameter_vectors(iPES, jPES)[0]);
-					}
-				}
-				else
-				{
-					spdlog::info("{}Magnitude of {} is not needed.", indents<2>::apply(), get_element_name(iPES, jPES));
-				}
-			}
-		}
-		spdlog::info("{}Error = {}", indents<2>::apply(), err);
-		return std::make_tuple(result, check_averages(Kernels(parameter_vectors, TrainingSets, false, true, false), density, Energies, TotalEnergy, Purity));
+		// <1>
+		const double ppl_prm = AllKernels.calculate_population();
+		spdlog::info("{}Exact population = {}, analytical integrated population = {}.", indents<3>::apply(), 1.0, ppl_prm);
+		result[0] += beyond_tolerance_error(ppl_prm, 1.0);
+		check_and_output(result[0], "Population");
+		// <E>
+		const double eng_prm_ave = AllKernels.calculate_total_energy_average(Energies);
+		spdlog::info("{}Exact energy = {}, analytical integrated energy = {}", indents<3>::apply(), TotalEnergy, eng_prm_ave);
+		result[1] += beyond_tolerance_error(eng_prm_ave, TotalEnergy);
+		check_and_output(result[1], "Energy");
+		// purity
+		const double prt_prm = AllKernels.calculate_purity();
+		spdlog::info("{}Exact purity = {}, analytical integrated purity = {}.", indents<3>::apply(), Purity, prt_prm);
+		result[2] += beyond_tolerance_error(prt_prm, Purity);
+		check_and_output(result[2], "Purity");
+		return result;
 	};
 
 	auto compare_and_overwrite =
-		[this](
-			Optimization::Result& result,
-			Eigen::Vector4d& check_result,
+		[&ParameterVectors = this->ParameterVectors](
+			Result& result,
+			Eigen::Vector3d& check_result,
 			const std::string_view& old_name,
-			const Optimization::Result& result_new,
-			const Eigen::Vector4d& check_new,
+			const Result& result_new,
+			const Eigen::Vector3d& check_new,
 			const std::string_view& new_name,
 			const QuantumStorage<ParameterVector>& param_vec_new
 		) -> void
 	{
-		auto& [error, steps] = result;
-		const auto& [error_new, steps_new] = result_new;
-		const std::size_t BetterResults = (check_new.array() < check_result.array()).count();
-		const std::size_t WorseResults = (check_new.array() > check_result.array()).count();
-		if (BetterResults > WorseResults)
+		auto& [error, steps, type] = result;
+		const auto& [error_new, steps_new, type_new] = result_new;
+		// for each term, a better result means:
+		// 1. The better one is smaller than the worse one
+		// 2. The worse one is out of 2 * Tolerance
+		const std::size_t BetterResults = (check_new.array() < check_result.array() && check_result.array() > 2.0 * AverageTolerance).count();
+		const std::size_t WorseResults = (check_new.array() > check_result.array() && check_new.array() > 2.0 * AverageTolerance).count();
+		if (BetterResults > WorseResults || (BetterResults == WorseResults && check_new.sum() < check_result.sum()))
 		{
 			spdlog::info("{}{} is better because of better averages.", indents<1>::apply(), new_name);
 			ParameterVectors = param_vec_new;
 			error = error_new;
-			for (std::size_t iElement = 0; iElement < steps_new.size(); iElement++)
+			for (const std::size_t iElement : std::ranges::iota_view{0ul, steps_new.size()})
 			{
 				steps[iElement] += steps_new[iElement];
 			}
+			type = type_new;
 			check_result = check_new;
 		}
 		else if (BetterResults == WorseResults && error_new < error)
@@ -1330,10 +1304,11 @@ Optimization::Result Optimization::optimize(const AllPoints& density, const AllP
 			spdlog::info("{}{} is better because of smaller error.", indents<1>::apply(), new_name);
 			ParameterVectors = param_vec_new;
 			error = error_new;
-			for (std::size_t iElement = 0; iElement < steps_new.size(); iElement++)
+			for (const std::size_t iElement : std::ranges::iota_view{0ul, steps_new.size()})
 			{
 				steps[iElement] += steps_new[iElement];
 			}
+			type = type_new;
 			check_result = check_new;
 		}
 		else
@@ -1344,7 +1319,8 @@ Optimization::Result Optimization::optimize(const AllPoints& density, const AllP
 
 	// 1. optimize locally with parameters from last step
 	spdlog::info("{}Local optimization with previous parameters.", indents<1>::apply());
-	auto [result, check_result] = optimize_and_check(ParameterVectors);
+	Result result = do_optimize(ParameterVectors, OptimizationType::LocalPrevious);
+	Eigen::Vector3d check_result = check_averages(ParameterVectors);
 	if ((check_result.array() == 0.0).all())
 	{
 		spdlog::info("{}Local optimization with previous parameters succeeded.", indents<1>::apply());
@@ -1353,7 +1329,8 @@ Optimization::Result Optimization::optimize(const AllPoints& density, const AllP
 	// 2. optimize locally with initial parameter
 	spdlog::warn("{}Local optimization with previous parameters failed. Retry with local optimization with initial parameters.", indents<1>::apply());
 	QuantumStorage<ParameterVector> param_vec_initial(InitialKernelParameter, InitialComplexKernelParameter);
-	const auto& [result_initial, check_initial] = optimize_and_check(param_vec_initial);
+	const Result result_initial = do_optimize(param_vec_initial, OptimizationType::LocalInitial);
+	const Eigen::Vector3d check_initial = check_averages(param_vec_initial);
 	compare_and_overwrite(
 		result,
 		check_result,
@@ -1372,26 +1349,28 @@ Optimization::Result Optimization::optimize(const AllPoints& density, const AllP
 	spdlog::warn("{}Local optimization failed. Retry with global optimization.", indents<1>::apply());
 	QuantumStorage<ParameterVector> param_vec_global(InitialKernelParameter, InitialComplexKernelParameter);
 	move_into_bounds(param_vec_global);
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			param_vec_global(iPES, jPES) = local_parameter_to_global(param_vec_global(iPES, jPES));
 		}
 	}
-	[[maybe_unused]] const auto& [error_global_elem, steps_global_elem] =
-		optimize_elementwise(TrainingSets, ExtraTrainingSets, IsSmall, GlobalMinimizers, param_vec_global);
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	[[maybe_unused]] const auto& [error_global_elm, steps_global_elm, opt_type_global_elm] =
+		optimize_elementwise(TrainingSets, ExtraTrainingSets, GlobalMinimizers, param_vec_global);
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			param_vec_global(iPES, jPES) = global_parameter_to_local(param_vec_global(iPES, jPES));
 		}
 	}
-	auto [result_global, check_global] = optimize_and_check(param_vec_global);
-	for (std::size_t iElement = 0; iElement < NumTriangularElements; iElement++)
+	output_average(TrainingKernels(param_vec_global, TrainingSets, false, true, false));
+	Result result_global = do_optimize(param_vec_global, OptimizationType::Global);
+	const Eigen::Vector3d check_global = check_averages(param_vec_global);
+	for (const std::size_t iElement : std::ranges::iota_view{0ul, steps_global_elm.size()})
 	{
-		std::get<1>(result_global)[iElement] += steps_global_elem[iElement];
+		std::get<1>(result_global)[iElement] += steps_global_elm[iElement];
 	}
 	compare_and_overwrite(
 		result,
@@ -1415,9 +1394,9 @@ Optimization::Result Optimization::optimize(const AllPoints& density, const AllP
 QuantumStorage<ParameterVector> Optimization::get_lower_bounds(void) const
 {
 	QuantumStorage<ParameterVector> result;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			result(iPES, jPES) = LocalMinimizers(iPES, jPES).get_lower_bounds();
 		}
@@ -1428,9 +1407,9 @@ QuantumStorage<ParameterVector> Optimization::get_lower_bounds(void) const
 QuantumStorage<ParameterVector> Optimization::get_upper_bounds(void) const
 {
 	QuantumStorage<ParameterVector> result;
-	for (std::size_t iPES = 0; iPES < NumPES; iPES++)
+	for (const std::size_t iPES : std::ranges::iota_view{0ul, NumPES})
 	{
-		for (std::size_t jPES = 0; jPES <= iPES; jPES++)
+		for (const std::size_t jPES : std::ranges::iota_view{0ul, iPES + 1})
 		{
 			result(iPES, jPES) = LocalMinimizers(iPES, jPES).get_upper_bounds();
 		}
